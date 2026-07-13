@@ -1,0 +1,17 @@
+{
+  "name": "zhiyuan-anp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "智源 ANP — 企业 AI 原生研发平台",
+  "packageManager": "pnpm@10.31.0",
+  "scripts": {
+    "dev": "pnpm --filter frontend dev",
+    "build": "pnpm --filter frontend build",
+    "lint": "pnpm -r --if-present run lint",
+    "test": "pnpm -r --if-present run test",
+    "frontend": "pnpm --filter frontend"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

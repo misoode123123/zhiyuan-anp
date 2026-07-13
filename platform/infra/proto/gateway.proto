@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package anp.gateway.v1;
+
+option go_package = "zhiyuan-anp/platform/backend/internal/proto/gatewayv1;gatewayv1";
+
+// ModelGateway —— 模型路由 / 成本 / 故障切换。
+// M0 由 Python 侧 LiteLLM 直接提供；装 protoc 后可包成 gRPC 供 Go 直连。
+service ModelGateway {
+  rpc Route(RouteRequest) returns (RouteResponse);
+}
+
+message RouteRequest {
+  string task = 1;      // 任务类型，用于按"难度×成本×延迟"选模
+  bytes payload = 2;
+  string trace_id = 3;
+}
+
+message RouteResponse {
+  string chosen_model = 1;
+  bytes result = 2;
+  float cost = 3;
+}

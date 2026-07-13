@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package anp.orchestration.v1;
+
+option go_package = "zhiyuan-anp/platform/backend/internal/proto/orchestrationv1;orchestrationv1";
+
+// OrchestrationService —— Go 后端调用 Python agent-runtime 的契约（后续切 gRPC）。
+// M0 先以等价 HTTP/JSON 实现：见 platform/agent-runtime/agent_runtime/routes.py
+service OrchestrationService {
+  // 运行一次 Agent 编排（规划 → 工具 → 产出）
+  rpc Run(RunRequest) returns (RunResponse);
+  // 模型对话（M0 由 HTTP /v1/chat 提供等价能力）
+  rpc Chat(ChatRequest) returns (ChatResponse);
+}
+
+message RunRequest {
+  string project_space_id = 1;
+  string agent = 2;     // Agent 标识，如 requirement.clarifier
+  bytes input = 3;      // Agent 输入（JSON）
+  string trace_id = 4;
+}
+
+message RunResponse {
+  bytes output = 1;     // Agent 输出（JSON）
+  string status = 2;
+  string trace_id = 3;
+}
+
+message Message {
+  string role = 1;
+  string content = 2;
+}
+
+message ChatRequest {
+  repeated Message messages = 1;
+  string model = 2;
+  string trace_id = 3;
+}
+
+message ChatResponse {
+  string model = 1;
+  string content = 2;
+  map<string, int64> usage = 3;
+  string error = 4;
+}

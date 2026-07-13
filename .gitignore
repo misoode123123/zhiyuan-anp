@@ -1,0 +1,51 @@
+# ===== OS / IDE =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ===== Env / Secrets =====
+.env
+.env.local
+*.local
+secrets/
+*.pem
+*.key
+
+# ===== Node / pnpm =====
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+.turbo/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== Go =====
+/bin/
+/dist/
+*.exe
+*.exe~
+*.test
+*.out
+go.work.sum
+
+# ===== 本地数据 =====
+/tmp/
+*.db
+*.sqlite
+*.sqlite3
+platform/backend/tmp/
+platform/agent-runtime/.litellm*

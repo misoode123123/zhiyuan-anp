@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>客服操作界面</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    header .brand { font-size: 18px; font-weight: 700; }
+    header .user-area { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+    header .user-info { color: var(--muted); }
+    header .user-info b { color: var(--text); }
+    .btn {
+      padding: 8px 16px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-logout { background: #fee2e2; color: var(--danger); }
+    .btn-logout:hover { background: #fecaca; }
+    .btn-refresh { background: var(--primary); color: #fff; }
+    .btn-refresh:hover { background: var(--primary-hover); }
+    main { max-width: 1100px; margin: 24px auto; padding: 0 28px; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-header h2 { font-size: 16px; }
+    .panel-body { padding: 8px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 20px; text-align: left; font-size: 14px; }
+    thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .b-critical { background: #fef2f2; color: #b91c1c; }
+    .b-high { background: #fff7ed; color: #c2410c; }
+    .b-medium { background: #fefce8; color: #a16207; }
+    .b-low { background: #f0fdf4; color: #15803d; }
+    .empty { padding: 28px; text-align: center; color: var(--muted); font-size: 14px; }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1e293b; color: #fff; padding: 10px 20px; border-radius: 8px;
+      font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    .toast.show { opacity: 0.95; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">客服操作界面</div>
+    <div class="user-area">
+      <span class="user-info">欢迎，<b id="agentName">客服</b>（<span id="agentDept">客服部</span>）</span>
+      <button class="btn btn-refresh" onclick="loadData()">刷新</button>
+      <button class="btn btn-logout" onclick="logout()">退出登录</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="panel-header">
+        <h2>工单列表</h2>
+        <span style="font-size:13px;color:var(--muted)" id="ticketCount"></span>
+      </div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>
+              <th>工单号</th>
+              <th>标题</th>
+              <th>紧急程度</th>
+              <th>状态</th>
+              <th>客户</th>
+              <th>提交时间</th>
+            </tr>
+          </thead>
+          <tbody id="ticketBody"></tbody>
+        </table>
+        <div id="ticketEmpty" class="empty">暂无工单</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><h2>系统通知</h2></div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>
+              <th>工单号</th>
+              <th>紧急程度</th>
+              <th>客户</th>
+              <th>负责组长</th>
+              <th>通知内容</th>
+            </tr>
+          </thead>
+          <tbody id="notifBody"></tbody>
+        </table>
+        <div id="notifEmpty" class="empty">暂无通知</div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const TOKEN = sessionStorage.getItem("cs_token");
+    if (!TOKEN) {
+      // 验收标准 6: 未登录则回到登录界面
+      window.location.href = "/static/login.html";
+    }
+
+    const URGENCY_TEXT = { CRITICAL: "紧急", HIGH: "高", MEDIUM: "中", LOW: "低" };
+    const URGENCY_CLASS = { CRITICAL: "b-critical", HIGH: "b-high", MEDIUM: "b-medium", LOW: "b-low" };
+
+    function showToast(message) {
+      const t = document.getElementById("toast");
+      t.textContent = message;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 2000);
+    }
+
+    async function apiGet(path) {
+      const resp = await fetch(path, { headers: { Authorization: "Bearer " + TOKEN } });
+      if (resp.status === 401) {
+        sessionStorage.clear();
+        window.location.href = "/static/login.html";
+        return null;
+      }
+      if (!resp.ok) return null;
+      return resp.json();
+    }
+
+    function fmtTime(iso) {
+      if (!iso) return "-";
+      try { return new Date(iso).toLocaleString("zh-CN"); } catch (e) { return iso; }
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function loadProfile() {
+      const me = await apiGet("/auth/me");
+      if (!me) return;
+      document.getElementById("agentName").textContent = me.full_name;
+      document.getElementById("agentDept").textContent = me.department;
+    }
+
+    async function loadData() {
+      const [tickets, notifs] = await Promise.all([
+        apiGet("/tickets"),
+        apiGet("/notifications"),
+      ]);
+      renderTickets(tickets || []);
+      renderNotifs(notifs || []);
+      showToast("数据已刷新");
+    }
+
+    function renderTickets(items) {
+      const body = document.getElementById("ticketBody");
+      const empty = document.getElementById("ticketEmpty");
+      document.getElementById("ticketCount").textContent = "共 " + items.length + " 条";
+      if (!items.length) { empty.style.display = "block"; body.innerHTML = ""; return; }
+      empty.style.display = "none";
+      body.innerHTML = items.map((t) => {
+        const u = t.urgency_level;
+        const badge = u ? `<span class="badge ${URGENCY_CLASS[u] || ""}">${URGENCY_TEXT[u] || u}</span>` : "-";
+        return `<tr>
+          <td>${escapeHtml(t.id)}</td>
+          <td>${escapeHtml(t.title)}</td>
+          <td>${badge}</td>
+          <td>${escapeHtml(t.status || "-")}</td>
+          <td>${escapeHtml(t.customer ? t.customer.name : "-")}</td>
+          <td>${fmtTime(t.submitted_at)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderNotifs(items) {
+      const body = document.getElementById("notifBody");
+      const empty = document.getElementById("notifEmpty");
+      if (!items.length) { empty.style.display = "block"; body.innerHTML = ""; return; }
+      empty.style.display = "none";
+      body.innerHTML = items.map((n) => {
+        const u = n.urgency_level;
+        const badge = u ? `<span class="badge ${URGENCY_CLASS[u] || ""}">${URGENCY_TEXT[u] || u}</span>` : "-";
+        return `<tr>
+          <td>${escapeHtml(n.ticket_id)}</td>
+          <td>${badge}</td>
+          <td>${escapeHtml(n.customer_name)}</td>
+          <td>${escapeHtml(n.leader_name)}</td>
+          <td style="max-width:360px;white-space:pre-wrap">${escapeHtml(n.message)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function logout() {
+      sessionStorage.clear();
+      window.location.href = "/static/login.html";
+    }
+
+    loadProfile();
+    loadData();
+  </script>
+</body>
+</html>

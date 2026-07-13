@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>客服系统 · 登录</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --danger: #dc2626;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #cbd5e1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .login-card {
+      background: var(--card);
+      width: 100%;
+      max-width: 400px;
+      border-radius: 16px;
+      padding: 40px 32px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+    }
+    .login-card h1 {
+      font-size: 22px;
+      color: var(--text);
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .login-card .subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 15px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-group input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+    .form-group input::placeholder { color: #94a3b8; }
+    .btn-login {
+      width: 100%;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--primary);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 6px;
+    }
+    .btn-login:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error-msg {
+      background: #fef2f2;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 20px;
+      line-height: 1.6;
+    }
+    .hint code {
+      background: #f1f5f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>客服系统</h1>
+    <p class="subtitle">客服人员登录</p>
+
+    <!-- 验收标准 5: 登录失败时显示明确错误信息 -->
+    <div id="errorMsg" class="error-msg" role="alert"></div>
+
+    <form id="loginForm" autocomplete="on" novalidate>
+      <!-- 验收标准 1: 用户名输入框；验收标准 3: 提示信息 -->
+      <div class="form-group">
+        <label for="username">用户名</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          placeholder="请输入您的用户名"
+          autocomplete="username"
+          required
+        />
+      </div>
+
+      <!-- 验收标准 1: 密码输入框；验收标准 3: 提示信息 -->
+      <div class="form-group">
+        <label for="password">密码</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          placeholder="请输入您的密码"
+          autocomplete="current-password"
+          required
+        />
+      </div>
+
+      <!-- 验收标准 2: 清晰可见的登录按钮，允许提交登录请求 -->
+      <button type="submit" id="loginBtn" class="btn-login">登 录</button>
+    </form>
+
+    <p class="hint">
+      演示账号：<code>agent001</code> / <code>Agent@2024</code>
+    </p>
+  </div>
+
+  <script>
+    const form = document.getElementById("loginForm");
+    const errorMsg = document.getElementById("errorMsg");
+    const loginBtn = document.getElementById("loginBtn");
+
+    function showError(message) {
+      errorMsg.textContent = message;
+      errorMsg.classList.add("show");
+    }
+
+    function clearError() {
+      errorMsg.textContent = "";
+      errorMsg.classList.remove("show");
+    }
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      clearError();
+
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+
+      // 验收标准 3/5: 前端即时提示，避免空提交
+      if (!username || !password) {
+        showError("请输入用户名和密码");
+        return;
+      }
+
+      loginBtn.disabled = true;
+      loginBtn.textContent = "登录中...";
+
+      try {
+        const resp = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username, password: password }),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          // 验收标准 5: 展示后端返回的明确错误信息
+          const detail = (data && data.detail) ? data.detail : "登录失败，请稍后重试";
+          showError(detail);
+          return;
+        }
+
+        // 验收标准 6: 登录成功后跳转到客服操作界面
+        sessionStorage.setItem("cs_token", data.token);
+        sessionStorage.setItem("cs_agent", JSON.stringify(data.agent));
+        window.location.href = "/static/console.html";
+      } catch (err) {
+        showError("网络异常，请检查连接后重试");
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "登 录";
+      }
+    });
+
+    document.getElementById("username").addEventListener("input", clearError);
+    document.getElementById("password").addEventListener("input", clearError);
+  </script>
+</body>
+</html>
