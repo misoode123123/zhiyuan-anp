@@ -49,6 +49,9 @@ func main() {
 	if err := db.Migrate(context.Background(), database); err != nil {
 		logger.Fatal("migrate", zap.Error(err))
 	}
+	if err := db.SeedBootstrapMembers(context.Background(), database); err != nil {
+		logger.Fatal("seed bootstrap members", zap.Error(err))
+	}
 	logger.Info("db ready", zap.String("url", cfg.DatabaseURL))
 
 	// 业务模块：workspace（项目空间，多租户基础）
@@ -127,6 +130,8 @@ func main() {
 
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
+	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
+	v1.Use(auth.AutoRequire(authStore))
 	wsHandler.Register(v1)
 	devHandler.Register(v1)
 	reqHandler.Register(v1)

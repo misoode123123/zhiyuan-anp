@@ -180,6 +180,34 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 	return err
 }
 
+// SeedBootstrapMembers 确保「默认项目空间 + 一组演示成员」存在。
+// RBAC 强制接入后，所有写/危险操作需鉴权；此种子保证系统首次可用并支持多角色演示：
+//
+//	admin  —— 管理员，全权（默认登录用户）
+//	dev1   —— 研发，可派编码/审批，不可改配置
+//	biz1   —— 业务，可提需求，不可派编码/改配置
+//
+// 幂等：project_space 主键、membership (project_space_id,user_id) 唯一约束兜底重复。
+func SeedBootstrapMembers(ctx context.Context, db *sqlx.DB) error {
+	if _, err := db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO project_space (id, name, slug, status) VALUES ('ps_default', '默认空间', 'default', 'active')`); err != nil {
+		return err
+	}
+	demo := []struct{ user, role string }{
+		{"admin", "admin"},
+		{"dev1", "dev"},
+		{"biz1", "business"},
+	}
+	for _, m := range demo {
+		if _, err := db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO membership (id, project_space_id, user_id, role) VALUES (?, 'ps_default', ?, ?)`,
+			"mbr_"+uuid.NewString()[:20], m.user, m.role); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SeedDemoStandards 若 coding_standard 表为空，播种两条全局 demo 规范（呼应平台五约束）。
 func SeedDemoStandards(ctx context.Context, db *sqlx.DB) error {
 	var n int

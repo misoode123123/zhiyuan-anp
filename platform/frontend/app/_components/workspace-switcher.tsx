@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE_URL, apiGet } from "@/lib/api";
+import { API_BASE_URL, apiGet, currentProjectSpace, setCurrentProjectSpace } from "@/lib/api";
 
 type ProjectSpace = { id: string; name: string; slug: string };
 type Envelope<T> = { code: number; message: string; data: T };
@@ -20,8 +20,14 @@ export function WorkspaceSwitcher() {
       .catch(() => setError(true));
 
   useEffect(() => {
+    setCurrent(currentProjectSpace());
     load();
   }, []);
+
+  function pick(id: string) {
+    setCurrent(id);
+    setCurrentProjectSpace(id); // 持久化，供全局 fetch 拦截器带 X-Project-Space-Id
+  }
 
   async function create() {
     if (!newName.trim() || !newSlug.trim()) return;
@@ -77,7 +83,7 @@ export function WorkspaceSwitcher() {
 
       <select
         value={current}
-        onChange={(e) => setCurrent(e.target.value)}
+        onChange={(e) => pick(e.target.value)}
         className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
       >
         <option value="">— 选择 —</option>

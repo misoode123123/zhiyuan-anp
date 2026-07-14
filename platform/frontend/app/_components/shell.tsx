@@ -6,7 +6,9 @@ import { usePathname } from "next/navigation";
 import { NAV_MAP, TabProvider, useTabs } from "./tabs";
 import { Sidebar } from "./sidebar";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { UserSwitcher } from "./user-switcher";
 import { TabBar } from "./tab-bar";
+import { installAuthInterceptor } from "@/lib/api";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +21,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { addTab, refreshKey } = useTabs();
+
+  // 客户端挂载后安装全局 fetch 拦截（注入 X-User / X-Project-Space-Id 头）。
+  useEffect(() => {
+    installAuthInterceptor();
+  }, []);
 
   // 路由变化 → 确保对应 tab 已打开
   useEffect(() => {
@@ -33,6 +40,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           智源 <span className="text-blue-600">ANP</span>
         </div>
         <WorkspaceSwitcher />
+        <UserSwitcher />
         <Sidebar />
         <div className="mt-auto text-xs text-neutral-400">v0.1.0</div>
       </aside>
