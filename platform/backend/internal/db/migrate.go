@@ -206,6 +206,66 @@ CREATE TABLE IF NOT EXISTS ops_sop (
   UNIQUE (project_space_id, code)
 );
 CREATE INDEX IF NOT EXISTS idx_ops_sop_ps ON ops_sop(project_space_id, status);
+
+CREATE TABLE IF NOT EXISTS security_scan_result (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  scan_type        TEXT NOT NULL,            -- secret/sast/prompt/full
+  risk_level       TEXT NOT NULL DEFAULT 'clean', -- critical/high/medium/low/clean
+  total_findings   INTEGER NOT NULL DEFAULT 0,
+  critical_count   INTEGER NOT NULL DEFAULT 0,
+  high_count       INTEGER NOT NULL DEFAULT 0,
+  medium_count     INTEGER NOT NULL DEFAULT 0,
+  low_count        INTEGER NOT NULL DEFAULT 0,
+  content_preview  TEXT,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sec_scan_ps ON security_scan_result(project_space_id);
+
+CREATE TABLE IF NOT EXISTS security_finding (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  scan_result_id   TEXT NOT NULL REFERENCES security_scan_result(id),
+  category         TEXT NOT NULL,            -- secret/sast/prompt
+  rule_id          TEXT NOT NULL,            -- RULE-SEC-xxx
+  severity         TEXT NOT NULL,            -- critical/high/medium/low
+  title            TEXT NOT NULL,
+  description      TEXT,
+  line_number      INTEGER,
+  code_snippet     TEXT,
+  remediation      TEXT,
+  confidence       REAL NOT NULL DEFAULT 1.0,
+  status           TEXT NOT NULL DEFAULT 'open', -- open/suppressed/fixed
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  suppressed_at    DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_sec_finding_ps ON security_finding(project_space_id, status, severity);
+
+CREATE TABLE IF NOT EXISTS security_data_classification (
+  id                TEXT PRIMARY KEY,
+  project_space_id  TEXT NOT NULL,
+  field_name        TEXT NOT NULL,
+  table_ref         TEXT NOT NULL,
+  sensitivity_level TEXT NOT NULL DEFAULT 'internal', -- public/internal/confidential/restricted
+  data_type         TEXT NOT NULL DEFAULT 'pii',      -- pii/pci/phi/secret/ip/personal
+  masking_strategy  TEXT NOT NULL DEFAULT 'mask',     -- mask/hash/replace/suppress/synthetic
+  status            TEXT NOT NULL DEFAULT 'draft',    -- draft/confirmed
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sec_dc_ps ON security_data_classification(project_space_id);
+
+CREATE TABLE IF NOT EXISTS security_audit (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  actor_type       TEXT NOT NULL,   -- agent/human/system
+  actor_id         TEXT,
+  action           TEXT NOT NULL,   -- scan/suppress/gate/leak_blocked
+  resource_type    TEXT,
+  detail           TEXT,
+  policy_decision  TEXT,            -- allow/deny/mask
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sec_audit_ps ON security_audit(project_space_id);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。

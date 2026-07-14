@@ -25,6 +25,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
+	"zhiyuan-anp/platform/backend/internal/security"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/rule"
@@ -136,6 +137,10 @@ func main() {
 	}
 	opsHandler := ops.NewHandler(opsStore, cfg.AgentRuntimeURL, validator.New())
 
+	// 安全与合规中心（板块05）：Go 原生扫描（密钥/SAST/提示注入）+ 安全门 + 数据分级 + 审计
+	securityStore := security.NewStore(database)
+	securityHandler := security.NewHandler(securityStore)
+
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
@@ -154,6 +159,7 @@ func main() {
 	computeHandler.Register(v1)
 	authHandler.Register(v1)
 	opsHandler.Register(v1)
+	securityHandler.Register(v1)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

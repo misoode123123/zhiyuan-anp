@@ -48,6 +48,7 @@ export const NAV_MAP: Record<string, Tab> = {
   "/release": { path: "/release", label: "发布中心", icon: "🚀" },
   "/ops": { path: "/ops", label: "运维中心", icon: "🛠️" },
   "/governance": { path: "/governance", label: "规则治理", icon: "⭐" },
+  "/security": { path: "/security", label: "安全合规", icon: "🛡️" },
   "/compute": { path: "/compute", label: "算力资源", icon: "⚡" },
   "/admin/config": { path: "/admin/config", label: "系统配置", icon: "⚙️" },
   "/admin/users": { path: "/admin/users", label: "用户权限", icon: "🔐" },

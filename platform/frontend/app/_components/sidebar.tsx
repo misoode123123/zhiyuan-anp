@@ -8,6 +8,7 @@ const NAV = [
   { href: "/release", label: "发布中心", icon: "🚀" },
   { href: "/ops", label: "运维中心", icon: "🛠️" },
   { href: "/governance", label: "规则治理", icon: "⭐" },
+  { href: "/security", label: "安全合规", icon: "🛡️" },
   { href: "/docs", label: "方案文档", icon: "📄" },
   { href: "/compute", label: "算力资源", icon: "⚡" },
   { href: "/admin/config", label: "系统配置", icon: "⚙️" },
