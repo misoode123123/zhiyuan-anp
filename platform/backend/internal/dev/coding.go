@@ -16,19 +16,21 @@ import (
 	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/rule"
+	"zhiyuan-anp/platform/backend/internal/standard"
 )
 
 // CodingAgent 封装 opencode，支持同步 Run 与异步 Submit。
 type CodingAgent struct {
-	store   *config.Store
-	engine  *rule.Engine
-	tasks   *codetask.Store
-	changes *change.Store
+	store     *config.Store
+	engine    *rule.Engine
+	tasks     *codetask.Store
+	changes   *change.Store
+	standards *standard.Store // 编码规范（全局+项目级）注入
 }
 
 // NewCodingAgent 构造。
-func NewCodingAgent(store *config.Store, engine *rule.Engine, tasks *codetask.Store, changes *change.Store) *CodingAgent {
-	return &CodingAgent{store: store, engine: engine, tasks: tasks, changes: changes}
+func NewCodingAgent(store *config.Store, engine *rule.Engine, tasks *codetask.Store, changes *change.Store, standards *standard.Store) *CodingAgent {
+	return &CodingAgent{store: store, engine: engine, tasks: tasks, changes: changes, standards: standards}
 }
 
 // Submit 异步提交编码任务：规则校验 → 创建 running 任务 → goroutine 跑 opencode → 完成登记变更。
@@ -74,7 +76,13 @@ func (a *CodingAgent) run(taskID string) {
 	if err != nil {
 		return
 	}
-	out, err := a.opencodeRun(ctx, t.RepoDir, t.Prompt, t.Model)
+	prompt := t.Prompt
+	if a.standards != nil {
+		if list, err := a.standards.ListEffective(ctx, t.ProjectSpaceID); err == nil {
+			prompt = prompt + standard.BuildPromptSection(list)
+		}
+	}
+	out, err := a.opencodeRun(ctx, t.RepoDir, prompt, t.Model)
 	if err != nil {
 		_ = a.tasks.MarkFailed(ctx, taskID, out+"\n"+err.Error())
 		return

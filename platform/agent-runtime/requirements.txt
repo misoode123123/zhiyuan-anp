@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 zhipuai>=2.1
 python-dotenv>=1.0
+sniffio>=1.3

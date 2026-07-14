@@ -18,14 +18,17 @@ import (
 	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/compute"
 	"zhiyuan-anp/platform/backend/internal/config"
+	"zhiyuan-anp/platform/backend/internal/conversation"
 	"zhiyuan-anp/platform/backend/internal/db"
 	"zhiyuan-anp/platform/backend/internal/dev"
+	"zhiyuan-anp/platform/backend/internal/docs"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/rule"
 	"zhiyuan-anp/platform/backend/internal/server"
+	"zhiyuan-anp/platform/backend/internal/standard"
 	"zhiyuan-anp/platform/backend/internal/workspace"
 )
 
@@ -82,14 +85,24 @@ func main() {
 	// 异步编码任务（解决同步阻塞）
 	codeTaskStore := codetask.NewStore(database)
 
+	// 编码规范（全局+项目级，注入式生成指导）
+	standardStore := standard.NewStore(database)
+	if err := db.SeedDemoStandards(context.Background(), database); err != nil {
+		logger.Fatal("seed coding_standard", zap.Error(err))
+	}
+
 	// 业务模块：dev（研发工作台，异步编码：规则校验→后台 opencode→登记变更）
-	devAgent := dev.NewCodingAgent(store, ruleEngine, codeTaskStore, changeStore)
+	devAgent := dev.NewCodingAgent(store, ruleEngine, codeTaskStore, changeStore, standardStore)
 	devHandler := dev.NewHandler(devAgent)
 
 	// 业务模块：requirement（需求工作台，AI 生成规格入库）
 	reqRepo := requirement.NewRepository(database)
 	reqSvc := requirement.NewService(reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore)
 	reqHandler := requirement.NewHandler(reqSvc)
+
+	// 对话式需求梳理（AI agent 多轮对话梳理需求 → 生成 requirement）
+	convSvc := conversation.NewService(conversation.NewStore(database), reqRepo, cfg.AgentRuntimeURL)
+	convHandler := conversation.NewHandler(convSvc)
 
 	// 测试中心
 	qaStore := qa.NewStore(database)
@@ -106,6 +119,8 @@ func main() {
 	// 系统配置 + 规则治理 + 变更闸门 + 权限
 	configHandler := config.NewHandler(store)
 	ruleHandler := rule.NewHandler(ruleStore, validator.New())
+	standardHandler := standard.NewHandler(standardStore, validator.New())
+	docsHandler := docs.NewHandler(docs.NewService(store))
 	changeHandler := change.NewHandler(changeStore)
 	authStore := auth.NewStore(database)
 	authHandler := auth.NewHandler(authStore)
@@ -115,8 +130,11 @@ func main() {
 	wsHandler.Register(v1)
 	devHandler.Register(v1)
 	reqHandler.Register(v1)
+	convHandler.Register(v1)
 	configHandler.Register(v1)
 	ruleHandler.Register(v1)
+	standardHandler.Register(v1)
+	docsHandler.Register(v1)
 	changeHandler.Register(v1)
 	qaHandler.Register(v1)
 	releaseHandler.Register(v1)

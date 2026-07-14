@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
 
 type Envelope<T> = { code: number; data: T; message?: string };
@@ -117,6 +118,10 @@ export default function RequirementsPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">需求工作台</h1>
       <p className="mb-3 text-sm text-neutral-600">业务描述 + 截图（可选）→ AI 生成规格 → 派发编码 → 审批 → 发布</p>
+
+      <div className="mb-4">
+        <Link href="/requirements/chat" className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white">💬 对话式梳理需求（AI 引导，推荐）</Link>
+      </div>
 
       {/* 流程引导 */}
       <div className="mb-4 flex items-center gap-1 text-xs">
