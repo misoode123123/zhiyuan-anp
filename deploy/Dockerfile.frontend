@@ -1,0 +1,19 @@
+# 智源 ANP 前端（Next.js，npm 国内源）
+FROM node:20-alpine AS build
+WORKDIR /app
+RUN npm config set registry https://registry.npmmirror.com
+COPY platform/frontend/package.json platform/frontend/pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm config set registry https://registry.npmmirror.com && pnpm install --frozen-lockfile
+COPY platform/frontend/ .
+ENV NEXT_PUBLIC_API_BASE_URL=/api/v1
+ENV NEXT_PUBLIC_AGENT_RUNTIME_URL=/agent
+RUN pnpm build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+COPY --from=build /app/package.json ./
+COPY --from=build /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["npx", "next", "start"]

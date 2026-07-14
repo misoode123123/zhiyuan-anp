@@ -1,0 +1,17 @@
+# 智源 ANP 后端 + opencode 编码引擎
+FROM golang:1.25-alpine AS build
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOTOOLCHAIN=local
+WORKDIR /src
+COPY platform/backend/go.mod platform/backend/go.sum ./
+RUN go mod download
+COPY platform/backend/ ./
+RUN CGO_ENABLED=0 go build -o /server ./cmd/server
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates git bash curl libc6-compat nodejs npm
+RUN npm config set registry https://registry.npmmirror.com && npm i -g opencode-ai
+WORKDIR /app
+COPY --from=build /server /app/server
+EXPOSE 8080
+CMD ["/app/server"]

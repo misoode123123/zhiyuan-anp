@@ -35,7 +35,11 @@ export default function ConfigPage() {
     });
     const r = await res.json();
     setMsg(r.code === 0 ? `✓ ${key} 已保存（热生效，无需重启）` : `✗ ${r.message}`);
-    setDraft((d) => ({ ...d, [key]: undefined }));
+    setDraft((d) => {
+      const n = { ...d };
+      delete n[key];
+      return n;
+    });
     load();
   }
 

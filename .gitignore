@@ -12,6 +12,7 @@ Thumbs.db
 secrets/
 *.pem
 *.key
+platform/opencode.json
 
 # ===== Node / pnpm =====
 node_modules/
