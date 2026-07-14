@@ -22,6 +22,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/db"
 	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/docs"
+	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
@@ -128,6 +129,13 @@ func main() {
 	authStore := auth.NewStore(database)
 	authHandler := auth.NewHandler(authStore)
 
+	// 运维中心（板块07）：健康检查 + 看板聚合 + 告警 + SOP 预案
+	opsStore := ops.NewStore(database)
+	if err := db.SeedDemoSOPs(context.Background(), database); err != nil {
+		logger.Fatal("seed ops_sop", zap.Error(err))
+	}
+	opsHandler := ops.NewHandler(opsStore, cfg.AgentRuntimeURL, validator.New())
+
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
@@ -145,6 +153,7 @@ func main() {
 	releaseHandler.Register(v1)
 	computeHandler.Register(v1)
 	authHandler.Register(v1)
+	opsHandler.Register(v1)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

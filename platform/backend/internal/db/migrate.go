@@ -172,6 +172,40 @@ CREATE TABLE IF NOT EXISTS message (
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_message_conv ON message(conversation_id);
+
+CREATE TABLE IF NOT EXISTS ops_alert (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  source           TEXT NOT NULL DEFAULT 'custom',   -- patrol/prometheus/loki/k8s/custom
+  severity         TEXT NOT NULL DEFAULT 'warning',   -- critical/warning/info
+  status           TEXT NOT NULL DEFAULT 'firing',    -- firing/resolved/suppressed
+  fingerprint      TEXT NOT NULL,                     -- 去重指纹
+  title            TEXT NOT NULL,
+  description      TEXT,
+  fired_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at      DATETIME,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ops_alert_ps ON ops_alert(project_space_id, status);
+CREATE INDEX IF NOT EXISTS idx_ops_alert_fp ON ops_alert(fingerprint);
+
+CREATE TABLE IF NOT EXISTS ops_sop (
+  id                TEXT PRIMARY KEY,
+  project_space_id  TEXT NOT NULL,
+  code              TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  description       TEXT,
+  category          TEXT NOT NULL DEFAULT 'restart',  -- restart/scale/cache/traffic/data
+  risk_level        TEXT NOT NULL DEFAULT 'low',       -- low/medium/high
+  steps             TEXT,
+  rollback          TEXT,
+  requires_approval INTEGER NOT NULL DEFAULT 0,
+  status            TEXT NOT NULL DEFAULT 'draft',     -- draft/active/deprecated
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (project_space_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_ops_sop_ps ON ops_sop(project_space_id, status);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
@@ -202,6 +236,46 @@ func SeedBootstrapMembers(ctx context.Context, db *sqlx.DB) error {
 		if _, err := db.ExecContext(ctx,
 			`INSERT OR IGNORE INTO membership (id, project_space_id, user_id, role) VALUES (?, 'ps_default', ?, ?)`,
 			"mbr_"+uuid.NewString()[:20], m.user, m.role); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SeedDemoSOPs 若默认空间的 ops_sop 表为空，播种两条示例运维预案。
+func SeedDemoSOPs(ctx context.Context, db *sqlx.DB) error {
+	var n int
+	if err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM ops_sop WHERE project_space_id='ps_default'`); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	demos := []struct {
+		code, name, category, risk, steps, rollback string
+		approval                                    bool
+	}{
+		{
+			code: "RESTART-POD", name: "Pod 重启（CrashLoop）", category: "restart", risk: "low",
+			steps:    "1. 定位异常 Pod（kubectl get pods）；2. kubectl delete pod <name>；3. 观察新 Pod 启动日志；4. 确认服务恢复。",
+			rollback: "若重启后仍 CrashLoop，回滚至上一个稳定镜像版本。",
+		},
+		{
+			code: "SCALE-OUT", name: "服务扩容（流量突增）", category: "scale", risk: "medium",
+			steps:    "1. 确认负载指标（CPU/QPS）；2. kubectl scale deploy/<name> --replicas=N；3. 观察 HPA 与延迟；4. 确认扩容生效。",
+			rollback: "流量回落后 kubectl scale 回原副本数。",
+			approval: true,
+		},
+	}
+	for _, d := range demos {
+		apv := 0
+		if d.approval {
+			apv = 1
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO ops_sop (id, project_space_id, code, name, category, risk_level, steps, rollback, requires_approval, status)
+			 VALUES (?, 'ps_default', ?, ?, ?, ?, ?, ?, ?, 'active')`,
+			"sop_"+uuid.NewString()[:20], d.code, d.name, d.category, d.risk, d.steps, d.rollback, apv); err != nil {
 			return err
 		}
 	}
