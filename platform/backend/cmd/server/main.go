@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
+	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/compute"
@@ -25,13 +26,13 @@ import (
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
-	"zhiyuan-anp/platform/backend/internal/security"
-	zhlog "zhiyuan-anp/platform/backend/internal/log"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/rule"
+	"zhiyuan-anp/platform/backend/internal/security"
 	"zhiyuan-anp/platform/backend/internal/server"
 	"zhiyuan-anp/platform/backend/internal/standard"
 	"zhiyuan-anp/platform/backend/internal/workspace"
+	zhlog "zhiyuan-anp/platform/backend/internal/log"
 )
 
 func main() {
@@ -141,6 +142,14 @@ func main() {
 	securityStore := security.NewStore(database)
 	securityHandler := security.NewHandler(securityStore)
 
+	// AI 能力市场（板块09）：技能注册 + APIKey + 调用网关 + 用量 + 领域 Agent
+	capabilityStore := capability.NewStore(database)
+	if err := db.SeedDemoSkills(context.Background(), database); err != nil {
+		logger.Fatal("seed capability_skill", zap.Error(err))
+	}
+	capabilityGateway := capability.NewGateway(capabilityStore, cfg.AgentRuntimeURL, "")
+	capabilityHandler := capability.NewHandler(capabilityStore, capabilityGateway)
+
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
@@ -160,6 +169,7 @@ func main() {
 	authHandler.Register(v1)
 	opsHandler.Register(v1)
 	securityHandler.Register(v1)
+	capabilityHandler.Register(v1)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

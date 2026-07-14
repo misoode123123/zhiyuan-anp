@@ -266,6 +266,69 @@ CREATE TABLE IF NOT EXISTS security_audit (
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sec_audit_ps ON security_audit(project_space_id);
+
+CREATE TABLE IF NOT EXISTS capability_skill (
+  id                TEXT PRIMARY KEY,
+  project_space_id  TEXT NOT NULL,
+  code              TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  description       TEXT,
+  category          TEXT NOT NULL DEFAULT 'assistant',  -- requirement/doc_gen/data_qa/approval/report/code/assistant
+  prompt_template   TEXT,                                -- 提示模板（{input} 占位）
+  version           TEXT NOT NULL DEFAULT '0.1.0',
+  status            TEXT NOT NULL DEFAULT 'draft',      -- draft/pending_review/active/offline
+  risk_level        TEXT NOT NULL DEFAULT 'low',
+  is_public         INTEGER NOT NULL DEFAULT 0,
+  data_access_scope TEXT,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (project_space_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_cap_skill_status ON capability_skill(status);
+
+CREATE TABLE IF NOT EXISTS capability_api_key (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  app_name         TEXT NOT NULL,
+  key_hash         TEXT NOT NULL,
+  key_prefix       TEXT NOT NULL,
+  allowed_skills   TEXT,
+  scope            TEXT NOT NULL DEFAULT 'write',
+  status           TEXT NOT NULL DEFAULT 'active',
+  expires_at       DATETIME,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cap_key_hash ON capability_api_key(key_hash);
+CREATE INDEX IF NOT EXISTS idx_cap_key_ps ON capability_api_key(project_space_id, status);
+
+CREATE TABLE IF NOT EXISTS capability_usage (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  api_key_id       TEXT,
+  caller_app       TEXT,
+  skill_id         TEXT,
+  input_tokens     INTEGER NOT NULL DEFAULT 0,
+  output_tokens    INTEGER NOT NULL DEFAULT 0,
+  success          INTEGER NOT NULL DEFAULT 0,
+  latency_ms       INTEGER NOT NULL DEFAULT 0,
+  render_hint      TEXT,
+  trace_id         TEXT,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cap_usage_ps ON capability_usage(project_space_id, created_at);
+
+CREATE TABLE IF NOT EXISTS capability_domain_agent (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  code             TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  domain           TEXT NOT NULL DEFAULT 'custom',
+  composed_skills  TEXT,
+  status           TEXT NOT NULL DEFAULT 'draft',
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (project_space_id, code)
+);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
@@ -296,6 +359,32 @@ func SeedBootstrapMembers(ctx context.Context, db *sqlx.DB) error {
 		if _, err := db.ExecContext(ctx,
 			`INSERT OR IGNORE INTO membership (id, project_space_id, user_id, role) VALUES (?, 'ps_default', ?, ?)`,
 			"mbr_"+uuid.NewString()[:20], m.user, m.role); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SeedDemoSkills 若默认空间的 capability_skill 表为空，播种两条 active demo 技能。
+func SeedDemoSkills(ctx context.Context, db *sqlx.DB) error {
+	var n int
+	if err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM capability_skill WHERE project_space_id='ps_default'`); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	demos := []struct {
+		code, name, category, prompt string
+	}{
+		{"data-qa", "数据问答", "data_qa", "你是数据问答技能。根据用户输入的业务问题，结合上下文给出简洁准确的分析与数据结论。\n\n用户输入：{input}"},
+		{"doc-gen", "文档生成", "doc_gen", "你是文档生成技能。根据用户输入，生成结构清晰、专业规范的文档（Markdown）。\n\n主题/要求：{input}"},
+	}
+	for _, d := range demos {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO capability_skill (id, project_space_id, code, name, description, category, prompt_template, version, status, risk_level, is_public)
+			 VALUES (?, 'ps_default', ?, ?, ?, ?, ?, '1.0.0', 'active', 'low', 1)`,
+			"skl_"+uuid.NewString()[:20], d.code, d.name, d.name+" 技能", d.category, d.prompt); err != nil {
 			return err
 		}
 	}
