@@ -1,7 +1,7 @@
 # 智源 / ANP — 企业 AI 原生研发平台
 
 > AI 驱动 **需求→研发→测试→审批→发布** 全流程；业务全程对话参与；规则治理约束 AI；关键节点人工决策。
-> **MVP v0.1.0**：10 真功能 + 主线闭环 + 多标签页 + 异步编码 + 多模态。
+> **v0.2.0**：主线闭环 + 10 真功能 + **9 大板块全部落地（M1 切片）** + RBAC 权限强制 + 多标签页 + 异步编码 + 多模态。
 
 ## 主线闭环（已端到端打通）
 
@@ -53,14 +53,34 @@ bash scripts/dev.sh   # Go:8080 + Python:8001 + 前端:3000
 - [`docs/详细设计/`](docs/详细设计/) — 14 份（基座 2 + 横切核心 3 + 9 板块）
 - [`docs/部署指南.md`](docs/部署指南.md) — 环境与部署
 
+## 9 大板块完成度（v0.2.0）
+
+| 板块 | 状态 | M1 实现 |
+|---|---|---|
+| 01 需求工作台 | ✅ | 对话式梳理（SSE 流式 + 语音 ASR）+ 一次性生成规格 |
+| 02 研发工作台 | ✅ | opencode+GLM 异步编码 + 规则校验 + 编码规范注入 |
+| 03 测试与质量中心 | ✅ | AI 验收标准转测试用例 |
+| 04 规则治理中心 | ✅ | RaC 规则引擎（block 阻断）+ 编码规范（全局/项目级） |
+| 05 安全与合规中心 | ✅ **新** | Go 原生扫描（密钥/SAST/提示注入）+ 安全门 + 数据分级 + 审计 |
+| 06 发布中心 | ✅ | approved→发布→需求标记已交付 |
+| 07 运维中心 | ✅ **新** | 健康检查（DB/agent-runtime/opencode）+ 看板 + 告警 + SOP 预案 |
+| 08 算力与资源中心 | ✅ | Token 用量/成本看板 |
+| 09 AI 能力市场 | ✅ **新** | 技能注册/上架 + APIKey + 调用网关 + 用量 + 领域 Agent |
+
+> 横切：**RBAC 权限强制**（板块05 配套）—— 集中式中间件按路由强制 7 类写/危险操作鉴权，默认 admin/dev1/biz1 演示成员。
+
+> M1 切片说明：各板块按当前技术栈（Go+Gin+SQLite+HTTP→Python FastAPI）落地精简可用版本；愿景中的 gRPC/LangGraph/LiteLLM/外部工具（Semgrep 等）/Copilot SDK npm 包列为后续阶段（详见各板块设计文档「落地优先级」）。
+
 ## 项目结构
 
 ```
 智源-ANP平台/
 ├── platform/
-│   ├── backend/         # Go 后端（workspace/requirement/dev/rule/change/qa/release/compute/auth/config）
-│   ├── agent-runtime/   # Python AI 运行时（GLM 网关）
-│   ├── frontend/        # Next.js（工作台 + 多标签页）
+│   ├── backend/         # Go 后端（workspace/requirement/dev/rule/change/qa/release/
+│   │                    #   compute/auth/config/conversation/standard/
+│   │                    #   ops[07]/security[05]/capability[09]）
+│   ├── agent-runtime/   # Python AI 运行时（GLM 网关：/v1/chat 流式 + /v1/asr）
+│   ├── frontend/        # Next.js（工作台 + 多标签页 + 用户/空间切换器）
 │   ├── infra/           # proto / 迁移
 │   └── opencode.json    # 编码引擎配置（智谱 provider）
 ├── pilots/              # 试点项目（AI 编码产出）

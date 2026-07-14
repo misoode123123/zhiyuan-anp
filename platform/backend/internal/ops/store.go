@@ -91,7 +91,7 @@ func (s *Store) CountOpenAlerts(ctx context.Context, psID string) (int, error) {
 // ---------------- SOP 预案 ----------------
 
 func sopCols() string {
-	return `id, project_space_id, code, name, description, category, risk_level, steps, rollback, requires_approval, status, created_at, updated_at`
+	return `id, project_space_id, code, name, COALESCE(description,'') AS description, category, risk_level, COALESCE(steps,'') AS steps, COALESCE(rollback,'') AS rollback, requires_approval, status, created_at, updated_at`
 }
 
 // CreateSOP 新建 SOP。

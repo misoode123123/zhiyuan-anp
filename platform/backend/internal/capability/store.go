@@ -23,7 +23,7 @@ func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 // ---------------- 技能 ----------------
 
 func skillCols() string {
-	return `id, project_space_id, code, name, description, category, prompt_template, version, status, risk_level, is_public, data_access_scope, created_at, updated_at`
+	return `id, project_space_id, code, name, COALESCE(description,'') AS description, category, COALESCE(prompt_template,'') AS prompt_template, version, status, risk_level, is_public, COALESCE(data_access_scope,'') AS data_access_scope, created_at, updated_at`
 }
 
 // CreateSkill 新建技能（draft）。
