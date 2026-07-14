@@ -67,12 +67,22 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 }
 
 // CORS 放行前端来源（M0 简版；生产应由 API 网关统一）。
+// 规范要求 Access-Control-Allow-Origin 只能是单个 origin（或 *），不能逗号拼接；
+// 故改为「请求 Origin 命中白名单则原样回显该 Origin」，以同时支持 localhost / 127.0.0.1 / [::1] 等多个本地来源。
 func CORS(origins []string) gin.HandlerFunc {
-	allow := strings.Join(origins, ",")
+	allowed := make(map[string]struct{}, len(origins))
+	for _, o := range origins {
+		if o = strings.TrimSpace(o); o != "" {
+			allowed[o] = struct{}{}
+		}
+	}
 	return func(c *gin.Context) {
 		h := c.Writer.Header()
-		if allow != "" {
-			h.Set("Access-Control-Allow-Origin", allow)
+		if origin := c.GetHeader("Origin"); origin != "" {
+			if _, ok := allowed[origin]; ok {
+				h.Set("Access-Control-Allow-Origin", origin)
+				h.Add("Vary", "Origin")
+			}
 		}
 		h.Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS")
 		h.Set("Access-Control-Allow-Headers",

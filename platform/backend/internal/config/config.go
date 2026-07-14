@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -30,9 +31,9 @@ func Load() (*Config, error) {
 	v.SetDefault("env", "dev")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("backend_http_addr", ":8080")
-	v.SetDefault("backend_cors_origins", "http://localhost:3000")
+	v.SetDefault("backend_cors_origins", "http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000")
 	v.SetDefault("database_url", "sqlite://./tmp/anp.db")
-	v.SetDefault("agent_runtime_url", "http://localhost:8001")
+	v.SetDefault("agent_runtime_url", "http://127.0.0.1:8001") // 用 IPv4 直连，避免 Go 把 localhost 解析成 [::1] 而 agent-runtime 只监听 IPv4
 	v.SetDefault("opencode_config", "../opencode.json")                       // 相对 backend cwd → platform/opencode.json
 	v.SetDefault("opencode_git_bash_path", `C:\Program Files\Git\bin\bash.exe`)
 
@@ -47,7 +48,7 @@ func Load() (*Config, error) {
 		Env:                v.GetString("env"),
 		LogLevel:           v.GetString("log_level"),
 		HTTPAddr:           v.GetString("backend_http_addr"),
-		CORSOrigins:        v.GetStringSlice("backend_cors_origins"),
+		CORSOrigins:        splitCSV(v.GetString("backend_cors_origins")),
 		DatabaseURL:        v.GetString("database_url"),
 		AgentRuntimeURL:    v.GetString("agent_runtime_url"),
 		ZhipuAPIKey:        v.GetString("zhipuai_api_key"),
@@ -58,4 +59,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("backend_http_addr must not be empty")
 	}
 	return cfg, nil
+}
+
+// splitCSV 把逗号分隔字符串切成 trim 后的非空切片。
+// 用它而非 viper.GetStringSlice：后者对字符串值返回整串作为单元素（cast 不分割），多 origin 会失效。
+func splitCSV(s string) []string {
+	out := []string{}
+	for _, o := range strings.Split(s, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
