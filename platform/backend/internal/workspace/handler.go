@@ -25,6 +25,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces", h.CreateProjectSpace)
 	r.GET("/project-spaces", h.ListProjectSpaces)
 	r.GET("/project-spaces/:id", h.GetProjectSpace)
+	r.GET("/project-spaces/:id/overview", h.Overview)
 	r.POST("/project-spaces/:id/projects", h.CreateProject)
 	r.GET("/project-spaces/:id/projects", h.ListProjects)
 }
@@ -67,6 +68,16 @@ func (h *Handler) GetProjectSpace(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, ps)
+}
+
+// Overview 空间概览：元信息 + 成员/应用/需求/变更/发布计数。
+func (h *Handler) Overview(c *gin.Context) {
+	o, err := h.svc.Overview(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		httpx.Err(c, 500, 50001, err.Error())
+		return
+	}
+	httpx.OK(c, o)
 }
 
 func (h *Handler) CreateProject(c *gin.Context) {

@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS membership (
   UNIQUE (project_space_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS "user" (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  email      TEXT,
+  status     TEXT NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS requirement (
   id                  TEXT PRIMARY KEY,
   project_space_id    TEXT NOT NULL,
@@ -411,6 +419,30 @@ func addColumnIfMissing(ctx context.Context, db *sqlx.DB, table, col, def string
 	}
 	_, err = db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, col, def))
 	return err
+}
+
+// SeedUsers 若 user 表为空，播种演示用户（admin/dev1/biz1，与 SeedBootstrapMembers 的成员名对齐）。
+func SeedUsers(ctx context.Context, db *sqlx.DB) error {
+	var n int
+	if err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM "user"`); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	demos := []struct{ name, email string }{
+		{"admin", "admin@anp.local"},
+		{"dev1", "dev1@anp.local"},
+		{"biz1", "biz1@anp.local"},
+	}
+	for _, u := range demos {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO "user" (id, name, email, status) VALUES (?, ?, ?, 'active')`,
+			"usr_"+uuid.NewString()[:20], u.name, u.email); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SeedBootstrapMembers 确保「默认项目空间 + 一组演示成员」存在。

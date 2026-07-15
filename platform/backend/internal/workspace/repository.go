@@ -56,3 +56,35 @@ func (r *Repository) ListProjects(ctx context.Context, projectSpaceID string) ([
 		projectSpaceID)
 	return list, err
 }
+
+// Overview 空间概览：空间元信息 + 各资源计数（成员/应用/需求/变更/发布/已部署应用）。
+func (r *Repository) Overview(ctx context.Context, psID string) (*Overview, error) {
+	ps, err := r.GetProjectSpace(ctx, psID)
+	if err != nil {
+		return nil, err
+	}
+	o := &Overview{Space: *ps}
+	cnt := func(q string) int {
+		var n int
+		_ = r.db.GetContext(ctx, &n, q, psID)
+		return n
+	}
+	o.Members = cnt(`SELECT COUNT(*) FROM membership WHERE project_space_id=?`)
+	o.Apps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=?`)
+	o.DeployedApps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=? AND status='running'`)
+	o.Requirements = cnt(`SELECT COUNT(*) FROM requirement WHERE project_space_id=?`)
+	o.Changes = cnt(`SELECT COUNT(*) FROM change_request WHERE project_space_id=?`)
+	o.Releases = cnt(`SELECT COUNT(*) FROM release_record WHERE project_space_id=?`)
+	return o, nil
+}
+
+// Overview 空间概览。
+type Overview struct {
+	Space        ProjectSpace `json:"space"`
+	Members      int          `json:"members"`
+	Apps         int          `json:"apps"`
+	DeployedApps int          `json:"deployed_apps"`
+	Requirements int          `json:"requirements"`
+	Changes      int          `json:"changes"`
+	Releases     int          `json:"releases"`
+}

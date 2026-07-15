@@ -49,6 +49,11 @@ func (s *Service) ListProjectSpaces(ctx context.Context) ([]ProjectSpace, error)
 	return s.repo.ListProjectSpaces(ctx)
 }
 
+// Overview 空间概览（成员/应用/需求/变更/发布计数）。
+func (s *Service) Overview(ctx context.Context, psID string) (*Overview, error) {
+	return s.repo.Overview(ctx, psID)
+}
+
 // CreateProject 强制绑定路径中的 projectSpaceID（多租户隔离：不允许跨空间写入）。
 func (s *Service) CreateProject(ctx context.Context, projectSpaceID string, in CreateProjectInput) (*Project, error) {
 	p := &Project{

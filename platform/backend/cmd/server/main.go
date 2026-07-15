@@ -57,6 +57,9 @@ func main() {
 	if err := db.SeedBootstrapMembers(context.Background(), database); err != nil {
 		logger.Fatal("seed bootstrap members", zap.Error(err))
 	}
+	if err := db.SeedUsers(context.Background(), database); err != nil {
+		logger.Fatal("seed users", zap.Error(err))
+	}
 	logger.Info("db ready", zap.String("url", cfg.DatabaseURL))
 
 	// 业务模块：workspace（项目空间，多租户基础）
