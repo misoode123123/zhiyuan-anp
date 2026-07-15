@@ -51,7 +51,9 @@ func detectType(repoDir string) string {
 	case has("index.html"):
 		return "static"
 	default:
-		return "go" // 默认按 Go（平台主语言）
+		// 空仓库/无识别特征时兜底 static（nginx）：可空构建成功，避免误判 go 导致
+		// "cannot find main module" 构建失败。真正的 go 服务会有 go.mod/main.go 被准确识别。
+		return "static"
 	}
 }
 
@@ -101,10 +103,13 @@ RUN pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ 2
 EXPOSE %d
 CMD ["python", "app.py"]`, port)
 	case "static":
+		// nginx 默认监听 80，EXPOSE 不会改变其监听口；必须覆盖 default.conf 让 nginx
+		// 监听指定端口，否则 docker run -p host:port 时容器内无人监听 port → 连不上。
 		body = fmt.Sprintf(`FROM nginx:alpine
 COPY . /usr/share/nginx/html
+RUN echo "server { listen %d; root /usr/share/nginx/html; index index.html; }" > /etc/nginx/conf.d/default.conf
 EXPOSE %d
-CMD ["nginx", "-g", "daemon off;"]`, port)
+CMD ["nginx", "-g", "daemon off;"]`, port, port)
 	default:
 		body = fmt.Sprintf("FROM busybox\nEXPOSE %d\n", port)
 	}

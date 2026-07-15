@@ -50,3 +50,6 @@ go.work.sum
 *.sqlite3
 platform/backend/tmp/
 platform/agent-runtime/.litellm*
+
+# 临时产物
+.tmp/
