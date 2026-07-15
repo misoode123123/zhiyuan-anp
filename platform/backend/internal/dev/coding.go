@@ -87,6 +87,8 @@ func (a *CodingAgent) run(taskID string) {
 		_ = a.tasks.MarkFailed(ctx, taskID, out+"\n"+err.Error())
 		return
 	}
+	// 编码产出落定为仓库版本（应用托管仓库由此有 commit 历史 = 版本）
+	a.gitCommit(ctx, t.RepoDir, "ANP编码: "+t.SourceID)
 	_ = a.tasks.MarkCompleted(ctx, taskID, out)
 	if a.changes != nil {
 		chg := &change.ChangeRequest{
@@ -97,6 +99,20 @@ func (a *CodingAgent) run(taskID string) {
 			_ = a.tasks.SetChangeID(ctx, taskID, chg.ID)
 		}
 	}
+}
+
+// gitCommit 把编码产出提交到仓库（best-effort：仓库未 git init 或无变更则忽略）。
+func (a *CodingAgent) gitCommit(ctx context.Context, repoDir, msg string) {
+	if repoDir == "" {
+		return
+	}
+	run := func(args ...string) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		_ = cmd.Run()
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", msg)
 }
 
 // opencodeRun 同步执行 opencode（任务内部使用，配置从 system_config 读）。

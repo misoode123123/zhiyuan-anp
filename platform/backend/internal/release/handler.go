@@ -75,22 +75,34 @@ func (h *Handler) Create(c *gin.Context) {
 			}
 		}
 	}
-	// 可选：自动构建部署产出应用，并把来源需求归属到该应用（应用一等公民）
+	// 可选：自动构建部署产出应用。
+	// 应用一等公民：优先按来源需求已归属的应用部署（无需手填 deploy_name）；
+	// 兼容未归属应用时按名称/repo 部署并回填归属。
 	deployed := ""
-	if in.Deploy && h.appDeploy != nil && chg != nil && chg.RepoDir != "" {
-		name := in.DeployName
-		if name == "" {
-			name = filepath.Base(chg.RepoDir)
+	if in.Deploy && h.appDeploy != nil && chg != nil {
+		appID := ""
+		if chg.SourceID != "" {
+			if req, e := h.reqRepo.Get(c.Request.Context(), chg.SourceID); e == nil && req != nil {
+				appID = req.ApplicationID
+			}
 		}
-		port := in.DeployPort
-		if port == 0 {
-			port = 8080
-		}
-		app, derr := h.appDeploy.DeployForRelease(context.Background(), psID, name, chg.RepoDir, port)
-		deployed = name
-		// DeployForRelease 已返回应用 id（构建在其内部异步）；回填需求→应用归属
-		if derr == nil && app != nil && app.ID != "" && chg.SourceID != "" {
-			_ = h.reqRepo.SetApplication(context.Background(), chg.SourceID, app.ID)
+		if appID != "" {
+			if app, e := h.appDeploy.DeployByAppID(context.Background(), appID); e == nil && app != nil {
+				deployed = app.Name
+			}
+		} else if chg.RepoDir != "" {
+			name := in.DeployName
+			if name == "" {
+				name = filepath.Base(chg.RepoDir)
+			}
+			port := in.DeployPort
+			if port == 0 {
+				port = 8080
+			}
+			if app, e := h.appDeploy.DeployForRelease(context.Background(), psID, name, chg.RepoDir, port); e == nil && app != nil && chg.SourceID != "" {
+				_ = h.reqRepo.SetApplication(context.Background(), chg.SourceID, app.ID)
+				deployed = app.Name
+			}
 		}
 	}
 	httpx.Created(c, gin.H{

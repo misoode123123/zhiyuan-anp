@@ -30,7 +30,7 @@ export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
   const [apps, setApps] = useState<App[]>([]);
-  const [form, setForm] = useState({ name: "", repo_dir: "/data/repos/myapp", internal_port: 8080 });
+  const [form, setForm] = useState({ name: "", internal_port: 8080 });
   const [logsFor, setLogsFor] = useState<string>("");
   const [logs, setLogs] = useState("");
   const [reqsFor, setReqsFor] = useState<string>("");
@@ -60,14 +60,14 @@ export default function ApplicationsPage() {
   }, [psID]);
 
   async function register() {
-    if (!form.name.trim() || !form.repo_dir.trim()) return;
+    if (!form.name.trim()) return;
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
     const r = await res.json();
     if (r.code !== 0) { alert(r.message); return; }
-    setForm({ name: "", repo_dir: form.repo_dir, internal_port: form.internal_port });
+    setForm({ name: "", internal_port: form.internal_port });
     load(psID);
   }
   async function act(id: string, action: "deploy" | "stop" | "start") {
@@ -121,15 +121,12 @@ export default function ApplicationsPage() {
           <label className="block text-xs text-neutral-500">应用名</label>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如 hello-go" className="rounded border border-neutral-300 px-2 py-1" />
         </div>
-        <div className="min-w-[260px] flex-1">
-          <label className="block text-xs text-neutral-500">源码路径 repo_dir（含 Dockerfile）</label>
-          <input value={form.repo_dir} onChange={(e) => setForm({ ...form, repo_dir: e.target.value })} className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-xs" />
-        </div>
         <div>
-          <label className="block text-xs text-neutral-500">容器内端口</label>
+          <label className="block text-xs text-neutral-500">容器内端口（可选）</label>
           <input type="number" value={form.internal_port} onChange={(e) => setForm({ ...form, internal_port: Number(e.target.value) })} className="w-24 rounded border border-neutral-300 px-2 py-1" />
         </div>
-        <button onClick={register} className="rounded bg-blue-600 px-3 py-1.5 text-white">注册</button>
+        <button onClick={register} className="rounded bg-blue-600 px-3 py-1.5 text-white">创建应用</button>
+        <span className="text-xs text-neutral-400">仓库自动托管到 /data/repos/&lt;应用名&gt;（git），opencode 编码即提交到此</span>
       </div>
 
       {/* 应用列表 */}

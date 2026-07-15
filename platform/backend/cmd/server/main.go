@@ -103,9 +103,12 @@ func main() {
 	devAgent := dev.NewCodingAgent(store, ruleEngine, codeTaskStore, changeStore, standardStore)
 	devHandler := dev.NewHandler(devAgent)
 
+	// 应用部署引擎 Store（提前构造，供需求派发按应用解析仓库路径）
+	appDeployStore := appdeploy.NewStore(database)
+
 	// 业务模块：requirement（需求工作台，AI 生成规格入库）
 	reqRepo := requirement.NewRepository(database)
-	reqSvc := requirement.NewService(reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore)
+	reqSvc := requirement.NewService(reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore)
 	reqHandler := requirement.NewHandler(reqSvc)
 
 	// 对话式需求梳理（AI agent 多轮对话梳理需求 → 生成 requirement）
@@ -117,8 +120,7 @@ func main() {
 	qaSvc := qa.NewService(qaStore, cfg.AgentRuntimeURL)
 	qaHandler := qa.NewHandler(qaSvc, reqRepo)
 
-	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL
-	appDeployStore := appdeploy.NewStore(database)
+	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL（appDeployStore 已提前构造）
 	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))
 
 	// 发布中心（发布后可自动触发应用部署）

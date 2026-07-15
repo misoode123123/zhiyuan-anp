@@ -16,17 +16,24 @@ import (
 	"zhiyuan-anp/platform/backend/internal/dev"
 )
 
+// AppResolver 按应用解析其托管仓库路径+端口（由 appdeploy.Store 实现）。
+// 派发编码时，若需求已归属应用，自动用该应用仓库，无需手填 repo_dir。
+type AppResolver interface {
+	ResolveApp(ctx context.Context, appID string) (repoDir string, port int, err error)
+}
+
 // Service 需求业务逻辑：调 AI 生成规格并入库（支持多模态：文字+图片→GLM-4V）。
 type Service struct {
 	repo            *Repository
 	agentRuntimeURL string
 	coder           *dev.CodingAgent
 	compute         *compute.Store
+	apps            AppResolver
 }
 
-// NewService 构造 Service。
-func NewService(repo *Repository, agentRuntimeURL string, coder *dev.CodingAgent, computeStore *compute.Store) *Service {
-	return &Service{repo: repo, agentRuntimeURL: agentRuntimeURL, coder: coder, compute: computeStore}
+// NewService 构造 Service。apps 可为 nil（不启用按应用派发）。
+func NewService(repo *Repository, agentRuntimeURL string, coder *dev.CodingAgent, computeStore *compute.Store, apps AppResolver) *Service {
+	return &Service{repo: repo, agentRuntimeURL: agentRuntimeURL, coder: coder, compute: computeStore, apps: apps}
 }
 
 // CreateInput 创建需求入参。
@@ -98,6 +105,7 @@ func (s *Service) ListByApp(ctx context.Context, appID string) ([]Requirement, e
 }
 
 // Dispatch 把需求规格异步派发给编码引擎，返回异步任务。
+// repo_dir 优先级：显式传入 > 需求归属应用的托管仓库（应用一等公民：代码归属确定）。
 func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, model string) (*codetask.Task, error) {
 	if s.coder == nil {
 		return nil, fmt.Errorf("编码引擎未配置")
@@ -108,6 +116,15 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 	}
 	if req == nil || req.ID == "" {
 		return nil, fmt.Errorf("需求 %s 不存在", reqID)
+	}
+	// 未显式给 repo_dir 且需求归属应用 → 用该应用托管仓库
+	if repoDir == "" && req.ApplicationID != "" && s.apps != nil {
+		if rd, _, e := s.apps.ResolveApp(ctx, req.ApplicationID); e == nil {
+			repoDir = rd
+		}
+	}
+	if repoDir == "" {
+		return nil, fmt.Errorf("未指定 repo_dir，且需求未归属应用（无法确定代码位置）")
 	}
 	return s.coder.Submit(ctx, projectSpaceID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
 }

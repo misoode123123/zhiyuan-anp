@@ -67,7 +67,7 @@ func (h *Handler) ListByApp(c *gin.Context) {
 }
 
 type dispatchRequest struct {
-	RepoDir string `json:"repo_dir" binding:"required"`
+	RepoDir string `json:"repo_dir,omitempty"` // 可选；空=用需求归属应用的托管仓库
 	Model   string `json:"model,omitempty"`
 }
 

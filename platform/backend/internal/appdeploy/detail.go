@@ -5,13 +5,14 @@ import (
 	"time"
 )
 
-// AppDetail 应用详情聚合：应用本体 + 其归属的需求/变更/发布（应用一等公民视图）。
+// AppDetail 应用详情聚合：应用本体 + 其归属的需求/变更/发布 + 仓库版本历史（应用一等公民视图）。
 // 变更/发布通过 requirement.application_id 派生关联（source_id→requirement→app），无需冗余列。
 type AppDetail struct {
 	Application  Application     `json:"application"`
 	Requirements []AppReqItem    `json:"requirements"`
 	Changes      []AppChangeItem `json:"changes"`
 	Releases     []AppRelItem    `json:"releases"`
+	Commits      []CommitInfo    `json:"commits"` // 托管 git 仓库的版本历史（= 应用代码版本）
 }
 
 // AppReqItem 需求条目（详情用精简字段）。
@@ -68,5 +69,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 		 ORDER BY created_at DESC`, appID); err != nil {
 		return nil, err
 	}
+	// 托管仓库版本历史（git log = 应用代码版本）
+	d.Commits, _ = Log(ctx, a.RepoDir, 10)
 	return d, nil
 }

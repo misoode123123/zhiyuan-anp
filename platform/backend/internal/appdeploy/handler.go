@@ -53,18 +53,30 @@ func (h *Handler) Detail(c *gin.Context) {
 
 type createBody struct {
 	Name         string `json:"name" binding:"required"`
-	RepoDir      string `json:"repo_dir" binding:"required"` // docker 守护进程可见的源码路径（含 Dockerfile）
-	InternalPort int    `json:"internal_port" binding:"required"`
+	RepoDir      string `json:"repo_dir"`      // 可选；空=平台托管 git 仓库 /data/repos/<name>
+	InternalPort int    `json:"internal_port"` // 可选；buildpack 检测或默认 8080
 }
 
-// Create 注册一个产出应用。
+// Create 注册一个产出应用，并初始化其托管 git 仓库（代码归属确立：/data/repos/<name>）。
 func (h *Handler) Create(c *gin.Context) {
 	var in createBody
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
 	}
-	a := &Application{ProjectSpaceID: c.Param("id"), Name: in.Name, RepoDir: in.RepoDir, InternalPort: in.InternalPort}
+	repoDir := in.RepoDir
+	if repoDir == "" {
+		repoDir = ManagedRepoDir(in.Name) // 平台托管
+	}
+	if err := EnsureRepo(c.Request.Context(), repoDir); err != nil {
+		httpx.Err(c, 500, 50020, "初始化应用仓库失败: "+err.Error())
+		return
+	}
+	port := in.InternalPort
+	if port == 0 {
+		port = 8080
+	}
+	a := &Application{ProjectSpaceID: c.Param("id"), Name: in.Name, RepoDir: repoDir, InternalPort: port}
 	if err := h.store.Create(c.Request.Context(), a); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
@@ -198,6 +210,23 @@ func (h *Handler) DeployForRelease(ctx context.Context, psID, name, repoDir stri
 	go h.buildAndDeploy(psID, a.ID)
 	return a, nil
 }
+
+// DeployByAppID 按应用 id 部署已存在的应用（应用在提需求时已创建，发布时直接部署它）。
+func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application, error) {
+	a, err := h.store.GetByAppID(ctx, appID)
+	if err != nil || a == nil || a.ID == "" {
+		return nil, errAppNotFound
+	}
+	_ = h.store.SetStatus(ctx, a.ProjectSpaceID, appID, "building", "", "")
+	go h.buildAndDeploy(a.ProjectSpaceID, appID)
+	return a, nil
+}
+
+var errAppNotFound = errString("应用不存在")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
 
 func tail(s string, n int) string {
 	s = strings.TrimSpace(s)

@@ -6,6 +6,7 @@ import { API_BASE_URL } from "@/lib/api";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type ProjectSpace = { id: string; name: string; slug: string };
+type App = { id: string; name: string; repo_dir: string };
 type Requirement = {
   id: string;
   title: string;
@@ -13,6 +14,7 @@ type Requirement = {
   user_story: string;
   acceptance_criteria: string;
   status: string;
+  application_id?: string;
 };
 
 const STEPS = ["需求", "编码", "审批", "发布"];
@@ -20,6 +22,8 @@ const STEPS = ["需求", "编码", "审批", "发布"];
 export default function RequirementsPage() {
   const [spaces, setSpaces] = useState<ProjectSpace[]>([]);
   const [psID, setPsID] = useState("");
+  const [apps, setApps] = useState<App[]>([]);
+  const [selApp, setSelApp] = useState(""); // 创建需求时指定的归属应用
   const [desc, setDesc] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [last, setLast] = useState<Requirement | null>(null);
@@ -27,7 +31,7 @@ export default function RequirementsPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
-  const [repoDir, setRepoDir] = useState("D:/Projects/智源-ANP平台/pilots/oc-pilot");
+  const [repoDir, setRepoDir] = useState(""); // 仅当需求未归属应用时手填
   const [dispatching, setDispatching] = useState("");
 
   useEffect(() => {
@@ -35,7 +39,8 @@ export default function RequirementsPage() {
       .then((r) => r.json())
       .then((r: Envelope<ProjectSpace[]>) => {
         setSpaces(r.data ?? []);
-        if (r.data?.[0]) setPsID(r.data[0].id);
+        const def = (r.data ?? []).find((s) => s.id === "ps_default") ?? (r.data ?? [])[0];
+        if (def) setPsID(def.id);
       });
   }, []);
 
@@ -44,6 +49,10 @@ export default function RequirementsPage() {
     fetch(`${API_BASE_URL}/project-spaces/${id}/requirements`)
       .then((r) => r.json())
       .then((r: Envelope<Requirement[]>) => setList(r.data ?? []))
+      .catch(() => {});
+    fetch(`${API_BASE_URL}/project-spaces/${id}/apps`)
+      .then((r) => r.json())
+      .then((r: Envelope<App[]>) => setApps(r.data ?? []))
       .catch(() => {});
   };
   useEffect(() => {
@@ -67,7 +76,7 @@ export default function RequirementsPage() {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: desc, images }),
+        body: JSON.stringify({ description: desc, images, application_id: selApp || undefined }),
       });
       const r = await res.json();
       if (r.data) {
@@ -75,7 +84,7 @@ export default function RequirementsPage() {
         setDesc("");
         setImages([]);
         loadList(psID);
-        setMsg("✅ 需求已生成。下一步：点「⚡ 派发编码」让 AI 实现");
+        setMsg(selApp ? `✅ 需求已生成并归属应用「${apps.find((a) => a.id === selApp)?.name}」` : "✅ 需求已生成");
       } else setErr(r.message ?? "生成失败");
     } catch (e) {
       setErr(String(e));
@@ -85,18 +94,23 @@ export default function RequirementsPage() {
   }
 
   async function dispatch(rid: string) {
-    if (!psID || !repoDir || dispatching) return;
+    if (!psID || dispatching) return;
+    const req = list.find((x) => x.id === rid) ?? (last?.id === rid ? last : null);
+    const appBound = !!req?.application_id;
+    if (!appBound && !repoDir.trim()) { setMsg("✗ 该需求未归属应用，需填写目标仓库路径（或先在「应用部署」建应用并在创建需求时选定）"); return; }
     setDispatching(rid);
     setMsg("");
     try {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/dispatch-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo_dir: repoDir }),
+        body: JSON.stringify(appBound ? {} : { repo_dir: repoDir }),
       });
       const r = await res.json();
       if (r.data?.task_id) {
-        setMsg(`⚡ 已派发编码（任务 ${r.data.task_id}）。AI 后台实现中 → 完成后请去「🚪 变更审批」查看产出并审批`);
+        setMsg(appBound
+          ? `⚡ 已派发编码到所属应用仓库（任务 ${r.data.task_id}）。AI 后台实现并提交 → 去「🚪 变更审批」审批`
+          : `⚡ 已派发编码（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`);
       } else {
         setMsg(`✗ ${r.message ?? "派发失败"}`);
       }
@@ -134,11 +148,21 @@ export default function RequirementsPage() {
         <span className="ml-2 text-neutral-400">您在此</span>
       </div>
 
-      <div className="mb-3">
-        <label className="text-xs text-neutral-500">项目空间</label>
-        <select value={psID} onChange={(e) => setPsID(e.target.value)} className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm">
-          {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.slug})</option>))}
-        </select>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div>
+          <label className="text-xs text-neutral-500">项目空间</label>
+          <select value={psID} onChange={(e) => setPsID(e.target.value)} className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm">
+            {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.slug})</option>))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500">归属应用（需求即为其开发）</label>
+          <select value={selApp} onChange={(e) => setSelApp(e.target.value)} className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm">
+            <option value="">— 不指定（手动填仓库） —</option>
+            {apps.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+          </select>
+          {apps.length === 0 && <span className="ml-2 text-xs text-neutral-400">先去「应用部署」创建应用</span>}
+        </div>
       </div>
 
       <label className="text-xs text-neutral-500">业务描述</label>
@@ -166,7 +190,11 @@ export default function RequirementsPage() {
           <div className="mt-2 text-sm"><b>验收标准：</b><ul className="ml-5 list-disc">{ac.map((c, i) => (<li key={i}>{c}</li>))}</ul></div>
           <div className="mt-3 border-t border-blue-200 pt-3">
             <div className="mb-1 text-xs text-neutral-500">下一步：派发给 AI 编码</div>
-            <input value={repoDir} onChange={(e) => setRepoDir(e.target.value)} placeholder="目标仓库路径" className="mb-2 w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
+            {last.application_id ? (
+              <div className="mb-2 text-xs text-emerald-700">📦 将编码到所属应用仓库「{apps.find((a) => a.id === last.application_id)?.name ?? last.application_id}」（自动，无需手填路径）</div>
+            ) : (
+              <input value={repoDir} onChange={(e) => setRepoDir(e.target.value)} placeholder="目标仓库路径（未归属应用时需手填）" className="mb-2 w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
+            )}
             <button onClick={() => dispatch(last.id)} disabled={!!dispatching} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
               {dispatching === last.id ? "派发中…" : "⚡ ② 派发编码"}
             </button>
@@ -185,6 +213,7 @@ export default function RequirementsPage() {
                   <span className={`rounded px-1.5 py-0.5 text-xs ${r.status === "delivered" ? "bg-emerald-100 text-emerald-700" : r.status === "specified" ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600"}`}>
                     {r.status === "delivered" ? "✅ 已交付" : r.status === "specified" ? "已生成" : r.status}
                   </span>
+                  {r.application_id && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">📦 {apps.find((a) => a.id === r.application_id)?.name ?? "应用"}</span>}
                 </div>
                 <button onClick={() => dispatch(r.id)} disabled={!!dispatching} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50">
                   {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}

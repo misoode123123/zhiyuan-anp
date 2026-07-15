@@ -55,6 +55,22 @@ func (s *Store) GetByName(ctx context.Context, psID, name string) (*Application,
 	return &a, err
 }
 
+// GetByAppID 按应用 id 取（跨空间，id 全局唯一）。
+func (s *Store) GetByAppID(ctx context.Context, appID string) (*Application, error) {
+	var a Application
+	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE id=?`, appID)
+	return &a, err
+}
+
+// ResolveApp 供需求派发/发布按应用解析其托管仓库路径 + 内部端口。
+func (s *Store) ResolveApp(ctx context.Context, appID string) (repoDir string, port int, err error) {
+	a, err := s.GetByAppID(ctx, appID)
+	if err != nil || a == nil || a.ID == "" {
+		return "", 0, fmt.Errorf("应用 %s 不存在", appID)
+	}
+	return a.RepoDir, a.InternalPort, nil
+}
+
 // UpdateDeploy 更新部署态字段（镜像/容器/端口/URL/版本/状态）。
 func (s *Store) UpdateDeploy(ctx context.Context, a *Application) error {
 	_, err := s.db.ExecContext(ctx,
