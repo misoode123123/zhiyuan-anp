@@ -11,6 +11,12 @@ type App = {
   version: number; status: string; last_error: string; build_log: string;
 };
 type Req = { id: string; title: string; status: string; application_id: string };
+type Detail = {
+  application: App;
+  requirements: Req[];
+  changes: { id: string; status: string; kind: string; source_id: string; created_at: string }[];
+  releases: { id: string; version: string; status: string; change_id: string; created_at: string }[];
+};
 
 const STATUS_COLOR: Record<string, string> = {
   running: "bg-emerald-100 text-emerald-700",
@@ -29,6 +35,8 @@ export default function ApplicationsPage() {
   const [logs, setLogs] = useState("");
   const [reqsFor, setReqsFor] = useState<string>("");
   const [appReqs, setAppReqs] = useState<Req[]>([]);
+  const [detailFor, setDetailFor] = useState<string>("");
+  const [detail, setDetail] = useState<Detail | null>(null);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -86,6 +94,13 @@ export default function ApplicationsPage() {
     const r = await res.json();
     setAppReqs(r.data ?? []);
   }
+  async function showDetail(id: string) {
+    if (detailFor === id) { setDetailFor(""); setDetail(null); return; }
+    setDetailFor(id);
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/detail`);
+    const r = await res.json();
+    setDetail(r.data ?? null);
+  }
 
   return (
     <div>
@@ -130,6 +145,7 @@ export default function ApplicationsPage() {
                 {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
                 {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
                 <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>
+                <button onClick={() => showDetail(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">详情</button>
                 <button onClick={() => showLogs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">日志</button>
                 <button onClick={() => remove(a.id)} className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">删除</button>
               </div>
@@ -157,6 +173,25 @@ export default function ApplicationsPage() {
                   </div>
                 ))}
                 {appReqs.length === 0 && <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>}
+              </div>
+            )}
+            {detailFor === a.id && detail && (
+              <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-neutral-50 p-2 text-xs md:grid-cols-3">
+                <div>
+                  <div className="mb-1 font-medium text-neutral-500">需求（{detail.requirements.length}）</div>
+                  {detail.requirements.map((q) => (<div key={q.id} className="truncate"><span className={q.status === "delivered" ? "text-emerald-600" : "text-neutral-500"}>●</span> {q.title}</div>))}
+                  {detail.requirements.length === 0 && <div className="text-neutral-400">无</div>}
+                </div>
+                <div>
+                  <div className="mb-1 font-medium text-neutral-500">变更（{detail.changes.length}）</div>
+                  {detail.changes.map((c) => (<div key={c.id}><span className={c.status === "approved" ? "text-emerald-600" : "text-amber-600"}>●</span> {c.kind} · {c.status}</div>))}
+                  {detail.changes.length === 0 && <div className="text-neutral-400">无</div>}
+                </div>
+                <div>
+                  <div className="mb-1 font-medium text-neutral-500">发布（{detail.releases.length}）</div>
+                  {detail.releases.map((r) => (<div key={r.id}><span className="text-blue-600">●</span> {r.version} · {r.status}</div>))}
+                  {detail.releases.length === 0 && <div className="text-neutral-400">无</div>}
+                </div>
               </div>
             )}
           </div>

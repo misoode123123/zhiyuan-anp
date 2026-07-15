@@ -24,6 +24,7 @@ func NewHandler(store *Store, deployer *Deployer) *Handler {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)
 	r.POST("/project-spaces/:id/apps", h.Create)
+	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
 	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)
 	r.POST("/project-spaces/:id/apps/:aid/stop", h.Stop)
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
@@ -38,6 +39,16 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, list)
+}
+
+// Detail 应用详情：应用本体 + 归属的需求/变更/发布（应用一等公民视图）。
+func (h *Handler) Detail(c *gin.Context) {
+	d, err := h.store.Detail(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if err != nil || d == nil {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	httpx.OK(c, d)
 }
 
 type createBody struct {
