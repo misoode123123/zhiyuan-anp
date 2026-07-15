@@ -7,6 +7,7 @@ import "time"
 type Requirement struct {
 	ID                 string    `json:"id" db:"id"`
 	ProjectSpaceID     string    `json:"project_space_id" db:"project_space_id"`
+	ApplicationID      string    `json:"application_id,omitempty" db:"application_id"` // 归属应用（一等公民：需求挂在应用下）
 	Title              string    `json:"title" db:"title"`
 	Description        string    `json:"description" db:"description"`
 	UserStory          string    `json:"user_story" db:"user_story"`

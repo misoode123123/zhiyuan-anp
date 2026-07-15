@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -371,8 +373,43 @@ CREATE INDEX IF NOT EXISTS idx_appdeploy_ps ON appdeploy_application(project_spa
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
+// 新库由 sqliteSchema(CREATE IF NOT EXISTS) 建表；已有库通过 ALTER ADD COLUMN 幂等补列
+// （application_id 等后加字段），兼容已部署的生产库（如 .28）。
 func Migrate(ctx context.Context, db *sqlx.DB) error {
-	_, err := db.ExecContext(ctx, sqliteSchema)
+	if _, err := db.ExecContext(ctx, sqliteSchema); err != nil {
+		return err
+	}
+	for _, c := range []struct{ tbl, col, def string }{
+		{"requirement", "application_id", "TEXT"},
+		{"change_request", "application_id", "TEXT"},
+		{"release_record", "application_id", "TEXT"},
+	} {
+		if err := addColumnIfMissing(ctx, db, c.tbl, c.col, c.def); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", c.tbl, c.col, err)
+		}
+	}
+	return nil
+}
+
+// addColumnIfMissing 若表无该列则 ALTER ADD COLUMN（表名为代码常量，无注入风险）。
+func addColumnIfMissing(ctx context.Context, db *sqlx.DB, table, col, def string) error {
+	rows, err := db.QueryxContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == col {
+			return nil // 列已存在
+		}
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, col, def))
 	return err
 }
 

@@ -32,6 +32,7 @@ func NewService(repo *Repository, agentRuntimeURL string, coder *dev.CodingAgent
 // CreateInput 创建需求入参。
 type CreateInput struct {
 	ProjectSpaceID string
+	ApplicationID  string // 可选：归属应用（应用一等公民）
 	Description    string
 	Images         []string // 图片 data URL（data:image/...;base64,...）或 http URL
 }
@@ -73,6 +74,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Requirement, err
 	req := &Requirement{
 		ID:                 "req_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20],
 		ProjectSpaceID:     in.ProjectSpaceID,
+		ApplicationID:      in.ApplicationID,
 		Title:              spec.Title,
 		Description:        in.Description,
 		UserStory:          spec.UserStory,
@@ -88,6 +90,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Requirement, err
 // List 列出项目空间下的需求。
 func (s *Service) List(ctx context.Context, projectSpaceID string) ([]Requirement, error) {
 	return s.repo.List(ctx, projectSpaceID)
+}
+
+// ListByApp 列出某应用下的需求。
+func (s *Service) ListByApp(ctx context.Context, appID string) ([]Requirement, error) {
+	return s.repo.ListByApp(ctx, appID)
 }
 
 // Dispatch 把需求规格异步派发给编码引擎，返回异步任务。

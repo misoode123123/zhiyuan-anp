@@ -75,7 +75,7 @@ func (h *Handler) Create(c *gin.Context) {
 			}
 		}
 	}
-	// 可选：自动构建部署产出应用
+	// 可选：自动构建部署产出应用，并把来源需求归属到该应用（应用一等公民）
 	deployed := ""
 	if in.Deploy && h.appDeploy != nil && chg != nil && chg.RepoDir != "" {
 		name := in.DeployName
@@ -86,8 +86,12 @@ func (h *Handler) Create(c *gin.Context) {
 		if port == 0 {
 			port = 8080
 		}
-		go h.appDeploy.DeployForRelease(context.Background(), psID, name, chg.RepoDir, port)
+		app, derr := h.appDeploy.DeployForRelease(context.Background(), psID, name, chg.RepoDir, port)
 		deployed = name
+		// DeployForRelease 已返回应用 id（构建在其内部异步）；回填需求→应用归属
+		if derr == nil && app != nil && app.ID != "" && chg.SourceID != "" {
+			_ = h.reqRepo.SetApplication(context.Background(), chg.SourceID, app.ID)
+		}
 	}
 	httpx.Created(c, gin.H{
 		"id": r.ID, "version": r.Version, "status": r.Status,

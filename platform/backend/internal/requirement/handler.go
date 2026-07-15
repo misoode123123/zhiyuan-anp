@@ -18,12 +18,14 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/requirements", h.Create)
 	r.GET("/project-spaces/:id/requirements", h.List)
+	r.GET("/project-spaces/:id/apps/:aid/requirements", h.ListByApp) // 应用一等公民：应用的需求池
 	r.POST("/project-spaces/:id/requirements/:rid/dispatch-code", h.DispatchCode)
 }
 
 type createRequest struct {
-	Description string   `json:"description" binding:"required"`
-	Images      []string `json:"images,omitempty"` // data URL 或 http URL
+	ApplicationID string   `json:"application_id,omitempty"` // 可选：归属应用
+	Description   string   `json:"description" binding:"required"`
+	Images        []string `json:"images,omitempty"` // data URL 或 http URL
 }
 
 // Create 业务描述（可带图片）→ AI 生成规格（多模态走 GLM-4V）→ 入库。
@@ -35,7 +37,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	psID := c.Param("id")
 	req, err := h.svc.Create(c.Request.Context(), CreateInput{
-		ProjectSpaceID: psID, Description: in.Description, Images: in.Images,
+		ProjectSpaceID: psID, ApplicationID: in.ApplicationID, Description: in.Description, Images: in.Images,
 	})
 	if err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
@@ -47,6 +49,16 @@ func (h *Handler) Create(c *gin.Context) {
 // List 列出项目空间下的需求。
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.List(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		httpx.Err(c, 500, 50003, err.Error())
+		return
+	}
+	httpx.OK(c, list)
+}
+
+// ListByApp 列出某应用的需求池。
+func (h *Handler) ListByApp(c *gin.Context) {
+	list, err := h.svc.ListByApp(c.Request.Context(), c.Param("aid"))
 	if err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
 		return
