@@ -9,9 +9,15 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
+
+// TestGate 测试门禁：查某需求 passed 测试用例数（由 qa.Store 实现）。
+type TestGate interface {
+	PassedCountByRequirement(ctx context.Context, reqID string) (int, error)
+}
 
 // Handler 发布中心 HTTP 接口。
 type Handler struct {
@@ -19,11 +25,18 @@ type Handler struct {
 	changes   *change.Store
 	reqRepo   *requirement.Repository
 	appDeploy *appdeploy.Handler // 可选：发布后自动构建部署产出应用（板块06 M2）
+	cfg       *config.Store      // 可选：读发布门禁开关
+	testGate  TestGate           // 可选：测试门禁查询
 }
 
-// NewHandler 构造 Handler。appDeploy 可为 nil（不启用自动部署）。
-func NewHandler(store *Store, changes *change.Store, reqRepo *requirement.Repository, appDeploy *appdeploy.Handler) *Handler {
-	return &Handler{store: store, changes: changes, reqRepo: reqRepo, appDeploy: appDeploy}
+// NewHandler 构造 Handler。appDeploy/cfg/testGate 均可为 nil（不启用对应能力）。
+func NewHandler(store *Store, changes *change.Store, reqRepo *requirement.Repository, appDeploy *appdeploy.Handler, cfg *config.Store, testGate TestGate) *Handler {
+	return &Handler{store: store, changes: changes, reqRepo: reqRepo, appDeploy: appDeploy, cfg: cfg, testGate: testGate}
+}
+
+// testGateEnabled 发布测试门禁是否启用（开关 release_require_passed_test=true 且依赖已注入）。
+func (h *Handler) testGateEnabled() bool {
+	return h.cfg != nil && h.testGate != nil && h.cfg.Get("release_require_passed_test", "false") == "true"
 }
 
 // Register 注册路由。
@@ -49,6 +62,18 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
 	}
+	// 先取变更（门禁预检 + 后续部署都需要 source_id）。
+	var chg *change.ChangeRequest
+	if h.changes != nil {
+		chg, _ = h.changes.Get(c.Request.Context(), in.ChangeID)
+	}
+	// 🧪 测试门禁：开关开时，来源需求须至少 1 条 passed 测试用例，否则拒绝发布。
+	if h.testGateEnabled() && chg != nil && chg.SourceID != "" {
+		if passed, _ := h.testGate.PassedCountByRequirement(c.Request.Context(), chg.SourceID); passed <= 0 {
+			httpx.Err(c, 409, 40901, "发布被测试门禁拦截：来源需求无 passed 测试用例。请先到「测试中心」生成用例并运行至至少 1 条 passed，或在「系统配置」关闭 release_require_passed_test")
+			return
+		}
+	}
 	n, err := h.store.Count(c.Request.Context(), psID)
 	if err != nil {
 		httpx.Err(c, 500, 50009, err.Error())
@@ -65,14 +90,9 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	// 追溯 change → 标记来源需求"已交付"
-	var chg *change.ChangeRequest
-	if h.changes != nil {
-		var errc error
-		chg, errc = h.changes.Get(c.Request.Context(), in.ChangeID)
-		if errc == nil && chg != nil && chg.ID != "" && chg.SourceID != "" {
-			if h.reqRepo != nil {
-				_ = h.reqRepo.UpdateStatus(c.Request.Context(), chg.SourceID, "delivered")
-			}
+	if h.changes != nil && chg != nil && chg.ID != "" && chg.SourceID != "" {
+		if h.reqRepo != nil {
+			_ = h.reqRepo.UpdateStatus(c.Request.Context(), chg.SourceID, "delivered")
 		}
 	}
 	// 可选：自动构建部署产出应用。

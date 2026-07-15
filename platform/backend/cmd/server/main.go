@@ -128,7 +128,11 @@ func main() {
 
 	// 发布中心（发布后可自动触发应用部署）
 	releaseStore := release.NewStore(database)
-	releaseHandler := release.NewHandler(releaseStore, changeStore, reqRepo, appDeployHandler)
+	// 发布测试门禁开关：首次启动确保 key 存在（默认关，不破坏现有流程）；用户可在系统配置页改。
+	if store.Get("release_require_passed_test", "\x00missing\x00") == "\x00missing\x00" {
+		_ = store.Set(context.Background(), "release_require_passed_test", "false", "release", "发布门禁：true 时要求来源需求至少 1 条 passed 测试用例才允许发布")
+	}
+	releaseHandler := release.NewHandler(releaseStore, changeStore, reqRepo, appDeployHandler, store, qaStore)
 
 	// 算力资源中心（用量看板，computeStore 已在前面定义）
 	computeHandler := compute.NewHandler(computeStore)

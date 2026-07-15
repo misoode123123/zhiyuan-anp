@@ -15,6 +15,7 @@ export default function ReleasePage() {
   const [approved, setApproved] = useState<Change[]>([]);
   const [releases, setReleases] = useState<Rel[]>([]);
   const [msg, setMsg] = useState("");
+  const [gateOn, setGateOn] = useState(false); // 发布测试门禁开关
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -38,6 +39,17 @@ export default function ReleasePage() {
     load(psID);
   }, [psID]);
 
+  // 读发布测试门禁开关（系统配置 release_require_passed_test）
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/config`)
+      .then((r) => r.json())
+      .then((r: Envelope<{ key: string; value: string }[]>) => {
+        const it = (r.data ?? []).find((x) => x.key === "release_require_passed_test");
+        setGateOn(it?.value === "true");
+      })
+      .catch(() => {});
+  }, []);
+
   async function release(changeID: string) {
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/releases`, {
       method: "POST",
@@ -58,6 +70,16 @@ export default function ReleasePage() {
       <h1 className="mb-1 text-xl font-bold">🚀 发布中心</h1>
       <FlowStepper current={3} />
       <p className="mb-4 text-sm text-neutral-600">已审批（🚪G3 通过）的变更发布上线，版本号自增。</p>
+
+      {gateOn ? (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          🧪 <b>测试门禁已开启</b>：发布前要求来源需求至少 1 条 <b>passed</b> 测试用例，否则将被拦截。先到「测试中心」生成并运行用例；或在「系统配置」关闭 <code>release_require_passed_test</code>。
+        </div>
+      ) : (
+        <div className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-500">
+          🧪 测试门禁关闭中（可在「系统配置」开启 <code>release_require_passed_test</code>，让发布要求 passed 用例）。
+        </div>
+      )}
 
       <div className="mb-4">
         <label className="text-xs text-neutral-500">项目空间</label>

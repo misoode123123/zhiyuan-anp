@@ -61,3 +61,11 @@ func (s *Store) UpdateRun(ctx context.Context, tc *TestCase) error {
 
 // nowTime 当前时间指针（便于 RunAt 赋值；抽出便于测试）。
 func nowTime() *time.Time { t := time.Now(); return &t }
+
+// PassedCountByRequirement 该需求下 status='passed' 的测试用例数（发布门禁用）。
+func (s *Store) PassedCountByRequirement(ctx context.Context, requirementID string) (int, error) {
+	var n int
+	err := s.db.GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM test_case WHERE requirement_id = ? AND status = 'passed'`, requirementID)
+	return n, err
+}
