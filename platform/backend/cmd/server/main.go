@@ -118,10 +118,10 @@ func main() {
 	convSvc := conversation.NewService(conversation.NewStore(database), reqRepo, cfg.AgentRuntimeURL)
 	convHandler := conversation.NewHandler(convSvc)
 
-	// 测试中心
+	// 测试中心（AI 生成用例 + 对着已部署应用 URL 自动验收）
 	qaStore := qa.NewStore(database)
 	qaSvc := qa.NewService(qaStore, cfg.AgentRuntimeURL)
-	qaHandler := qa.NewHandler(qaSvc, reqRepo)
+	qaHandler := qa.NewHandler(qaSvc, reqRepo, appDeployStore)
 
 	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL（appDeployStore 已提前构造）
 	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))

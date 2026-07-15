@@ -71,6 +71,18 @@ func (s *Store) ResolveApp(ctx context.Context, appID string) (repoDir string, p
 	return a.RepoDir, a.InternalPort, nil
 }
 
+// AppURLByAppID 按应用 id 取其运行 URL（测试中心自动验收用）。未部署则报错。
+func (s *Store) AppURLByAppID(ctx context.Context, appID string) (string, error) {
+	a, err := s.GetByAppID(ctx, appID)
+	if err != nil || a == nil || a.ID == "" {
+		return "", fmt.Errorf("应用 %s 不存在", appID)
+	}
+	if a.URL == "" {
+		return "", fmt.Errorf("应用 %s 尚未部署", appID)
+	}
+	return a.URL, nil
+}
+
 // EnsureAppForRequirement 为需求兜底创建托管应用：同名则复用，否则建仓 + 建记录。
 // 用于"需求未归属应用"时自动确立代码归属（应用 = 托管 git 仓库），使派发永不阻塞。
 // 返回 appID + repoDir + port（默认 8080，buildpack 后续可按源码类型校正）。

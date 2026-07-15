@@ -109,6 +109,13 @@ CREATE TABLE IF NOT EXISTS test_case (
   steps            TEXT,        -- JSON 数组
   expected         TEXT,
   status           TEXT NOT NULL DEFAULT 'draft',
+  method           TEXT,        -- 可执行 HTTP 检查：GET/POST/...
+  path             TEXT,        -- 如 /
+  expected_status  INTEGER,     -- 期望状态码，如 200
+  expected_body    TEXT,        -- 期望响应体包含的文本
+  actual_status    INTEGER,     -- 运行后实际状态码
+  actual_body      TEXT,        -- 运行后实际响应摘要
+  run_at           DATETIME,    -- 最近运行时间
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_test_case_ps ON test_case(project_space_id);
@@ -391,6 +398,14 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 		{"requirement", "application_id", "TEXT"},
 		{"change_request", "application_id", "TEXT"},
 		{"release_record", "application_id", "TEXT"},
+		// 测试中心：可执行 HTTP 检查 + 运行结果回写（幂等补列，兼容已部署库）。
+		{"test_case", "method", "TEXT"},
+		{"test_case", "path", "TEXT"},
+		{"test_case", "expected_status", "INTEGER"},
+		{"test_case", "expected_body", "TEXT"},
+		{"test_case", "actual_status", "INTEGER"},
+		{"test_case", "actual_body", "TEXT"},
+		{"test_case", "run_at", "DATETIME"},
 	} {
 		if err := addColumnIfMissing(ctx, db, c.tbl, c.col, c.def); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", c.tbl, c.col, err)
