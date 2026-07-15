@@ -114,12 +114,18 @@ func (a *CodingAgent) opencodeRun(ctx context.Context, repoDir, prompt, model st
 	if err != nil {
 		return "", err
 	}
+	// Windows 下中文路径会让 opencode 的 argv 解析失败，转成 ASCII junction 再传入。
+	workDir, cleanup, err := opencodeDir(absRepo)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 	absConfig, _ := filepath.Abs(configPath)
 
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "opencode", "run", prompt, "-m", model, "--auto", "--dir", absRepo)
-	cmd.Dir = absRepo
+	cmd := exec.CommandContext(cctx, "opencode", "run", prompt, "-m", model, "--auto", "--dir", workDir)
+	cmd.Dir = workDir
 	env := append(os.Environ(), "ZHIPUAI_API_KEY="+zhipuKey, "OPENCODE_CONFIG="+absConfig)
 	if gitBash != "" {
 		env = append(env, "OPENCODE_GIT_BASH_PATH="+gitBash)

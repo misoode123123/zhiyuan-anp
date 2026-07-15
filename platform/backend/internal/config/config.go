@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -34,8 +35,13 @@ func Load() (*Config, error) {
 	v.SetDefault("backend_cors_origins", "http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000")
 	v.SetDefault("database_url", "sqlite://./tmp/anp.db")
 	v.SetDefault("agent_runtime_url", "http://127.0.0.1:8001") // 用 IPv4 直连，避免 Go 把 localhost 解析成 [::1] 而 agent-runtime 只监听 IPv4
-	v.SetDefault("opencode_config", "../opencode.json")                       // 相对 backend cwd → platform/opencode.json
-	v.SetDefault("opencode_git_bash_path", `C:\Program Files\Git\bin\bash.exe`)
+	v.SetDefault("opencode_config", "../opencode.json") // 相对 backend cwd → platform/opencode.json
+	// git bash 路径仅 Windows 下 opencode 需要；Linux/macOS 留空。
+	gitBashDefault := ""
+	if runtime.GOOS == "windows" {
+		gitBashDefault = `C:\Program Files\Git\bin\bash.exe`
+	}
+	v.SetDefault("opencode_git_bash_path", gitBashDefault)
 
 	// 可选：读取同目录下的 .env
 	if _, err := os.Stat(".env"); err == nil {
