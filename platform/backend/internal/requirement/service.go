@@ -106,11 +106,12 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 }
 
 // buildCodePrompt 把需求规格拼装为编码 prompt（单行）。
+// 要求产出"完整可独立运行的 Web 服务"，使其可被平台应用部署引擎构建部署。
 func buildCodePrompt(r *Requirement) string {
 	var ac []string
 	_ = json.Unmarshal([]byte(r.AcceptanceCriteria), &ac)
 	var b strings.Builder
-	b.WriteString("请实现以下需求规格，创建或修改必要的文件。")
+	b.WriteString("请实现以下需求规格。")
 	b.WriteString(" 标题：" + r.Title + "。")
 	b.WriteString(" 用户故事：" + r.UserStory + "。")
 	b.WriteString(" 验收标准：")
@@ -120,8 +121,13 @@ func buildCodePrompt(r *Requirement) string {
 	if r.Description != "" {
 		b.WriteString(" 补充描述：" + r.Description + "。")
 	}
+	// 可部署性约束：产出必须是完整可独立运行的 Web 服务（非库/模块），便于平台自动构建部署。
+	b.WriteString(deployableServiceHint)
 	return b.String()
 }
+
+// deployableServiceHint 派发编码的可部署性约束：产出须为完整可独立运行的 Web 服务。
+const deployableServiceHint = ` 【交付要求】产出必须是完整可独立运行的 Web 服务（含 main 入口，不是库/模块）：用一个 HTTP 服务监听 0.0.0.0:${PORT:-8080}，实现上述核心功能，并提供 GET / 返回 200 的健康检查；自包含可运行，依赖写入 go.mod/requirements.txt/package.json 之一；无需写 Dockerfile（平台按类型自动生成）。`
 
 // generateSpec 调 agent-runtime 让 GLM 生成规格（有图片时走 GLM-4V 多模态）。
 func (s *Service) generateSpec(ctx context.Context, description string, images []string) (*specResult, *usageInfo, error) {
