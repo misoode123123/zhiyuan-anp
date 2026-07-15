@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
+	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/attendance"
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
@@ -156,6 +157,10 @@ func main() {
 	attendanceSvc := attendance.NewService(attendanceStore)
 	attendanceHandler := attendance.NewHandler(attendanceSvc)
 
+	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL
+	appDeployStore := appdeploy.NewStore(database)
+	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))
+
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
@@ -177,6 +182,7 @@ func main() {
 	securityHandler.Register(v1)
 	capabilityHandler.Register(v1)
 	attendanceHandler.Register(v1)
+	appDeployHandler.Register(v1)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

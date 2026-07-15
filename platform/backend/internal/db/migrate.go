@@ -348,6 +348,26 @@ CREATE TABLE IF NOT EXISTS attendance_record (
 CREATE INDEX IF NOT EXISTS idx_attendance_ps ON attendance_record(project_space_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_user ON attendance_record(user_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_super ON attendance_record(supervisor_id, approval_status);
+
+CREATE TABLE IF NOT EXISTS appdeploy_application (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  repo_dir         TEXT,
+  internal_port    INTEGER NOT NULL DEFAULT 80,
+  image            TEXT,
+  container_name   TEXT,
+  host_port        INTEGER NOT NULL DEFAULT 0,
+  url              TEXT,
+  version          INTEGER NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL DEFAULT 'registered',
+  last_error       TEXT,
+  build_log        TEXT,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (project_space_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_appdeploy_ps ON appdeploy_application(project_space_id);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。

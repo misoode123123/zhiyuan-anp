@@ -9,7 +9,7 @@ COPY platform/backend/ ./
 RUN CGO_ENABLED=0 go build -o /server ./cmd/server
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates git bash curl libc6-compat nodejs npm
+RUN apk add --no-cache ca-certificates git bash curl libc6-compat nodejs npm docker-cli
 RUN npm config set registry https://registry.npmmirror.com && npm i -g opencode-ai
 WORKDIR /app
 COPY --from=build /server /app/server

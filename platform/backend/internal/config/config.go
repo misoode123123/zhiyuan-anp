@@ -22,6 +22,8 @@ type Config struct {
 	ZhipuAPIKey        string // 智谱 API Key（注入 opencode 子进程）
 	OpencodeConfigPath string // opencode.json 路径
 	GitBashPath        string // Windows 下 opencode 所需 git bash 路径
+	// 应用部署引擎（板块06 M2）：产出应用构建部署后，以此 host 拼 URL
+	AppDeployHost string
 }
 
 // Load 从环境变量（及可选的 .env 文件）读取配置。
@@ -42,6 +44,7 @@ func Load() (*Config, error) {
 		gitBashDefault = `C:\Program Files\Git\bin\bash.exe`
 	}
 	v.SetDefault("opencode_git_bash_path", gitBashDefault)
+	v.SetDefault("appdeploy_host", "localhost") // 产出应用部署后拼 URL 的主机；生产设为对外 IP/域名
 
 	// 可选：读取同目录下的 .env
 	if _, err := os.Stat(".env"); err == nil {
@@ -58,8 +61,9 @@ func Load() (*Config, error) {
 		DatabaseURL:        v.GetString("database_url"),
 		AgentRuntimeURL:    v.GetString("agent_runtime_url"),
 		ZhipuAPIKey:        v.GetString("zhipuai_api_key"),
-		OpencodeConfigPath: v.GetString("opencode_config"),
+		OpencodeConfigPath: v.GetString("opencode"),
 		GitBashPath:        v.GetString("opencode_git_bash_path"),
+		AppDeployHost:      v.GetString("appdeploy_host"),
 	}
 	if cfg.HTTPAddr == "" {
 		return nil, fmt.Errorf("backend_http_addr must not be empty")

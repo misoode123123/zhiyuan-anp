@@ -22,6 +22,8 @@ services:
     volumes:
       - ../data:/data
       - ../platform/opencode.json:/app/opencode.json
+      - /var/run/docker.sock:/var/run/docker.sock   # 应用部署引擎：后端控制宿主 Docker
+      - ../data/repos:/data/repos                   # 产出应用源码（docker build 上下文）
     depends_on:
       - agent-runtime
     expose:
