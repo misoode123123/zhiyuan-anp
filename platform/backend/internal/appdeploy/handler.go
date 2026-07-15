@@ -230,23 +230,6 @@ func (h *Handler) Logs(c *gin.Context) {
 	httpx.OK(c, gin.H{"logs": log})
 }
 
-// DeployForRelease 供发布中心调用：按 repo_dir 找/建应用并触发部署。
-// 返回应用的 URL（部署完成由后台置位，调用方即时拿到 building 状态）。
-func (h *Handler) DeployForRelease(ctx context.Context, psID, name, repoDir string, internalPort int) (*Application, error) {
-	a, _ := h.store.GetByName(ctx, psID, name)
-	if a == nil || a.ID == "" {
-		a = &Application{ProjectSpaceID: psID, Name: name, RepoDir: repoDir, InternalPort: internalPort}
-		if err := h.store.Create(ctx, a); err != nil {
-			return nil, err
-		}
-	} else if a.RepoDir == "" {
-		a.RepoDir = repoDir
-	}
-	_ = h.store.SetStatus(ctx, psID, a.ID, "building", "", "")
-	go h.buildAndDeploy(psID, a.ID, "")
-	return a, nil
-}
-
 // DeployByAppID 按应用 id 部署已存在的应用（应用在提需求时已创建，发布时直接部署它）。
 func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application, error) {
 	a, err := h.store.GetByAppID(ctx, appID)

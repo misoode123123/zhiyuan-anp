@@ -3,7 +3,6 @@ package release
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
@@ -46,10 +45,8 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 type createRequest struct {
-	ChangeID   string `json:"change_id" binding:"required"`
-	Deploy     bool   `json:"deploy"`      // 发布后自动构建部署产出应用
-	DeployName string `json:"deploy_name"` // 应用名，空则取 repo_dir 末段
-	DeployPort int    `json:"deploy_port"` // 应用容器内端口，默认 8080
+	ChangeID string `json:"change_id" binding:"required"`
+	Deploy   bool   `json:"deploy"` // 发布后部署来源需求归属的应用（不创建/不改应用名）
 }
 
 // Create 把已审批变更发布上线（🚪G5 后），版本号自增；
@@ -95,32 +92,11 @@ func (h *Handler) Create(c *gin.Context) {
 			_ = h.reqRepo.UpdateStatus(c.Request.Context(), chg.SourceID, "delivered")
 		}
 	}
-	// 可选：自动构建部署产出应用。
-	// 应用一等公民：优先按来源需求已归属的应用部署（无需手填 deploy_name）；
-	// 兼容未归属应用时按名称/repo 部署并回填归属。
+	// 可选：部署来源需求归属的应用（应用一等公民：只部署已存在的应用，不在发布时创建/改名）。
 	deployed := ""
-	if in.Deploy && h.appDeploy != nil && chg != nil {
-		appID := ""
-		if chg.SourceID != "" {
-			if req, e := h.reqRepo.Get(c.Request.Context(), chg.SourceID); e == nil && req != nil {
-				appID = req.ApplicationID
-			}
-		}
-		if appID != "" {
-			if app, e := h.appDeploy.DeployByAppID(context.Background(), appID); e == nil && app != nil {
-				deployed = app.Name
-			}
-		} else if chg.RepoDir != "" {
-			name := in.DeployName
-			if name == "" {
-				name = filepath.Base(chg.RepoDir)
-			}
-			port := in.DeployPort
-			if port == 0 {
-				port = 8080
-			}
-			if app, e := h.appDeploy.DeployForRelease(context.Background(), psID, name, chg.RepoDir, port); e == nil && app != nil && chg.SourceID != "" {
-				_ = h.reqRepo.SetApplication(context.Background(), chg.SourceID, app.ID)
+	if in.Deploy && h.appDeploy != nil && chg != nil && chg.SourceID != "" && h.reqRepo != nil {
+		if req, e := h.reqRepo.Get(c.Request.Context(), chg.SourceID); e == nil && req != nil && req.ApplicationID != "" {
+			if app, e := h.appDeploy.DeployByAppID(context.Background(), req.ApplicationID); e == nil && app != nil {
 				deployed = app.Name
 			}
 		}
@@ -128,7 +104,9 @@ func (h *Handler) Create(c *gin.Context) {
 	httpx.Created(c, gin.H{
 		"id": r.ID, "version": r.Version, "status": r.Status,
 		"deploy_triggered": deployed,
-		"note":             ternary(deployed == "", "需求已交付", "应用 "+deployed+" 异步构建部署中，见「应用部署」页"),
+		"note": ternary(deployed == "",
+			"需求已交付（来源需求未归属应用，未自动部署；请在「应用部署」创建应用，或派发编码自动归属）",
+			"应用 "+deployed+" 异步构建部署中，见「应用部署」页"),
 	})
 }
 
