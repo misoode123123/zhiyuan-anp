@@ -19,6 +19,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codetask"
+	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/compute"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/conversation"
@@ -124,7 +125,8 @@ func main() {
 	qaHandler := qa.NewHandler(qaSvc, reqRepo, appDeployStore)
 
 	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL（appDeployStore 已提前构造）
-	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))
+	// + 交互编码工作台（opencode serve 官方 web UI，codews.Manager 管理进程）
+	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost), codews.NewManager(cfg.AppDeployHost))
 
 	// 发布中心（发布后可自动触发应用部署）
 	releaseStore := release.NewStore(database)

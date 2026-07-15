@@ -38,6 +38,7 @@ export default function ApplicationsPage() {
   const [psID, setPsID] = useState("");
   const [apps, setApps] = useState<App[]>([]);
   const [form, setForm] = useState({ name: "", internal_port: 8080 });
+  const [wsTool, setWsTool] = useState("opencode"); // 交互编码工具（开发者可选，不同人选不同）
   const [logsFor, setLogsFor] = useState<string>("");
   const [logs, setLogs] = useState("");
   const [reqsFor, setReqsFor] = useState<string>("");
@@ -91,6 +92,17 @@ export default function ApplicationsPage() {
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
     load(psID);
+  }
+  async function openWorkspace(id: string, tool: string) {
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/workspace`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool }),
+    });
+    const r = await res.json();
+    if (r.code === 0 && r.data?.url) {
+      window.open(r.data.url, "_blank"); // 打开 opencode/工具官方 web UI
+    } else {
+      alert(r.message || "启动编码工作台失败");
+    }
   }
   async function remove(id: string) {
     if (!confirm("删除应用（含容器）？")) return;
@@ -165,6 +177,12 @@ export default function ApplicationsPage() {
               <div className="ml-auto flex gap-1">
                 <button onClick={() => act(a.id, "deploy")} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">构建部署(test)</button>
                 <button onClick={() => promote(a.id)} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">🚀 上线(prod)</button>
+                <select value={wsTool} onChange={(e) => setWsTool(e.target.value)} className="rounded border border-neutral-300 px-1 py-0.5 text-xs" title="选择交互编码工具">
+                  <option value="opencode">opencode</option>
+                  <option value="claude">claude*</option>
+                  <option value="codex">codex*</option>
+                </select>
+                <button onClick={() => openWorkspace(a.id, wsTool)} className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700" title="打开该工具的官方交互编码界面（*为预留）">🧑‍💻 编码</button>
                 {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
                 {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
                 <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>

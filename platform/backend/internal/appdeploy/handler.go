@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -13,11 +14,12 @@ import (
 type Handler struct {
 	store    *Store
 	deployer *Deployer
+	codeWS   *codews.Manager // 交互编码工作台（opencode serve）；nil=未启用
 }
 
-// NewHandler 构造。
-func NewHandler(store *Store, deployer *Deployer) *Handler {
-	return &Handler{store: store, deployer: deployer}
+// NewHandler 构造。codeWS 可为 nil（不启用交互编码）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager) *Handler {
+	return &Handler{store: store, deployer: deployer, codeWS: codeWS}
 }
 
 // Register 注册路由。
@@ -31,6 +33,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/stop", h.Stop)
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
+	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace) // 启动交互编码工作台
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 }
 
@@ -55,6 +58,35 @@ func (h *Handler) Detail(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, d)
+}
+
+// Workspace 启动/复用应用的 opencode 交互编码工作台，返回 opencode 官方 web UI 的访问 URL。
+// 不造轮子：直接集成 opencode serve 自带的 web 界面，开发者用它原生体验编码。
+func (h *Handler) Workspace(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	if h.codeWS == nil {
+		httpx.Err(c, 500, 50021, "交互编码工作台未启用")
+		return
+	}
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	var in struct {
+		Tool string `json:"tool"` // opencode(默认) / claude / codex ...
+	}
+	_ = c.ShouldBindJSON(&in)
+	user := c.GetHeader("X-User") // 开发者身份（不同开发者可各选各的工具）
+	if user == "" {
+		user = "anonymous"
+	}
+	s, err := h.codeWS.Ensure(aid, a.RepoDir, user, in.Tool)
+	if err != nil {
+		httpx.Err(c, 500, 50021, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "port": s.Port, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
 }
 
 type createBody struct {
