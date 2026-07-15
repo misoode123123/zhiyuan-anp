@@ -9,6 +9,7 @@ type App = {
   id: string; name: string; repo_dir: string; internal_port: number;
   image: string; container_name: string; host_port: number; url: string;
   version: number; status: string; last_error: string; build_log: string;
+  updated_at: string;
 };
 type Req = { id: string; title: string; status: string; application_id: string };
 type Detail = {
@@ -161,6 +162,11 @@ export default function ApplicationsPage() {
               repo: <code>{a.repo_dir}</code> · 内部端口 {a.internal_port}
               {a.host_port ? ` · 宿主端口 ${a.host_port}` : ""}
             </div>
+            {a.updated_at && (
+              <div className="text-xs text-neutral-400">
+                {a.status === "running" ? "部署于" : "更新于"}：{new Date(a.updated_at).toLocaleString("zh-CN", { hour12: false })}
+              </div>
+            )}
             {a.url && (
               <div className="mt-1 text-sm">
                 访问入口：<a href={a.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{a.url}</a>

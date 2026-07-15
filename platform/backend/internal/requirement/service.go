@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mozillazg/go-pinyin"
 
 	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/compute"
@@ -125,7 +126,7 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 	if repoDir == "" && s.apps != nil {
 		if req.ApplicationID == "" {
 			// 未归属应用：兜底创建托管应用（req-<短id>，ASCII 确定名）并绑定到需求。
-			appID, rd, _, e := s.apps.EnsureAppForRequirement(ctx, projectSpaceID, deriveAppName(req.ID))
+			appID, rd, _, e := s.apps.EnsureAppForRequirement(ctx, projectSpaceID, deriveAppName(req.Title, req.ID))
 			if e != nil {
 				return nil, fmt.Errorf("为需求兜底创建托管应用失败: %w", e)
 			}
@@ -142,14 +143,57 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 	return s.coder.Submit(ctx, projectSpaceID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
 }
 
-// deriveAppName 为未归属应用的需求派生一个确定的托管应用名。
-// 取需求 id 末段（标题常为中文，无法直接做镜像/容器名；id 全局唯一且为 ASCII）。
-func deriveAppName(reqID string) string {
-	short := reqID
-	if len(short) > 12 {
-		short = short[len(short)-12:]
+// deriveAppName 为未归属应用的需求派生一个友好的托管应用名。
+// 用需求标题的拼音做主名（中文→ASCII，可读），截断 + reqID 短后缀保证唯一与稳定（同需求重派发复用）。
+func deriveAppName(title, reqID string) string {
+	base := pinyinSlug(title)
+	if base == "" {
+		base = "app"
 	}
-	return "req-" + strings.ReplaceAll(short, "_", "-")
+	if len(base) > 24 {
+		base = base[:24]
+	}
+	return base + "-" + shortSuffix(reqID)
+}
+
+// pinyinSlug 把字符串转为 ASCII slug：中文→拼音音节(每字一词)，连续 ASCII 字母数字合并为一词，其余作分隔。
+// 例："贪吃蛇H5游戏" → "tan-chi-she-h5-you-xi"。
+func pinyinSlug(s string) string {
+	a := pinyin.NewArgs()
+	var words []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			words = append(words, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range s {
+		switch {
+		case r >= 0x4e00 && r <= 0x9fff: // CJK 基本区：每字一音节
+			flush()
+			if ps := pinyin.Pinyin(string(r), a); len(ps) > 0 && len(ps[0]) > 0 {
+				words = append(words, ps[0][0])
+			}
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			cur.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			cur.WriteRune(r + 32) // 小写
+		default:
+			flush() // 标点/空格 → 词界
+		}
+	}
+	flush()
+	return strings.Join(words, "-")
+}
+
+// shortSuffix 取需求 id 末段（去 _、小写）做唯一后缀。
+func shortSuffix(reqID string) string {
+	s := strings.ToLower(strings.ReplaceAll(reqID, "_", ""))
+	if len(s) > 8 {
+		s = s[len(s)-8:]
+	}
+	return s
 }
 
 // buildCodePrompt 把需求规格拼装为编码 prompt（单行）。
