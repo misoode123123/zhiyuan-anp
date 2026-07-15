@@ -71,16 +71,72 @@ func (s *Store) ResolveApp(ctx context.Context, appID string) (repoDir string, p
 	return a.RepoDir, a.InternalPort, nil
 }
 
-// AppURLByAppID 按应用 id 取其运行 URL（测试中心自动验收用）。未部署则报错。
+// AppURLByAppID 按应用 id 取其 test 环境 URL（测试中心验最新发布的 test 实例）。
+// 无 test 实例时回退 application 表 URL（兼容旧数据）；都没有则报错。
 func (s *Store) AppURLByAppID(ctx context.Context, appID string) (string, error) {
+	if ins, _ := s.GetInstance(ctx, appID, EnvTest); ins != nil && ins.URL != "" {
+		return ins.URL, nil
+	}
 	a, err := s.GetByAppID(ctx, appID)
 	if err != nil || a == nil || a.ID == "" {
 		return "", fmt.Errorf("应用 %s 不存在", appID)
 	}
 	if a.URL == "" {
-		return "", fmt.Errorf("应用 %s 尚未部署", appID)
+		return "", fmt.Errorf("应用 %s 尚未部署到 test 环境", appID)
 	}
 	return a.URL, nil
+}
+
+// insCols 实例显式列（可空字段 COALESCE）。
+const insCols = `id, app_id, env, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, created_at, updated_at`
+
+// GetInstance 取某应用某环境实例（不存在返回 nil,nil）。
+func (s *Store) GetInstance(ctx context.Context, appID, env string) (*AppInstance, error) {
+	var list []AppInstance
+	if err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=? AND env=?`, appID, env); err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, nil
+	}
+	return &list[0], nil
+}
+
+// GetOrCreateInstance 取或建某环境实例（首次部署到该环境用）。
+func (s *Store) GetOrCreateInstance(ctx context.Context, appID, env string) (*AppInstance, error) {
+	ins, err := s.GetInstance(ctx, appID, env)
+	if err != nil {
+		return nil, err
+	}
+	if ins != nil {
+		return ins, nil
+	}
+	ins = &AppInstance{ID: "ins_" + uuid.NewString()[:20], AppID: appID, Env: env, Status: "registered"}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES (?, ?, ?, 'registered')`, ins.ID, appID, env)
+	return ins, err
+}
+
+// UpdateInstance 更新实例部署态字段。
+func (s *Store) UpdateInstance(ctx context.Context, ins *AppInstance) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_instance SET image=?, container_name=?, host_port=?, url=?, version=?, status=?, last_error=?, build_log=?, updated_at=CURRENT_TIMESTAMP WHERE app_id=? AND env=?`,
+		ins.Image, ins.ContainerName, ins.HostPort, ins.URL, ins.Version, ins.Status, ins.LastError, ins.BuildLog, ins.AppID, ins.Env)
+	return err
+}
+
+// SetInstanceStatus 更新实例状态 + 错误/日志。
+func (s *Store) SetInstanceStatus(ctx context.Context, appID, env, status, lastErr, buildLog string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_instance SET status=?, last_error=?, build_log=?, updated_at=CURRENT_TIMESTAMP WHERE app_id=? AND env=?`,
+		status, lastErr, buildLog, appID, env)
+	return err
+}
+
+// ListInstancesByApp 列出应用的所有环境实例。
+func (s *Store) ListInstancesByApp(ctx context.Context, appID string) ([]AppInstance, error) {
+	var list []AppInstance
+	err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=? ORDER BY env`, appID)
+	return list, err
 }
 
 // EnsureAppForRequirement 为需求兜底创建托管应用：同名则复用，否则建仓 + 建记录。

@@ -9,22 +9,28 @@ import (
 	"strconv"
 )
 
-// 默认宿主端口分配区间（避免与 .28 上 lowcode/帆软/ANP 已用端口冲突）。
+// 各环境宿主端口分配区间（互不冲突；避开 .28 上 lowcode/帆软/ANP 已用端口）。
 const (
-	defaultPortMin = 9100
-	defaultPortMax = 9300
+	portTestMin = 9100
+	portTestMax = 9199
+	portProdMin = 9200
+	portProdMax = 9300
 )
 
 // Deployer 通过宿主 docker socket 构建运行应用容器。
 type Deployer struct {
-	host     string // 公布 URL 的主机（10.10.0.28 / localhost）
-	portMin  int
-	portMax  int
+	host string // 公布 URL 的主机（10.10.0.28 / localhost）
 }
 
 // NewDeployer 构造。host 用于拼访问 URL。
-func NewDeployer(host string) *Deployer {
-	return &Deployer{host: host, portMin: defaultPortMin, portMax: defaultPortMax}
+func NewDeployer(host string) *Deployer { return &Deployer{host: host} }
+
+// envPortRange 按环境返回宿主端口区间：test 9100-9199，prod 9200-9300。
+func (d *Deployer) envPortRange(env string) (int, int) {
+	if env == EnvProd {
+		return portProdMin, portProdMax
+	}
+	return portTestMin, portTestMax
 }
 
 // runDocker 执行 docker 子命令，返回合并输出。
@@ -65,36 +71,37 @@ func AllocFreePort(used map[int]struct{}, min, max int) int {
 	return 0
 }
 
-// Build 构建镜像（docker build -t <image> <repo_dir>），版本号自增。
-func (d *Deployer) Build(ctx context.Context, a *Application) (log string, err error) {
-	a.Version++
-	a.Image = fmt.Sprintf("appdeploy/%s:v%d", a.Name, a.Version)
-	out, e := runDocker(ctx, "build", "-t", a.Image, a.RepoDir)
+// Build 构建镜像（docker build -t <image> <repo_dir>），版本号按环境实例自增。
+// 镜像名带环境后缀(test/prod)，避免两环境镜像互相覆盖。
+func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance) (log string, err error) {
+	ins.Version++
+	ins.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", a.Name, ins.Env, ins.Version)
+	out, e := runDocker(ctx, "build", "-t", ins.Image, a.RepoDir)
 	return out, e
 }
 
 // Deploy 运行容器（docker run -d --name -p host:internal）。
-// 优先复用原宿主端口：同一应用多次发布（迭代）URL 保持稳定，不漂移；
-// 仅当原端口越界/已被占用/首次部署时，才分配新端口。
-func (d *Deployer) Deploy(ctx context.Context, a *Application) error {
+// 端口段按环境；优先复用该环境实例原端口（同环境多次发布 URL 稳定）。
+func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance) error {
+	min, max := d.envPortRange(ins.Env)
 	used := d.usedPorts(ctx)
-	port := a.HostPort
-	if _, occupied := used[port]; port < d.portMin || port > d.portMax || occupied {
-		port = AllocFreePort(used, d.portMin, d.portMax)
+	port := ins.HostPort
+	if _, occupied := used[port]; port < min || port > max || occupied {
+		port = AllocFreePort(used, min, max)
 	}
 	if port == 0 {
-		return fmt.Errorf("无可用宿主端口（%d-%d 已满）", d.portMin, d.portMax)
+		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
-	name := fmt.Sprintf("appdeploy-%s-v%d", a.Name, a.Version)
+	name := fmt.Sprintf("appdeploy-%s-%s-v%d", a.Name, ins.Env, ins.Version)
 	out, err := runDocker(ctx, "run", "-d", "--name", name,
 		"-p", fmt.Sprintf("%d:%d", port, a.InternalPort),
-		"--restart", "unless-stopped", a.Image)
+		"--restart", "unless-stopped", ins.Image)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}
-	a.ContainerName = name
-	a.HostPort = port
-	a.URL = fmt.Sprintf("http://%s:%d", d.host, port)
+	ins.ContainerName = name
+	ins.HostPort = port
+	ins.URL = fmt.Sprintf("http://%s:%d", d.host, port)
 	return nil
 }
 

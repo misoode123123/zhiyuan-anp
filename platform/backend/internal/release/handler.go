@@ -46,7 +46,6 @@ func (h *Handler) Register(r gin.IRouter) {
 
 type createRequest struct {
 	ChangeID string `json:"change_id" binding:"required"`
-	Deploy   bool   `json:"deploy"` // 发布后部署来源需求归属的应用（不创建/不改应用名）
 }
 
 // Create 把已审批变更发布上线（🚪G5 后），版本号自增；
@@ -93,8 +92,9 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 	// 可选：部署来源需求归属的应用（应用一等公民：只部署已存在的应用，不在发布时创建/改名）。
+	// 发布即部署到 test 环境（发布=测试验证；上线 prod 由「应用部署」页「上线」按钮触发）
 	deployed := ""
-	if in.Deploy && h.appDeploy != nil && chg != nil && chg.SourceID != "" && h.reqRepo != nil {
+	if h.appDeploy != nil && chg != nil && chg.SourceID != "" && h.reqRepo != nil {
 		if req, e := h.reqRepo.Get(c.Request.Context(), chg.SourceID); e == nil && req != nil && req.ApplicationID != "" {
 			if app, e := h.appDeploy.DeployByAppID(context.Background(), req.ApplicationID); e == nil && app != nil {
 				deployed = app.Name
@@ -105,8 +105,8 @@ func (h *Handler) Create(c *gin.Context) {
 		"id": r.ID, "version": r.Version, "status": r.Status,
 		"deploy_triggered": deployed,
 		"note": ternary(deployed == "",
-			"需求已交付（来源需求未归属应用，未自动部署；请在「应用部署」创建应用，或派发编码自动归属）",
-			"应用 "+deployed+" 异步构建部署中，见「应用部署」页"),
+			"需求已交付（来源需求未归属应用，未部署到 test；请在「应用部署」创建应用或派发编码自动归属）",
+			"应用 "+deployed+" 已发布，异步部署到 test 验证；确认无误后到「应用部署」点「上线」推 prod"),
 	})
 }
 

@@ -5,11 +5,16 @@ import { API_BASE_URL } from "@/lib/api";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
+type Instance = {
+  env: string; status: string; url: string; version: number;
+  host_port: number; image: string; updated_at: string;
+};
 type App = {
   id: string; name: string; repo_dir: string; internal_port: number;
   image: string; container_name: string; host_port: number; url: string;
   version: number; status: string; last_error: string; build_log: string;
   updated_at: string;
+  instances?: Instance[]; // 各环境部署实例（test/prod）
 };
 type Req = { id: string; title: string; status: string; application_id: string };
 type Detail = {
@@ -72,8 +77,17 @@ export default function ApplicationsPage() {
     setForm({ name: "", internal_port: form.internal_port });
     load(psID);
   }
-  async function act(id: string, action: "deploy" | "stop" | "start") {
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, { method: "POST" });
+  async function act(id: string, action: "deploy" | "stop" | "start", env?: string) {
+    const body = action === "deploy" && env ? { env } : {};
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const r = await res.json();
+    if (r.code !== 0) alert(r.message);
+    load(psID);
+  }
+  async function promote(id: string) {
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, { method: "POST" });
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
     load(psID);
@@ -149,7 +163,8 @@ export default function ApplicationsPage() {
               <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}>{a.status}</span>
               {a.image && <span className="text-xs text-neutral-400">v{a.version} · {a.image}</span>}
               <div className="ml-auto flex gap-1">
-                <button onClick={() => act(a.id, "deploy")} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">构建部署</button>
+                <button onClick={() => act(a.id, "deploy")} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">构建部署(test)</button>
+                <button onClick={() => promote(a.id)} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">🚀 上线(prod)</button>
                 {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
                 {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
                 <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>
@@ -167,11 +182,26 @@ export default function ApplicationsPage() {
                 {a.status === "running" ? "部署于" : "更新于"}：{new Date(a.updated_at).toLocaleString("zh-CN", { hour12: false })}
               </div>
             )}
-            {a.url && (
-              <div className="mt-1 text-sm">
-                访问入口：<a href={a.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{a.url}</a>
-              </div>
-            )}
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(["test", "prod"] as const).map((env) => {
+                const ins = a.instances?.find((i) => i.env === env);
+                const label = env === "prod" ? "🚀 生产 prod" : "🧪 测试 test";
+                return (
+                  <div key={env} className="rounded bg-neutral-50 p-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded px-1.5 py-0.5 font-medium ${env === "prod" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>{label}</span>
+                      {ins && <span className={`rounded px-1.5 py-0.5 ${STATUS_COLOR[ins.status] ?? "bg-neutral-100"}`}>{ins.status}</span>}
+                      {ins && ins.version > 0 && <span className="text-neutral-400">v{ins.version}</span>}
+                    </div>
+                    {ins?.url ? (
+                      <a href={ins.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-blue-600 hover:underline">{ins.url}</a>
+                    ) : (
+                      <div className="mt-1 text-neutral-400">{env === "prod" ? "未上线（点「上线」部署）" : "未部署（发布或「构建部署」）"}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             {a.last_error && <div className="mt-1 rounded bg-red-50 p-1 text-xs text-red-700">{a.last_error}</div>}
             {logsFor === a.id && (
               <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">{logs}</pre>

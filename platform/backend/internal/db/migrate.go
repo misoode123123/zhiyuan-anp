@@ -385,6 +385,24 @@ CREATE TABLE IF NOT EXISTS appdeploy_application (
   UNIQUE (project_space_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_appdeploy_ps ON appdeploy_application(project_space_id);
+
+CREATE TABLE IF NOT EXISTS appdeploy_instance (
+  id               TEXT PRIMARY KEY,
+  app_id           TEXT NOT NULL,
+  env              TEXT NOT NULL,                -- test / prod
+  image            TEXT,
+  container_name   TEXT,
+  host_port        INTEGER NOT NULL DEFAULT 0,
+  url              TEXT,
+  version          INTEGER NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL DEFAULT 'registered',
+  last_error       TEXT,
+  build_log        TEXT,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (app_id, env)
+);
+CREATE INDEX IF NOT EXISTS idx_appdeploy_instance_app ON appdeploy_instance(app_id);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
@@ -409,6 +427,40 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 	} {
 		if err := addColumnIfMissing(ctx, db, c.tbl, c.col, c.def); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", c.tbl, c.col, err)
+		}
+	}
+	// 多环境：把旧版单实例部署(application 表)迁移为 prod 实例，保持已部署应用可见。
+	if err := migrateInstances(ctx, db); err != nil {
+		return fmt.Errorf("migrate instances: %w", err)
+	}
+	return nil
+}
+
+// migrateInstances 一次性迁移：有 container_name 的 application → 建 prod 实例（未迁移过的）。
+func migrateInstances(ctx context.Context, db *sqlx.DB) error {
+	var rows []struct {
+		ID        string `db:"id"`
+		Image     string `db:"image"`
+		Container string `db:"container"`
+		URL       string `db:"url"`
+		Status    string `db:"status"`
+		HostPort  int    `db:"host_port"`
+		Version   int    `db:"version"`
+	}
+	if err := db.SelectContext(ctx, &rows,
+		`SELECT id, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container,
+		        host_port, version, COALESCE(url,'') AS url, status
+		 FROM appdeploy_application
+		 WHERE container_name IS NOT NULL AND container_name <> ''
+		   AND id NOT IN (SELECT app_id FROM appdeploy_instance WHERE env='prod')`); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO appdeploy_instance (id, app_id, env, image, container_name, host_port, url, version, status)
+			 VALUES (?, ?, 'prod', ?, ?, ?, ?, ?, ?)`,
+			"insprod_"+r.ID, r.ID, r.Image, r.Container, r.HostPort, r.URL, r.Version, r.Status); err != nil {
+			return err
 		}
 	}
 	return nil

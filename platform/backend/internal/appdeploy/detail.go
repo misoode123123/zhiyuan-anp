@@ -12,7 +12,8 @@ type AppDetail struct {
 	Requirements []AppReqItem    `json:"requirements"`
 	Changes      []AppChangeItem `json:"changes"`
 	Releases     []AppRelItem    `json:"releases"`
-	Commits      []CommitInfo    `json:"commits"` // 托管 git 仓库的版本历史（= 应用代码版本）
+	Commits      []CommitInfo    `json:"commits"`    // 托管 git 仓库的版本历史（= 应用代码版本）
+	Instances    []AppInstance   `json:"instances"` // 各环境部署实例（test/prod）
 }
 
 // AppReqItem 需求条目（详情用精简字段）。
@@ -71,5 +72,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	}
 	// 托管仓库版本历史（git log = 应用代码版本）
 	d.Commits, _ = Log(ctx, a.RepoDir, 10)
+	// 各环境部署实例（test/prod）
+	d.Instances, _ = s.ListInstancesByApp(ctx, appID)
 	return d, nil
 }

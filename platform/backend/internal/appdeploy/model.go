@@ -26,6 +26,34 @@ type Application struct {
 	Status         string    `json:"status" db:"status"`             // registered/building/running/stopped/failed
 	LastError      string    `json:"last_error,omitempty" db:"last_error"`
 	BuildLog       string    `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
+	Instances      []AppInstance `json:"instances,omitempty" db:"-"` // 各环境部署实例（聚合展示，非列）
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// 环境常量：test=测试验证(prod 前)，prod=正式上线(用户访问)。
+const (
+	EnvTest = "test"
+	EnvProd = "prod"
+)
+
+// IsValidEnv 合法环境校验。
+func IsValidEnv(env string) bool { return env == EnvTest || env == EnvProd }
+
+// AppInstance 应用在某环境的部署实例（一应用 × 一环境 = 一实例）。
+// 发布→部署 test（验证）；「上线」→部署 prod（用户访问）。两环境独立镜像/容器/端口/版本。
+type AppInstance struct {
+	ID            string    `json:"id" db:"id"`
+	AppID         string    `json:"app_id" db:"app_id"`
+	Env           string    `json:"env" db:"env"` // test / prod
+	Image         string    `json:"image,omitempty" db:"image"`
+	ContainerName string    `json:"container_name,omitempty" db:"container_name"`
+	HostPort      int       `json:"host_port,omitempty" db:"host_port"`
+	URL           string     `json:"url,omitempty" db:"url"`
+	Version       int       `json:"version,omitempty" db:"version"`
+	Status        string    `json:"status" db:"status"` // registered/building/running/stopped/failed
+	LastError     string    `json:"last_error,omitempty" db:"last_error"`
+	BuildLog      string    `json:"build_log,omitempty" db:"build_log"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
