@@ -12,6 +12,7 @@ const NAV = [
   { href: "/docs", label: "方案文档", icon: "📄" },
   { href: "/compute", label: "算力资源", icon: "⚡" },
   { href: "/capabilities", label: "AI能力市场", icon: "🧩" },
+  { href: "/attendance", label: "考勤管理", icon: "🗓️" },
   { href: "/admin/config", label: "系统配置", icon: "⚙️" },
   { href: "/admin/users", label: "用户权限", icon: "🔐" },
   { href: "/approvals", label: "变更审批", icon: "🚪" },

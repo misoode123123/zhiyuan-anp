@@ -1,6 +1,6 @@
 {
   "name": "zhiyuan-anp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "智源 ANP — 企业 AI 原生研发平台",
   "packageManager": "pnpm@10.31.0",
