@@ -139,6 +139,49 @@ func (s *Store) ListInstancesByApp(ctx context.Context, appID string) ([]AppInst
 	return list, err
 }
 
+// envCols 环境变量显式列。
+const envCols = `id, app_id, key, COALESCE(value,'') AS value, is_secret, created_at`
+
+// ListEnv 列出应用的环境变量（部署注入用；接口层对 is_secret 的 value 做 mask）。
+func (s *Store) ListEnv(ctx context.Context, appID string) ([]EnvVar, error) {
+	var list []EnvVar
+	err := s.db.SelectContext(ctx, &list, `SELECT `+envCols+` FROM appdeploy_env WHERE app_id=? ORDER BY key`, appID)
+	return list, err
+}
+
+// UpsertEnv 新增或更新环境变量（按 app_id+key 唯一）。
+func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool) error {
+	id := "env_" + uuid.NewString()[:20]
+	sec := 0
+	if isSecret {
+		sec = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(app_id, key) DO UPDATE SET value=excluded.value, is_secret=excluded.is_secret`,
+		id, appID, key, value, sec)
+	return err
+}
+
+// DeleteEnv 删除环境变量。
+func (s *Store) DeleteEnv(ctx context.Context, appID, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_env WHERE app_id=? AND key=?`, appID, key)
+	return err
+}
+
+// EnvPairs 返回 ["KEY=VALUE", ...] 供 docker run -e 注入（含 secret 实际值）。
+func (s *Store) EnvPairs(ctx context.Context, appID string) ([]string, error) {
+	vars, err := s.ListEnv(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	pairs := make([]string, 0, len(vars))
+	for _, v := range vars {
+		pairs = append(pairs, v.Key+"="+v.Value)
+	}
+	return pairs, nil
+}
+
 // EnsureAppForRequirement 为需求兜底创建托管应用：同名则复用，否则建仓 + 建记录。
 // 用于"需求未归属应用"时自动确立代码归属（应用 = 托管 git 仓库），使派发永不阻塞。
 // 返回 appID + repoDir + port（默认 8080，buildpack 后续可按源码类型校正）。

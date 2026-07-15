@@ -40,7 +40,15 @@ const (
 // IsValidEnv 合法环境校验。
 func IsValidEnv(env string) bool { return env == EnvTest || env == EnvProd }
 
-// AppInstance 应用在某环境的部署实例（一应用 × 一环境 = 一实例）。
+// EnvVar 应用运行时环境变量（部署时 docker run -e 注入；is_secret 时接口 mask 显示，不泄露）。
+type EnvVar struct {
+	ID        string    `json:"id" db:"id"`
+	AppID     string    `json:"app_id" db:"app_id"`
+	Key       string    `json:"key" db:"key"`
+	Value     string    `json:"value" db:"value"`
+	IsSecret  bool      `json:"is_secret" db:"is_secret"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
 // 发布→部署 test（验证）；「上线」→部署 prod（用户访问）。两环境独立镜像/容器/端口/版本。
 type AppInstance struct {
 	ID            string    `json:"id" db:"id"`

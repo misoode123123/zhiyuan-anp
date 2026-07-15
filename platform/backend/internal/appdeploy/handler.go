@@ -34,6 +34,9 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
 	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace) // 启动交互编码工作台
+	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
+	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
+	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 }
 
@@ -87,6 +90,48 @@ func (h *Handler) Workspace(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "port": s.Port, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
+}
+
+// ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。
+func (h *Handler) ListEnv(c *gin.Context) {
+	list, err := h.store.ListEnv(c.Request.Context(), c.Param("aid"))
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	for i := range list {
+		if list[i].IsSecret {
+			list[i].Value = "" // 隐藏密钥明文（实际值仍用于部署注入）
+		}
+	}
+	httpx.OK(c, list)
+}
+
+// UpsertEnv 新增/更新环境变量。
+func (h *Handler) UpsertEnv(c *gin.Context) {
+	var in struct {
+		Key      string `json:"key" binding:"required"`
+		Value    string `json:"value"`
+		IsSecret bool   `json:"is_secret"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if err := h.store.UpsertEnv(c.Request.Context(), c.Param("aid"), in.Key, in.Value, in.IsSecret); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"app_id": c.Param("aid"), "key": in.Key, "saved": true})
+}
+
+// DeleteEnv 删除环境变量。
+func (h *Handler) DeleteEnv(c *gin.Context) {
+	if err := h.store.DeleteEnv(c.Request.Context(), c.Param("aid"), c.Param("key")); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"app_id": c.Param("aid"), "key": c.Param("key"), "deleted": true})
 }
 
 type createBody struct {
@@ -224,7 +269,8 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 	ins.Status = "building"
 	ins.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateInstance(ctx, ins)
-	if err := h.deployer.Deploy(ctx, a, ins); err != nil {
+	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
+	if err := h.deployer.Deploy(ctx, a, ins, envPairs); err != nil {
 		ins.Status = "failed"
 		ins.LastError = err.Error()
 		_ = h.store.UpdateInstance(ctx, ins)

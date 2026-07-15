@@ -80,9 +80,10 @@ func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance) 
 	return out, e
 }
 
-// Deploy 运行容器（docker run -d --name -p host:internal）。
+// Deploy 运行容器（docker run -d --name -p host:internal -e KEY=VALUE ...）。
 // 端口段按环境；优先复用该环境实例原端口（同环境多次发布 URL 稳定）。
-func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance) error {
+// env 为应用的运行时环境变量（含密钥），逐个 -e 注入容器。
+func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string) error {
 	min, max := d.envPortRange(ins.Env)
 	used := d.usedPorts(ctx)
 	port := ins.HostPort
@@ -93,9 +94,12 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance)
 		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", a.Name, ins.Env, ins.Version)
-	out, err := runDocker(ctx, "run", "-d", "--name", name,
-		"-p", fmt.Sprintf("%d:%d", port, a.InternalPort),
-		"--restart", "unless-stopped", ins.Image)
+	args := []string{"run", "-d", "--name", name}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort), "--restart", "unless-stopped", ins.Image)
+	out, err := runDocker(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}

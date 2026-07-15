@@ -403,6 +403,17 @@ CREATE TABLE IF NOT EXISTS appdeploy_instance (
   UNIQUE (app_id, env)
 );
 CREATE INDEX IF NOT EXISTS idx_appdeploy_instance_app ON appdeploy_instance(app_id);
+
+CREATE TABLE IF NOT EXISTS appdeploy_env (
+  id          TEXT PRIMARY KEY,
+  app_id      TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  value       TEXT,
+  is_secret   INTEGER NOT NULL DEFAULT 0,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (app_id, key)
+);
+CREATE INDEX IF NOT EXISTS idx_appdeploy_env_app ON appdeploy_env(app_id);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。

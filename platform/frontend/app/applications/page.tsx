@@ -9,6 +9,7 @@ type Instance = {
   env: string; status: string; url: string; version: number;
   host_port: number; image: string; updated_at: string;
 };
+type EnvVar = { id: string; key: string; value: string; is_secret: boolean };
 type App = {
   id: string; name: string; repo_dir: string; internal_port: number;
   image: string; container_name: string; host_port: number; url: string;
@@ -45,6 +46,9 @@ export default function ApplicationsPage() {
   const [appReqs, setAppReqs] = useState<Req[]>([]);
   const [detailFor, setDetailFor] = useState<string>("");
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [envFor, setEnvFor] = useState<string>("");
+  const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
+  const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -103,6 +107,28 @@ export default function ApplicationsPage() {
     } else {
       alert(r.message || "启动编码工作台失败");
     }
+  }
+  async function reloadEnv(id: string) {
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`);
+    const r = await res.json();
+    setAppEnvs(r.data ?? []);
+  }
+  async function showEnv(id: string) {
+    if (envFor === id) { setEnvFor(""); return; }
+    setEnvFor(id);
+    await reloadEnv(id);
+  }
+  async function saveEnv(id: string) {
+    if (!envForm.key.trim()) return;
+    await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(envForm),
+    });
+    setEnvForm({ key: "", value: "", is_secret: false });
+    reloadEnv(id);
+  }
+  async function removeEnv(id: string, key: string) {
+    await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
+    reloadEnv(id);
   }
   async function remove(id: string) {
     if (!confirm("删除应用（含容器）？")) return;
@@ -183,6 +209,7 @@ export default function ApplicationsPage() {
                   <option value="codex">codex*</option>
                 </select>
                 <button onClick={() => openWorkspace(a.id, wsTool)} className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700" title="打开该工具的官方交互编码界面（*为预留）">🧑‍💻 编码</button>
+                <button onClick={() => showEnv(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">⚙️变量</button>
                 {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
                 {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
                 <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>
@@ -234,6 +261,28 @@ export default function ApplicationsPage() {
                   </div>
                 ))}
                 {appReqs.length === 0 && <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>}
+              </div>
+            )}
+            {envFor === a.id && (
+              <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
+                <div className="mb-1 text-neutral-500">运行时环境变量（部署时 -e 注入容器；🔒=密钥已隐藏明文）</div>
+                <div className="space-y-1">
+                  {appEnvs.map((e) => (
+                    <div key={e.id} className="flex items-center gap-2">
+                      <code className="text-neutral-700">{e.key}</code>
+                      <span className="text-neutral-400">=</span>
+                      <span className={e.is_secret ? "text-amber-600" : "text-neutral-600"}>{e.is_secret ? "🔒 已隐藏" : (e.value || "(空)")}</span>
+                      <button onClick={() => removeEnv(a.id, e.key)} className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-red-700">删</button>
+                    </div>
+                  ))}
+                  {appEnvs.length === 0 && <div className="text-neutral-400">暂无</div>}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-neutral-200 pt-2">
+                  <input value={envForm.key} onChange={(ev) => setEnvForm({ ...envForm, key: ev.target.value })} placeholder="KEY" className="w-28 rounded border border-neutral-300 px-1 py-0.5" />
+                  <input value={envForm.value} onChange={(ev) => setEnvForm({ ...envForm, value: ev.target.value })} placeholder="value" type={envForm.is_secret ? "password" : "text"} className="flex-1 rounded border border-neutral-300 px-1 py-0.5" />
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={envForm.is_secret} onChange={(ev) => setEnvForm({ ...envForm, is_secret: ev.target.checked })} />密钥</label>
+                  <button onClick={() => saveEnv(a.id)} className="rounded bg-blue-600 px-2 py-0.5 text-white">保存</button>
+                </div>
               </div>
             )}
             {detailFor === a.id && detail && (
