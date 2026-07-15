@@ -117,9 +117,13 @@ func main() {
 	qaSvc := qa.NewService(qaStore, cfg.AgentRuntimeURL)
 	qaHandler := qa.NewHandler(qaSvc, reqRepo)
 
-	// 发布中心
+	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL
+	appDeployStore := appdeploy.NewStore(database)
+	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))
+
+	// 发布中心（发布后可自动触发应用部署）
 	releaseStore := release.NewStore(database)
-	releaseHandler := release.NewHandler(releaseStore, changeStore, reqRepo)
+	releaseHandler := release.NewHandler(releaseStore, changeStore, reqRepo, appDeployHandler)
 
 	// 算力资源中心（用量看板，computeStore 已在前面定义）
 	computeHandler := compute.NewHandler(computeStore)
@@ -156,10 +160,6 @@ func main() {
 	attendanceStore := attendance.NewStore(database)
 	attendanceSvc := attendance.NewService(attendanceStore)
 	attendanceHandler := attendance.NewHandler(attendanceSvc)
-
-	// 应用部署引擎（板块06 M2）：产出应用 build→docker run→暴露 URL
-	appDeployStore := appdeploy.NewStore(database)
-	appDeployHandler := appdeploy.NewHandler(appDeployStore, appdeploy.NewDeployer(cfg.AppDeployHost))
 
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
