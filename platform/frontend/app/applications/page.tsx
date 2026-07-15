@@ -10,6 +10,7 @@ type App = {
   image: string; container_name: string; host_port: number; url: string;
   version: number; status: string; last_error: string; build_log: string;
 };
+type Req = { id: string; title: string; status: string; application_id: string };
 
 const STATUS_COLOR: Record<string, string> = {
   running: "bg-emerald-100 text-emerald-700",
@@ -26,6 +27,8 @@ export default function ApplicationsPage() {
   const [form, setForm] = useState({ name: "", repo_dir: "/data/repos/myapp", internal_port: 8080 });
   const [logsFor, setLogsFor] = useState<string>("");
   const [logs, setLogs] = useState("");
+  const [reqsFor, setReqsFor] = useState<string>("");
+  const [appReqs, setAppReqs] = useState<Req[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -76,6 +79,13 @@ export default function ApplicationsPage() {
     const r = await res.json();
     setLogs(r.data?.logs ?? "(无)");
   }
+  async function showReqs(id: string) {
+    if (reqsFor === id) { setReqsFor(""); return; }
+    setReqsFor(id);
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/requirements`);
+    const r = await res.json();
+    setAppReqs(r.data ?? []);
+  }
 
   return (
     <div>
@@ -119,6 +129,7 @@ export default function ApplicationsPage() {
                 <button onClick={() => act(a.id, "deploy")} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">构建部署</button>
                 {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
                 {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
+                <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>
                 <button onClick={() => showLogs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">日志</button>
                 <button onClick={() => remove(a.id)} className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">删除</button>
               </div>
@@ -135,6 +146,18 @@ export default function ApplicationsPage() {
             {a.last_error && <div className="mt-1 rounded bg-red-50 p-1 text-xs text-red-700">{a.last_error}</div>}
             {logsFor === a.id && (
               <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">{logs}</pre>
+            )}
+            {reqsFor === a.id && (
+              <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
+                <div className="mb-1 text-neutral-500">归属此应用的需求（{appReqs.length}）</div>
+                {appReqs.map((q) => (
+                  <div key={q.id} className="flex items-center gap-2 py-0.5">
+                    <span className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500"}`}>{q.status}</span>
+                    <span className="truncate">{q.title}</span>
+                  </div>
+                ))}
+                {appReqs.length === 0 && <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>}
+              </div>
             )}
           </div>
         ))}
