@@ -16,6 +16,7 @@ type Detail = {
   requirements: Req[];
   changes: { id: string; status: string; kind: string; source_id: string; created_at: string }[];
   releases: { id: string; version: string; status: string; change_id: string; created_at: string }[];
+  commits: { sha: string; message: string; date: string }[];
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -101,6 +102,15 @@ export default function ApplicationsPage() {
     const r = await res.json();
     setDetail(r.data ?? null);
   }
+  async function deployCommit(appID: string, sha: string) {
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy-commit`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sha }),
+    });
+    const r = await res.json();
+    if (r.code !== 0) alert(r.message);
+    load(psID);
+  }
 
   return (
     <div>
@@ -173,6 +183,7 @@ export default function ApplicationsPage() {
               </div>
             )}
             {detailFor === a.id && detail && (
+              <>
               <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-neutral-50 p-2 text-xs md:grid-cols-3">
                 <div>
                   <div className="mb-1 font-medium text-neutral-500">需求（{detail.requirements.length}）</div>
@@ -190,6 +201,21 @@ export default function ApplicationsPage() {
                   {detail.releases.length === 0 && <div className="text-neutral-400">无</div>}
                 </div>
               </div>
+              {detail.commits.length > 0 && (
+                <div className="mt-2 border-t border-neutral-200 pt-2">
+                  <div className="mb-1 font-medium text-neutral-500">版本历史（{detail.commits.length}，可部署/回滚任意版本）</div>
+                  <div className="space-y-1">
+                    {detail.commits.map((c) => (
+                      <div key={c.sha} className="flex items-center gap-2">
+                        <code className="text-xs text-neutral-400">{c.sha.slice(0, 7)}</code>
+                        <span className="truncate text-neutral-700">{c.message}</span>
+                        <button onClick={() => deployCommit(a.id, c.sha)} className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">部署此版本</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              </>
             )}
           </div>
         ))}

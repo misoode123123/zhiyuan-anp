@@ -26,6 +26,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps", h.Create)
 	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
 	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)
+	r.POST("/project-spaces/:id/apps/:aid/deploy-commit", h.DeployCommit)
 	r.POST("/project-spaces/:id/apps/:aid/stop", h.Stop)
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
@@ -94,29 +95,57 @@ func (h *Handler) Deploy(c *gin.Context) {
 		return
 	}
 	_ = h.store.SetStatus(c.Request.Context(), psID, aid, "building", "", "")
-	go h.buildAndDeploy(psID, aid)
+	go h.buildAndDeploy(psID, aid, "")
 	httpx.OK(c, gin.H{"id": aid, "status": "building", "note": "异步构建部署中，轮询列表查状态"})
 }
 
-// buildAndDeploy 后台执行（脱离 HTTP context）。
-func (h *Handler) buildAndDeploy(psID, aid string) {
+// DeployCommit 部署/回滚到指定历史版本（git checkout <sha> → build → run）。
+func (h *Handler) DeployCommit(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	var in struct {
+		SHA string `json:"sha" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if _, err := h.store.Get(c.Request.Context(), psID, aid); err != nil {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	_ = h.store.SetStatus(c.Request.Context(), psID, aid, "building", "", "")
+	go h.buildAndDeploy(psID, aid, in.SHA)
+	httpx.OK(c, gin.H{"id": aid, "sha": in.SHA, "status": "building", "note": "版本化部署/回滚中"})
+}
+
+// buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本（回滚）。
+func (h *Handler) buildAndDeploy(psID, aid, sha string) {
 	ctx := context.Background()
 	a, err := h.store.Get(ctx, psID, aid)
 	if err != nil || a == nil || a.ID == "" {
 		return
 	}
-	// 若已有旧容器，先清理（重新部署）
+	// 若已有旧容器，先清理（重新部署/回滚）
 	if a.ContainerName != "" {
 		_, _ = h.deployer.Remove(ctx, a.ContainerName)
 	}
+	// 版本化：checkout 到指定 commit（回滚），构建后恢复工作区
+	prevBranch := ""
+	if sha != "" {
+		prevBranch, _ = Checkout(ctx, a.RepoDir, sha)
+		defer Restore(ctx, a.RepoDir, prevBranch)
+	}
 	// 0. 确保 Dockerfile：无则按 buildpack 检测类型自动生成；采纳检测到的内部端口
 	note := ""
+	if sha != "" {
+		note = "版本化部署：commit " + sha[:min(7, len(sha))] + "\n"
+	}
 	if gen, port, err := EnsureDockerfile(a.RepoDir, a.InternalPort); err == nil {
 		if port != 0 && port != a.InternalPort {
 			a.InternalPort = port
 		}
 		if gen {
-			note = "buildpack 已按源码类型自动生成 Dockerfile\n"
+			note += "buildpack 已按源码类型自动生成 Dockerfile\n"
 		}
 	}
 	// 1. 构建
@@ -138,6 +167,13 @@ func (h *Handler) buildAndDeploy(psID, aid string) {
 	a.LastError = ""
 	a.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateDeploy(ctx, a)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (h *Handler) Stop(c *gin.Context) {
@@ -207,7 +243,7 @@ func (h *Handler) DeployForRelease(ctx context.Context, psID, name, repoDir stri
 		a.RepoDir = repoDir
 	}
 	_ = h.store.SetStatus(ctx, psID, a.ID, "building", "", "")
-	go h.buildAndDeploy(psID, a.ID)
+	go h.buildAndDeploy(psID, a.ID, "")
 	return a, nil
 }
 
@@ -218,7 +254,7 @@ func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application
 		return nil, errAppNotFound
 	}
 	_ = h.store.SetStatus(ctx, a.ProjectSpaceID, appID, "building", "", "")
-	go h.buildAndDeploy(a.ProjectSpaceID, appID)
+	go h.buildAndDeploy(a.ProjectSpaceID, appID, "")
 	return a, nil
 }
 

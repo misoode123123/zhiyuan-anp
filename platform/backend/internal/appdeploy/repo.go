@@ -53,6 +53,34 @@ func Commit(ctx context.Context, repoDir, message string) (string, error) {
 	return runGit(ctx, repoDir, "commit", "-q", "-m", message)
 }
 
+// Checkout 切到指定 commit（版本化部署/回滚）。返回原分支名以便恢复。
+func Checkout(ctx context.Context, repoDir, sha string) (string, error) {
+	if sha == "" {
+		return "", nil
+	}
+	// 记录当前分支
+	branch, _ := runGit(ctx, repoDir, "rev-parse", "--abbrev-ref", "HEAD")
+	branch = strings.TrimSpace(branch)
+	if _, err := runGit(ctx, repoDir, "checkout", "-q", sha); err != nil {
+		return branch, err
+	}
+	return branch, nil
+}
+
+// Restore 切回原分支（版本化部署后恢复工作区，避免游离 HEAD 影响后续编码）。
+func Restore(ctx context.Context, repoDir, branch string) {
+	if branch == "" || branch == "HEAD" {
+		// 游离 HEAD 状态（首次提交无分支），尝试切到 main/master
+		for _, b := range []string{"main", "master"} {
+			if _, err := runGit(ctx, repoDir, "checkout", "-q", b); err == nil {
+				return
+			}
+		}
+		return
+	}
+	_, _ = runGit(ctx, repoDir, "checkout", "-q", branch)
+}
+
 // Log 最近的提交（= 应用版本历史）。
 func Log(ctx context.Context, repoDir string, n int) ([]CommitInfo, error) {
 	if n <= 0 {
