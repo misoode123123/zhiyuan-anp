@@ -86,8 +86,21 @@ func (h *Handler) buildAndDeploy(psID, aid string) {
 	if a.ContainerName != "" {
 		_, _ = h.deployer.Remove(ctx, a.ContainerName)
 	}
+	// 0. 确保 Dockerfile：无则按 buildpack 检测类型自动生成；采纳检测到的内部端口
+	note := ""
+	if gen, port, err := EnsureDockerfile(a.RepoDir, a.InternalPort); err == nil {
+		if port != 0 && port != a.InternalPort {
+			a.InternalPort = port
+		}
+		if gen {
+			note = "buildpack 已按源码类型自动生成 Dockerfile\n"
+		}
+	}
 	// 1. 构建
 	log, err := h.deployer.Build(ctx, a)
+	if note != "" {
+		log = note + log
+	}
 	if err != nil {
 		_ = h.store.SetStatus(ctx, psID, aid, "failed", err.Error(), tail(log, 2000))
 		return
