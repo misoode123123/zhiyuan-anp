@@ -46,6 +46,16 @@ func TestEnsureDockerfile_NodeType(t *testing.T) {
 	}
 }
 
+func TestEnsureDockerfile_RespectsExplicitPort(t *testing.T) {
+	dir, _ := os.MkdirTemp("", "bp-node-exp")
+	defer os.RemoveAll(dir)
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644)
+	// 显式传 8080（opencode 实际监听）→ 不应被 node 默认 3000 覆盖
+	if _, port, _ := EnsureDockerfile(dir, 8080); port != 8080 {
+		t.Fatalf("显式端口 8080 应保留，得到 %d", port)
+	}
+}
+
 func TestEnsureDockerfile_ExistingDockerfileUntouched(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "bp-exist")
 	defer os.RemoveAll(dir)

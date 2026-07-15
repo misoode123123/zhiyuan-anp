@@ -9,29 +9,30 @@ import (
 // EnsureDockerfile 若 repoDir 无 Dockerfile，按检测到的项目类型生成一个最小可构建 Dockerfile。
 // 返回：(是否新生成, 应使用的内部端口, 错误)。已有 Dockerfile 则原样使用。
 //
-// 让"研发产出但缺 Dockerfile 的源码"也能被部署引擎构建——opencode 产出的代码只需是
-// 可运行服务(有 main/入口)，Dockerfile 由 buildpack 兜底生成。
+// 端口优先级：调用方显式传入的端口(fallbackPort>0) > 类型默认；避免 buildpack 把
+// opencode 实际监听端口(如 8080)误覆盖成类型惯例(如 node 的 3000)导致端口不匹配。
 func EnsureDockerfile(repoDir string, fallbackPort int) (generated bool, port int, err error) {
-	if fallbackPort <= 0 {
-		fallbackPort = 8080
-	}
 	df := filepath.Join(repoDir, "Dockerfile")
 	if _, e := os.Stat(df); e == nil {
 		return false, fallbackPort, nil
 	}
-	t, p := detectType(repoDir, fallbackPort)
-	content := dockerfileFor(t, p)
+	t := detectType(repoDir)
+	port = fallbackPort
+	if port <= 0 {
+		port = defaultPortForType(t)
+	}
+	content := dockerfileFor(t, port)
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
-		return false, p, err
+		return false, port, err
 	}
 	if err := os.WriteFile(df, []byte(content), 0o644); err != nil {
-		return false, p, err
+		return false, port, err
 	}
-	return true, p, nil
+	return true, port, nil
 }
 
-// detectType 按仓库特征推断项目类型与默认端口。
-func detectType(repoDir string, fallbackPort int) (string, int) {
+// detectType 按仓库特征推断项目类型。
+func detectType(repoDir string) string {
 	has := func(names ...string) bool {
 		for _, n := range names {
 			if _, err := os.Stat(filepath.Join(repoDir, n)); err == nil {
@@ -42,15 +43,27 @@ func detectType(repoDir string, fallbackPort int) (string, int) {
 	}
 	switch {
 	case has("go.mod", "main.go"):
-		return "go", 8080
+		return "go"
 	case has("package.json"):
-		return "node", 3000
+		return "node"
 	case has("requirements.txt", "app.py", "main.py"):
-		return "python", 8080
+		return "python"
 	case has("index.html"):
-		return "static", 80
+		return "static"
 	default:
-		return "go", fallbackPort // 默认按 Go（平台主语言）
+		return "go" // 默认按 Go（平台主语言）
+	}
+}
+
+// defaultPortForType 各类型默认端口（仅当未显式指定端口时用）。
+func defaultPortForType(t string) int {
+	switch t {
+	case "node":
+		return 3000
+	case "static":
+		return 80
+	default:
+		return 8080
 	}
 }
 
