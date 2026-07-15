@@ -142,7 +142,7 @@ export default function ApplicationsPage() {
       </div>
 
       <div className="mt-4 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
-        说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是<b>宿主 docker 守护进程可见</b>的路径（生产 .28 上产出应用默认在 <code>/data/repos</code>，即宿主 <code>/opt/anp/data/repos</code>）。端口自动从 9100-9300 分配。
+        说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是<b>后端容器内可见</b>的路径（产出应用默认在 <code>/data/repos/&lt;应用名&gt;</code>，对应宿主 <code>/opt/anp/data/repos/...</code>）。端口自动从 9100-9300 分配。
       </div>
     </div>
   );

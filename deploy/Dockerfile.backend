@@ -9,6 +9,8 @@ COPY platform/backend/ ./
 RUN CGO_ENABLED=0 go build -o /server ./cmd/server
 
 FROM alpine:3.19
+# 国内 alpine 镜像源，加速 apk（.28 等国内服务器到 dl-cdn 很慢）
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g; s#http://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories
 RUN apk add --no-cache ca-certificates git bash curl libc6-compat nodejs npm docker-cli
 RUN npm config set registry https://registry.npmmirror.com && npm i -g opencode-ai
 WORKDIR /app
