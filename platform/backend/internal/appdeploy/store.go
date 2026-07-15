@@ -71,6 +71,24 @@ func (s *Store) ResolveApp(ctx context.Context, appID string) (repoDir string, p
 	return a.RepoDir, a.InternalPort, nil
 }
 
+// EnsureAppForRequirement 为需求兜底创建托管应用：同名则复用，否则建仓 + 建记录。
+// 用于"需求未归属应用"时自动确立代码归属（应用 = 托管 git 仓库），使派发永不阻塞。
+// 返回 appID + repoDir + port（默认 8080，buildpack 后续可按源码类型校正）。
+func (s *Store) EnsureAppForRequirement(ctx context.Context, psID, appName string) (appID, repoDir string, port int, err error) {
+	if a, e := s.GetByName(ctx, psID, appName); e == nil && a != nil && a.ID != "" {
+		return a.ID, a.RepoDir, a.InternalPort, nil
+	}
+	repoDir = ManagedRepoDir(appName)
+	if e := EnsureRepo(ctx, repoDir); e != nil {
+		return "", "", 0, fmt.Errorf("初始化托管仓库: %w", e)
+	}
+	a := &Application{ProjectSpaceID: psID, Name: appName, RepoDir: repoDir, InternalPort: 8080}
+	if e := s.Create(ctx, a); e != nil {
+		return "", "", 0, e
+	}
+	return a.ID, a.RepoDir, a.InternalPort, nil
+}
+
 // UpdateDeploy 更新部署态字段（镜像/容器/端口/URL/版本/状态）。
 func (s *Store) UpdateDeploy(ctx context.Context, a *Application) error {
 	_, err := s.db.ExecContext(ctx,

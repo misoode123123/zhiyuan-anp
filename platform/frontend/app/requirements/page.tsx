@@ -31,7 +31,6 @@ export default function RequirementsPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
-  const [repoDir, setRepoDir] = useState(""); // 仅当需求未归属应用时手填
   const [dispatching, setDispatching] = useState("");
 
   useEffect(() => {
@@ -97,20 +96,20 @@ export default function RequirementsPage() {
     if (!psID || dispatching) return;
     const req = list.find((x) => x.id === rid) ?? (last?.id === rid ? last : null);
     const appBound = !!req?.application_id;
-    if (!appBound && !repoDir.trim()) { setMsg("✗ 该需求未归属应用，需填写目标仓库路径（或先在「应用部署」建应用并在创建需求时选定）"); return; }
     setDispatching(rid);
     setMsg("");
     try {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/dispatch-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(appBound ? {} : { repo_dir: repoDir }),
+        // 未归属应用时后端会自动兜底创建托管应用并绑定，派发永不阻塞。
+        body: JSON.stringify({}),
       });
       const r = await res.json();
       if (r.data?.task_id) {
         setMsg(appBound
           ? `⚡ 已派发编码到所属应用仓库（任务 ${r.data.task_id}）。AI 后台实现并提交 → 去「🚪 变更审批」审批`
-          : `⚡ 已派发编码（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`);
+          : `⚡ 已派发编码并自动创建托管应用（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`);
       } else {
         setMsg(`✗ ${r.message ?? "派发失败"}`);
       }
@@ -191,9 +190,9 @@ export default function RequirementsPage() {
           <div className="mt-3 border-t border-blue-200 pt-3">
             <div className="mb-1 text-xs text-neutral-500">下一步：派发给 AI 编码</div>
             {last.application_id ? (
-              <div className="mb-2 text-xs text-emerald-700">📦 将编码到所属应用仓库「{apps.find((a) => a.id === last.application_id)?.name ?? last.application_id}」（自动，无需手填路径）</div>
+              <div className="mb-2 text-xs text-emerald-700">📦 将编码到所属应用仓库「{apps.find((a) => a.id === last.application_id)?.name ?? last.application_id}」（自动）</div>
             ) : (
-              <input value={repoDir} onChange={(e) => setRepoDir(e.target.value)} placeholder="目标仓库路径（未归属应用时需手填）" className="mb-2 w-full rounded border border-neutral-300 px-2 py-1 text-sm" />
+              <div className="mb-2 text-xs text-blue-700">📦 未归属应用：派发时自动创建一个托管应用（代码归属即确立，可在「应用部署」查看 / 构建 / 版本回滚）</div>
             )}
             <button onClick={() => dispatch(last.id)} disabled={!!dispatching} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
               {dispatching === last.id ? "派发中…" : "⚡ ② 派发编码"}

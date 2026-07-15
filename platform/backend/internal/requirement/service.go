@@ -17,9 +17,12 @@ import (
 )
 
 // AppResolver 按应用解析其托管仓库路径+端口（由 appdeploy.Store 实现）。
-// 派发编码时，若需求已归属应用，自动用该应用仓库，无需手填 repo_dir。
+// 派发编码时，若需求已归属应用，自动用该应用仓库，无需手填 repo_dir；
+// 若未归属应用，兜底自动创建一个托管应用并绑定（EnsureAppForRequirement）。
 type AppResolver interface {
 	ResolveApp(ctx context.Context, appID string) (repoDir string, port int, err error)
+	// EnsureAppForRequirement 为需求兜底创建托管应用，返回 appID+repoDir+port。
+	EnsureAppForRequirement(ctx context.Context, psID, appName string) (appID, repoDir string, port int, err error)
 }
 
 // Service 需求业务逻辑：调 AI 生成规格并入库（支持多模态：文字+图片→GLM-4V）。
@@ -117,16 +120,36 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 	if req == nil || req.ID == "" {
 		return nil, fmt.Errorf("需求 %s 不存在", reqID)
 	}
-	// 未显式给 repo_dir 且需求归属应用 → 用该应用托管仓库
-	if repoDir == "" && req.ApplicationID != "" && s.apps != nil {
-		if rd, _, e := s.apps.ResolveApp(ctx, req.ApplicationID); e == nil {
+	// repo_dir 优先级：显式传入 > 需求归属应用的托管仓库 > 兜底为需求自动创建托管应用。
+	// 应用一等公民：代码位置始终确定，派发永不因"未归属应用"阻塞。
+	if repoDir == "" && s.apps != nil {
+		if req.ApplicationID == "" {
+			// 未归属应用：兜底创建托管应用（req-<短id>，ASCII 确定名）并绑定到需求。
+			appID, rd, _, e := s.apps.EnsureAppForRequirement(ctx, projectSpaceID, deriveAppName(req.ID))
+			if e != nil {
+				return nil, fmt.Errorf("为需求兜底创建托管应用失败: %w", e)
+			}
+			req.ApplicationID = appID
+			repoDir = rd
+			_ = s.repo.SetApplication(ctx, req.ID, appID) // 绑定，后续派发/发布自动归属
+		} else if rd, _, e := s.apps.ResolveApp(ctx, req.ApplicationID); e == nil {
 			repoDir = rd
 		}
 	}
 	if repoDir == "" {
-		return nil, fmt.Errorf("未指定 repo_dir，且需求未归属应用（无法确定代码位置）")
+		return nil, fmt.Errorf("无法确定代码位置：需求未归属应用且自动创建托管应用失败")
 	}
 	return s.coder.Submit(ctx, projectSpaceID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
+}
+
+// deriveAppName 为未归属应用的需求派生一个确定的托管应用名。
+// 取需求 id 末段（标题常为中文，无法直接做镜像/容器名；id 全局唯一且为 ASCII）。
+func deriveAppName(reqID string) string {
+	short := reqID
+	if len(short) > 12 {
+		short = short[len(short)-12:]
+	}
+	return "req-" + strings.ReplaceAll(short, "_", "-")
 }
 
 // buildCodePrompt 把需求规格拼装为编码 prompt（单行）。
