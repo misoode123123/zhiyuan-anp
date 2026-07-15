@@ -116,7 +116,7 @@ func TestAutoRequire_AllowsAdminDeniesAnonymous(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	// 覆盖默认 anonymous：用一个能读头的 AuthUser
 	r2 := gin.New()
-	r2.Use(AuthUser())
+	r2.Use(AuthUser(nil))
 	v2 := r2.Group("/api/v1")
 	v2.Use(AutoRequire(store))
 	v2.POST("/code", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
@@ -127,7 +127,7 @@ func TestAutoRequire_AllowsAdminDeniesAnonymous(t *testing.T) {
 
 	// 读取类路由（未登记）对 anonymous 放行
 	r3 := gin.New()
-	r3.Use(AuthUser())
+	r3.Use(AuthUser(nil))
 	v3 := r3.Group("/api/v1")
 	v3.Use(AutoRequire(store))
 	v3.GET("/rules", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

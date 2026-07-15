@@ -31,6 +31,27 @@ export function setCurrentProjectSpace(ps: string): void {
   window.dispatchEvent(new Event("anp:ps-changed"));
 }
 
+// ---- 真实登录：token（Bearer）持久化；未登录时回退 X-User 模拟 ----
+const TOKEN_KEY = "anp.auth_token";
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+export function setAuthToken(token: string, user: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOKEN_KEY, token);
+  setCurrentUser(user);
+}
+export function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event("anp:user-changed"));
+}
+export function isLoggedIn(): boolean {
+  return !!getAuthToken();
+}
+
 // ---- 全局 fetch 拦截：跨域 API 调用自动带 X-User / X-Project-Space-Id ----
 // 集中注入，避免逐页面改 fetch；仅拦截发往后端的请求，其余原样放行。
 let interceptorInstalled = false;
@@ -42,7 +63,13 @@ export function installAuthInterceptor(): void {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes(API_BASE_URL) || url.includes(AGENT_RUNTIME_URL)) {
       const headers = new Headers(init?.headers);
-      if (!headers.has("X-User")) headers.set("X-User", currentUser());
+      // 已登录 → 带 Authorization Bearer token（真实鉴权）；未登录 → 回退 X-User 模拟（兼容调试）
+      const token = getAuthToken();
+      if (token && !headers.has("Authorization")) {
+        headers.set("Authorization", "Bearer " + token);
+      } else if (!token && !headers.has("X-User")) {
+        headers.set("X-User", currentUser());
+      }
       const ps = currentProjectSpace();
       if (ps && !headers.has("X-Project-Space-Id")) headers.set("X-Project-Space-Id", ps);
       return origFetch(input, { ...init, headers });

@@ -1,49 +1,47 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { currentUser, setCurrentUser } from "@/lib/api";
+import Link from "next/link";
+import { API_BASE_URL, clearAuthToken, currentUser, isLoggedIn } from "@/lib/api";
 
-// 演示用户（与后端 SeedBootstrapMembers 对齐）。
-const PRESETS = [
-  { id: "admin", label: "管理员 (admin)", role: "全部权限" },
-  { id: "dev1", label: "研发 (dev1)", role: "派编码/审批" },
-  { id: "biz1", label: "业务 (biz1)", role: "提需求" },
-];
-
+// 用户区：已登录显示用户名 + 登出；未登录显示登录入口（未登录以游客 X-User 模拟访问）。
 export function UserSwitcher() {
-  const [user, setUser] = useState("admin");
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [user, setUser] = useState(currentUser());
 
   useEffect(() => {
-    setUser(currentUser());
-    const onChange = () => setUser(currentUser());
-    window.addEventListener("anp:user-changed", onChange);
-    return () => window.removeEventListener("anp:user-changed", onChange);
+    const sync = () => {
+      setLoggedIn(isLoggedIn());
+      setUser(currentUser());
+    };
+    sync();
+    window.addEventListener("anp:user-changed", sync);
+    return () => window.removeEventListener("anp:user-changed", sync);
   }, []);
 
-  function pick(u: string) {
-    setCurrentUser(u);
-    setUser(u);
+  async function logout() {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST" });
+    } catch {}
+    clearAuthToken();
   }
 
+  if (loggedIn) {
+    return (
+      <div>
+        <div className="mb-1 text-xs text-neutral-500">已登录</div>
+        <div className="flex items-center justify-between">
+          <span className="truncate font-medium">👤 {user}</span>
+          <button onClick={logout} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">登出</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
-      <div className="mb-1 text-xs text-neutral-500">当前用户（M1 模拟登录）</div>
-      <select
-        value={user}
-        onChange={(e) => pick(e.target.value)}
-        className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-        title="切换模拟登录用户，演示 RBAC 权限差异"
-      >
-        {PRESETS.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-        {!PRESETS.some((p) => p.id === user) && <option value={user}>{user}</option>}
-      </select>
-      <div className="mt-1 text-[11px] text-neutral-400">
-        {PRESETS.find((p) => p.id === user)?.role ?? "自定义用户"}
-      </div>
+      <div className="mb-1 text-xs text-neutral-500">未登录</div>
+      <Link href="/login" className="block rounded bg-blue-600 px-2 py-1 text-center text-xs text-white">🔑 登录</Link>
+      <div className="mt-1 text-[11px] text-neutral-400">未登录以游客(X-User 模拟)访问</div>
     </div>
   );
 }

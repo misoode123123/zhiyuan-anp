@@ -146,6 +146,8 @@ func main() {
 	docsHandler := docs.NewHandler(docs.NewService(store))
 	changeHandler := change.NewHandler(changeStore)
 	authStore := auth.NewStore(database)
+	// 真实登录：首次为 admin 设默认密码（已有不覆盖；建议登录后改密）。
+	_ = authStore.EnsurePassword(context.Background(), "admin", "admin123")
 	authHandler := auth.NewHandler(authStore)
 
 	// 运维中心（板块07）：健康检查 + 看板聚合 + 告警 + SOP 预案
@@ -174,6 +176,8 @@ func main() {
 
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
+	// 认证：优先 Authorization Bearer token（真实登录），无则回退 X-User 头（兼容调试/旧前端）。
+	v1.Use(auth.AuthUser(authStore))
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
 	v1.Use(auth.AutoRequire(authStore))
 	wsHandler.Register(v1)

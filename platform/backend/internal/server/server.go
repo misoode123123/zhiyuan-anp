@@ -5,11 +5,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/config"
 )
 
 // New 构造 Gin 引擎，挂载全局中间件与基础路由。
+// 认证中间件（auth.AuthUser）在 main 的 /api/v1 组挂载（需要 authStore）。
 func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
 	if cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
@@ -21,7 +21,6 @@ func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
 		RequestLogger(logger),
 		CORS(cfg.CORSOrigins),
 		ProjectSpaceInjector(),
-		auth.AuthUser(),
 	)
 
 	// 健康检查 & 元信息

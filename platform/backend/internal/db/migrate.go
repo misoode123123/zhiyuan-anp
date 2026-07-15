@@ -43,11 +43,12 @@ CREATE TABLE IF NOT EXISTS membership (
 );
 
 CREATE TABLE IF NOT EXISTS "user" (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
-  email      TEXT,
-  status     TEXT NOT NULL DEFAULT 'active',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL UNIQUE,
+  email         TEXT,
+  password_hash TEXT,
+  status        TEXT NOT NULL DEFAULT 'active',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS requirement (
@@ -414,6 +415,15 @@ CREATE TABLE IF NOT EXISTS appdeploy_env (
   UNIQUE (app_id, key)
 );
 CREATE INDEX IF NOT EXISTS idx_appdeploy_env_app ON appdeploy_env(app_id);
+
+CREATE TABLE IF NOT EXISTS auth_session (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  user_name  TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_auth_session_user ON auth_session(user_id);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
@@ -435,6 +445,8 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 		{"test_case", "actual_status", "INTEGER"},
 		{"test_case", "actual_body", "TEXT"},
 		{"test_case", "run_at", "DATETIME"},
+		// 真实登录：用户密码哈希（bcrypt）。
+		{"user", "password_hash", "TEXT"},
 	} {
 		if err := addColumnIfMissing(ctx, db, c.tbl, c.col, c.def); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", c.tbl, c.col, err)

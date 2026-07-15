@@ -15,9 +15,20 @@ const (
 	CtxUserID = "user_id"
 )
 
-// AuthUser 解析 X-User 头注入 user_id（缺失则 anonymous）。
-func AuthUser() gin.HandlerFunc {
+// AuthUser 解析当前用户注入 user_id。
+// 优先 Authorization: Bearer <token>（真实登录）；无 token/无效则回退 X-User 头（兼容调试/旧前端）。
+// store 为 nil 时纯走 X-User（测试用）。
+func AuthUser(store *Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if store != nil {
+			if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				if name, ok := store.ValidToken(c.Request.Context(), strings.TrimPrefix(auth, "Bearer ")); ok {
+					c.Set(CtxUserID, name)
+					c.Next()
+					return
+				}
+			}
+		}
 		u := c.GetHeader(HeaderUserID)
 		if u == "" {
 			u = "anonymous"

@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"zhiyuan-anp/platform/backend/internal/httpx"
@@ -23,6 +25,11 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/users", h.ListUsers)
 	r.POST("/users", h.CreateUser)
 	r.GET("/users/:uid", h.GetUser)
+
+	// 认证（登录/登出/当前用户；login 无需鉴权）
+	r.POST("/auth/login", h.Login)
+	r.POST("/auth/logout", h.Logout)
+	r.GET("/auth/me", h.Me)
 }
 
 // List 列出项目空间成员。
@@ -106,4 +113,39 @@ func (h *Handler) GetUser(c *gin.Context) {
 	}
 	ms, _ := h.store.SpacesOf(c.Request.Context(), u.Name)
 	httpx.OK(c, gin.H{"user": u, "spaces": ms})
+}
+
+// ---------------- 认证 ----------------
+
+type loginBody struct {
+	Name     string `json:"name" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+// Login 用户名+密码登录，返回 token（后续请求带 Authorization: Bearer <token>）。
+func (h *Handler) Login(c *gin.Context) {
+	var in loginBody
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	token, u, err := h.store.Login(c.Request.Context(), in.Name, in.Password)
+	if err != nil {
+		httpx.Err(c, 401, 40101, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"token": token, "user": u})
+}
+
+// Logout 登出（吊销当前 token）。
+func (h *Handler) Logout(c *gin.Context) {
+	if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		_ = h.store.Logout(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
+	}
+	httpx.OK(c, gin.H{"logged_out": true})
+}
+
+// Me 当前登录用户。
+func (h *Handler) Me(c *gin.Context) {
+	httpx.OK(c, gin.H{"user": c.GetString(CtxUserID)})
 }
