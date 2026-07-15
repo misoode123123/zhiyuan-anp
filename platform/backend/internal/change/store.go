@@ -16,6 +16,9 @@ type Store struct {
 // NewStore 构造 Store。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
+// chgCols 显式列（可空文本列 COALESCE 防 NULL→string 扫描错误）。
+const chgCols = `id, project_space_id, COALESCE(kind,'') AS kind, COALESCE(source_id,'') AS source_id, COALESCE(repo_dir,'') AS repo_dir, COALESCE(prompt,'') AS prompt, COALESCE(model,'') AS model, COALESCE(output,'') AS output, status, reviewer, reviewed_at, created_at`
+
 // Create 登记一条待审批变更。
 func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 	c.ID = "chg_" + uuid.NewString()[:20]
@@ -29,17 +32,14 @@ func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 // Get 读取单条变更。
 func (s *Store) Get(ctx context.Context, id string) (*ChangeRequest, error) {
 	var c ChangeRequest
-	err := s.db.GetContext(ctx, &c,
-		`SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, output, status, reviewer, reviewed_at, created_at
-		 FROM change_request WHERE id = ?`, id)
+	err := s.db.GetContext(ctx, &c, `SELECT `+chgCols+` FROM change_request WHERE id = ?`, id)
 	return &c, err
 }
 
 // List 列出变更（status 为空则全部）。
 func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error) {
 	var list []ChangeRequest
-	q := `SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, output, status, reviewer, reviewed_at, created_at
-	      FROM change_request`
+	q := `SELECT ` + chgCols + ` FROM change_request`
 	args := []interface{}{}
 	if status != "" {
 		q += ` WHERE status = ?`
