@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
+	"zhiyuan-anp/platform/backend/internal/attendance"
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codetask"
@@ -150,6 +151,11 @@ func main() {
 	capabilityGateway := capability.NewGateway(capabilityStore, cfg.AgentRuntimeURL, "")
 	capabilityHandler := capability.NewHandler(capabilityStore, capabilityGateway)
 
+	// 业务模块：attendance（考勤管理：员工提交休息/加班/请假，转直接上级审批）
+	attendanceStore := attendance.NewStore(database)
+	attendanceSvc := attendance.NewService(attendanceStore)
+	attendanceHandler := attendance.NewHandler(attendanceSvc)
+
 	srv := server.New(cfg, logger)
 	v1 := srv.Group("/api/v1")
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权（authStore 已构造）。
@@ -170,6 +176,7 @@ func main() {
 	opsHandler.Register(v1)
 	securityHandler.Register(v1)
 	capabilityHandler.Register(v1)
+	attendanceHandler.Register(v1)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

@@ -329,6 +329,25 @@ CREATE TABLE IF NOT EXISTS capability_domain_agent (
   updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (project_space_id, code)
 );
+
+CREATE TABLE IF NOT EXISTS attendance_record (
+  id               TEXT PRIMARY KEY,
+  project_space_id TEXT NOT NULL,
+  user_id          TEXT NOT NULL,
+  status           TEXT NOT NULL,                       -- rest(休息)/overtime(加班)/leave(请假)
+  start_time       DATETIME NOT NULL,
+  end_time         DATETIME NOT NULL,
+  reason           TEXT,
+  supervisor_id    TEXT NOT NULL,                       -- 直接上级，提交后转其审批
+  approval_status  TEXT NOT NULL DEFAULT 'pending',     -- pending/approved/rejected
+  approver         TEXT,
+  approved_at      DATETIME,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_attendance_ps ON attendance_record(project_space_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_user ON attendance_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_super ON attendance_record(supervisor_id, approval_status);
 `
 
 // Migrate 执行启动期 schema 初始化（幂等）。
