@@ -73,9 +73,15 @@ func (d *Deployer) Build(ctx context.Context, a *Application) (log string, err e
 	return out, e
 }
 
-// Deploy 运行容器（docker run -d --name -p host:internal），分配空闲宿主端口并拼 URL。
+// Deploy 运行容器（docker run -d --name -p host:internal）。
+// 优先复用原宿主端口：同一应用多次发布（迭代）URL 保持稳定，不漂移；
+// 仅当原端口越界/已被占用/首次部署时，才分配新端口。
 func (d *Deployer) Deploy(ctx context.Context, a *Application) error {
-	port := AllocFreePort(d.usedPorts(ctx), d.portMin, d.portMax)
+	used := d.usedPorts(ctx)
+	port := a.HostPort
+	if _, occupied := used[port]; port < d.portMin || port > d.portMax || occupied {
+		port = AllocFreePort(used, d.portMin, d.portMax)
+	}
 	if port == 0 {
 		return fmt.Errorf("无可用宿主端口（%d-%d 已满）", d.portMin, d.portMax)
 	}
