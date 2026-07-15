@@ -3,10 +3,12 @@ package appdeploy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // 各环境宿主端口分配区间（互不冲突；避开 .28 上 lowcode/帆软/ANP 已用端口）。
@@ -130,4 +132,28 @@ func (d *Deployer) Logs(ctx context.Context, container string, tail int) (string
 		tail = 100
 	}
 	return runDocker(ctx, "logs", "--tail", strconv.Itoa(tail), container)
+}
+
+// ContainerStats 容器资源占用快照（docker stats 解析）。
+type ContainerStats struct {
+	CPUPerc  string `json:"cpu_perc"`  // "0.03%"
+	MemUsage string `json:"mem_usage"` // "7.5MiB / 7.66GiB"
+	MemPerc  string `json:"mem_perc"`  // "0.1%"
+	NetIO    string `json:"net_io"`    // "1.2kB / 3.4kB"
+	PIDs     string `json:"pids"`
+}
+
+// Stats 取容器资源占用（单次快照，非流式）。
+func (d *Deployer) Stats(ctx context.Context, container string) (*ContainerStats, error) {
+	out, err := runDocker(ctx, "stats", "--no-stream", "--format", "{{json .}}", container)
+	if err != nil {
+		return nil, fmt.Errorf("docker stats: %w: %s", err, out)
+	}
+	var raw struct {
+		CPUPerc, MemUsage, MemPerc, NetIO, PIDs string
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &raw); err != nil {
+		return nil, fmt.Errorf("解析 stats JSON: %w (原文: %s)", err, out)
+	}
+	return &ContainerStats{CPUPerc: raw.CPUPerc, MemUsage: raw.MemUsage, MemPerc: raw.MemPerc, NetIO: raw.NetIO, PIDs: raw.PIDs}, nil
 }

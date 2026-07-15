@@ -10,6 +10,7 @@ type Instance = {
   host_port: number; image: string; updated_at: string;
 };
 type EnvVar = { id: string; key: string; value: string; is_secret: boolean };
+type AppStats = { health?: string; cpu?: string; mem?: string; deployed?: boolean };
 type App = {
   id: string; name: string; repo_dir: string; internal_port: number;
   image: string; container_name: string; host_port: number; url: string;
@@ -49,6 +50,7 @@ export default function ApplicationsPage() {
   const [envFor, setEnvFor] = useState<string>("");
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
   const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
+  const [appStats, setAppStats] = useState<Record<string, AppStats>>({});
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -70,6 +72,15 @@ export default function ApplicationsPage() {
     const t = setInterval(() => load(psID), 3000);
     return () => clearInterval(t);
   }, [psID]);
+  // 轮询已上线(prod running)应用的资源/健康（运维可观测）
+  useEffect(() => {
+    const poll = () => apps.forEach((a) => {
+      if (a.instances?.some((i) => i.env === "prod" && i.status === "running")) loadStats(a.id);
+    });
+    poll();
+    const t = setInterval(poll, 30000);
+    return () => clearInterval(t);
+  }, [apps]);
 
   async function register() {
     if (!form.name.trim()) return;
@@ -129,6 +140,16 @@ export default function ApplicationsPage() {
   async function removeEnv(id: string, key: string) {
     await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
     reloadEnv(id);
+  }
+  async function loadStats(id: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/stats?env=prod`);
+      const r = await res.json();
+      if (r.code === 0) {
+        const d = r.data;
+        setAppStats((p) => ({ ...p, [id]: { health: d.health, cpu: d.stats?.cpu_perc, mem: d.stats?.mem_usage, deployed: d.deployed } }));
+      }
+    } catch {}
   }
   async function remove(id: string) {
     if (!confirm("删除应用（含容器）？")) return;
@@ -242,6 +263,13 @@ export default function ApplicationsPage() {
                       <a href={ins.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-blue-600 hover:underline">{ins.url}</a>
                     ) : (
                       <div className="mt-1 text-neutral-400">{env === "prod" ? "未上线（点「上线」部署）" : "未部署（发布或「构建部署」）"}</div>
+                    )}
+                    {env === "prod" && appStats[a.id]?.deployed && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="text-neutral-400">健康</span>
+                        <span className={(appStats[a.id].health === "up" ? "text-emerald-600" : "text-red-600") + " font-medium"}>{appStats[a.id].health}</span>
+                        {appStats[a.id].cpu && <span className="text-neutral-400">CPU {appStats[a.id].cpu} · 内存 {appStats[a.id].mem}</span>}
+                      </div>
                     )}
                   </div>
                 );

@@ -2,7 +2,10 @@ package appdeploy
 
 import (
 	"context"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +40,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
+	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 }
 
@@ -379,6 +383,47 @@ func (h *Handler) Logs(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"logs": log})
+}
+
+// Stats 应用某环境的资源占用(docker stats) + URL 健康探测（运维可观测性）。
+func (h *Handler) Stats(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, _ := h.store.Get(c.Request.Context(), psID, aid)
+	if a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	env := c.Query("env")
+	if !IsValidEnv(env) {
+		env = EnvProd
+	}
+	ins, _ := h.store.GetInstance(c.Request.Context(), aid, env)
+	if ins == nil || ins.ContainerName == "" {
+		httpx.OK(c, gin.H{"env": env, "deployed": false})
+		return
+	}
+	stats, _ := h.deployer.Stats(c.Request.Context(), ins.ContainerName)
+	httpx.OK(c, gin.H{
+		"env": env, "url": ins.URL, "deployed": true,
+		"stats": stats, "health": probeHealth(ins.URL),
+	})
+}
+
+// probeHealth 探测 URL 健康状态：up / down / error(code) / unknown。
+func probeHealth(url string) string {
+	if url == "" {
+		return "unknown"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "down"
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 400 {
+		return "up"
+	}
+	return "error(" + strconv.Itoa(resp.StatusCode) + ")"
 }
 
 // DeployByAppID 供发布中心调用：部署应用到 test 环境（发布=测试验证，由 promote 上线 prod）。
