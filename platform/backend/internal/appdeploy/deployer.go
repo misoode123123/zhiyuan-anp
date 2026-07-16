@@ -141,6 +141,29 @@ func (d *Deployer) Remove(ctx context.Context, container string) (string, error)
 	return runDocker(ctx, "rm", "-f", container)
 }
 
+// RemoveByPrefix 删除所有名字含 prefix 的容器（清理同 app+env 的历史残留/孤儿容器，
+// 彻底释放端口，避免新部署端口漂移或 Conflict——只删 DB 记录的一个清不到孤儿）。
+func (d *Deployer) RemoveByPrefix(ctx context.Context, prefix string) (string, error) {
+	out, _ := runDocker(ctx, "ps", "-a", "--filter", "name="+prefix, "--format", "{{.Names}}")
+	var combined string
+	for _, name := range parseContainerNames(out) {
+		o, _ := runDocker(ctx, "rm", "-f", name)
+		combined += o
+	}
+	return combined, nil
+}
+
+// parseContainerNames 解析 `docker ps --format {{.Names}}` 输出为容器名列表（纯函数，可单测）。
+func parseContainerNames(out string) []string {
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Logs 取容器日志尾部。
 func (d *Deployer) Logs(ctx context.Context, container string, tail int) (string, error) {
 	if tail <= 0 {

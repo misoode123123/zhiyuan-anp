@@ -236,10 +236,8 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 	if err != nil || ins == nil {
 		return
 	}
-	// 清理该环境旧容器
-	if ins.ContainerName != "" {
-		_, _ = h.deployer.Remove(ctx, ins.ContainerName)
-	}
+	// 清理该 app+env 所有历史容器（DB 记录的 + 孤儿残留），彻底释放端口避免漂移/Conflict
+	_, _ = h.deployer.RemoveByPrefix(ctx, "appdeploy-"+a.Name+"-"+env+"-")
 	// 版本化回滚：checkout 指定 commit，构建后恢复工作区
 	prevBranch := ""
 	if sha != "" {

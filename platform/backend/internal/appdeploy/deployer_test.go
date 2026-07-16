@@ -64,3 +64,20 @@ func TestEnsurePortEnv(t *testing.T) {
 		t.Fatalf("空 env 应补 PORT=3000: %v", got)
 	}
 }
+
+func TestParseContainerNames(t *testing.T) {
+	got := parseContainerNames("appdeploy-snake-prod-v7\nappdeploy-snake-prod-v8\n\n")
+	want := []string{"appdeploy-snake-prod-v7", "appdeploy-snake-prod-v8"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+	// 空输出/纯空白
+	if n := len(parseContainerNames("")); n != 0 {
+		t.Fatalf("空输出应返回空切片, got %d", n)
+	}
+}
