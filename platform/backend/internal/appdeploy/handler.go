@@ -93,7 +93,7 @@ func (h *Handler) Workspace(c *gin.Context) {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "port": s.Port, "session_id": s.SessionID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
+	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "deep_url": s.DeepURL, "port": s.Port, "session_id": s.SessionID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
 }
 
 // ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。

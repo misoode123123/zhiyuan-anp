@@ -8,11 +8,13 @@ package codews
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -42,6 +44,9 @@ type Session struct {
 	// SessionID 预创建的会话(带项目上下文); 开发者打开 web UI 即见此会话而非空白。
 	// 空=未预创建或失败(非致命, 用户可手动新建)。
 	SessionID string `json:"session_id,omitempty"`
+	// DeepURL 直达预创建会话的深链接(/<base64url(repoDir)>/session/<id>);
+	// 前端优先打开它, 省去用户在根路径手点会话。空=未预创建, 回退用 URL。
+	DeepURL string `json:"deep_url,omitempty"`
 	cmd     *exec.Cmd
 	started time.Time
 }
@@ -134,7 +139,18 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	// 预创建一个带项目上下文的会话: opencode 创建会话即关联 cwd 项目(directory=worktree),
 	// 开发者打开 web UI 便见此会话而非空白。失败非致命。
 	s.SessionID = initSession(port)
+	if s.SessionID != "" {
+		s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
+	}
 	return s, nil
+}
+
+// sessionDeepURL 生成直达 opencode 预创建会话的深链接: /<base64url(repoDir)>/session/<sessionID>。
+// slug 算法与 opencode web UI 的 bn(worktree) 一致(base64url 无 padding), 使前端打开即
+// 进入带项目上下文的会话, 而非根路径的空白/新建界面。
+func sessionDeepURL(baseURL, repoDir, sessionID string) string {
+	slug := strings.TrimRight(base64.URLEncoding.EncodeToString([]byte(repoDir)), "=")
+	return fmt.Sprintf("%s/%s/session/%s", baseURL, slug, sessionID)
 }
 
 // wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。

@@ -1,6 +1,7 @@
 package codews
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -75,6 +76,29 @@ func TestInitSessionFailure(t *testing.T) {
 func TestInitSessionUnreachable(t *testing.T) {
 	if id := initSession(1); id != "" {
 		t.Errorf("不可达端口应返回空串, got %q", id)
+	}
+}
+
+// TestSessionDeepURL 深链接 slug = base64url(repoDir) 无 padding,
+// 与 opencode web UI 的 bn(worktree) 一致, 使打开即进预创建会话。
+func TestSessionDeepURL(t *testing.T) {
+	b64 := func(s string) string {
+		return strings.TrimRight(base64.URLEncoding.EncodeToString([]byte(s)), "=")
+	}
+	cases := []struct{ base, repo, sid string }{
+		{"http://10.10.0.28:9400", "/data/repos/snake", "ses_abc"},
+		{"http://h:9401", "/data/repos/待办管理", "ses_xy"}, // 含中文, 验证 UTF-8 编码
+	}
+	for _, c := range cases {
+		want := fmt.Sprintf("%s/%s/session/%s", c.base, b64(c.repo), c.sid)
+		if got := sessionDeepURL(c.base, c.repo, c.sid); got != want {
+			t.Errorf("sessionDeepURL(%q,%q,%q)\n got %q\nwant %q", c.base, c.repo, c.sid, got, want)
+		}
+	}
+	// 固定锚定值, 防 base64 算法漂移(与 opencode bn("/data/repos/snake") 对齐)。
+	if g := sessionDeepURL("http://10.10.0.28:9400", "/data/repos/snake", "ses_abc"); g !=
+		"http://10.10.0.28:9400/L2RhdGEvcmVwb3Mvc25ha2U/session/ses_abc" {
+		t.Errorf("锚定值不符: %q", g)
 	}
 }
 

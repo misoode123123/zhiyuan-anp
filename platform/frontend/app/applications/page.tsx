@@ -114,7 +114,7 @@ export default function ApplicationsPage() {
     });
     const r = await res.json();
     if (r.code === 0 && r.data?.url) {
-      window.open(r.data.url, "_blank"); // 打开 opencode/工具官方 web UI
+      window.open(r.data.deep_url || r.data.url, "_blank"); // 优先直达预创建会话(带项目上下文), 回退根 url
     } else {
       alert(r.message || "启动编码工作台失败");
     }
