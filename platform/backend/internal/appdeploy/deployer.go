@@ -73,6 +73,17 @@ func AllocFreePort(used map[int]struct{}, min, max int) int {
 	return 0
 }
 
+// ensurePortEnv 若 env 未含 PORT= 则补 PORT=port；应用显式设了 PORT 则尊重不覆盖。
+// 让 PORT-driven 应用(node process.env.PORT / python)监听与 docker -p 映射一致的端口。
+func ensurePortEnv(env []string, port int) []string {
+	for _, e := range env {
+		if strings.HasPrefix(e, "PORT=") {
+			return env
+		}
+	}
+	return append(env, fmt.Sprintf("PORT=%d", port))
+}
+
 // Build 构建镜像（docker build -t <image> <repo_dir>），版本号按环境实例自增。
 // 镜像名带环境后缀(test/prod)，避免两环境镜像互相覆盖。
 func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance) (log string, err error) {
@@ -96,6 +107,10 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", a.Name, ins.Env, ins.Version)
+	// 注入 PORT=internal_port(应用未显式设时): node/python 等 PORT-driven 应用据此
+	// 监听与 -p 映射一致的端口; 否则它们监听默认端口(如 8080)而 docker -p 映射的是
+	// internal_port → host 端口连不上(曾导致 snake test/prod URL 打不开)。
+	env = ensurePortEnv(env, a.InternalPort)
 	args := []string{"run", "-d", "--name", name}
 	for _, e := range env {
 		args = append(args, "-e", e)

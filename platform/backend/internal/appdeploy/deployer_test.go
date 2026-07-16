@@ -46,3 +46,21 @@ func TestHostPortRegex(t *testing.T) {
 		t.Fatal("无端口映射不应匹配")
 	}
 }
+
+func TestEnsurePortEnv(t *testing.T) {
+	// 无 PORT → 补 PORT=internal
+	got := ensurePortEnv([]string{"FOO=bar"}, 9101)
+	if len(got) != 2 || got[1] != "PORT=9101" {
+		t.Fatalf("未注入 PORT=9101: %v", got)
+	}
+	// 已有 PORT → 不覆盖(尊重应用显式设置)
+	got = ensurePortEnv([]string{"PORT=8080", "X=1"}, 9101)
+	if len(got) != 2 || got[0] != "PORT=8080" {
+		t.Fatalf("不应覆盖已有 PORT: %v", got)
+	}
+	// 空 env → 补 PORT
+	got = ensurePortEnv(nil, 3000)
+	if len(got) != 1 || got[0] != "PORT=3000" {
+		t.Fatalf("空 env 应补 PORT=3000: %v", got)
+	}
+}

@@ -24,6 +24,7 @@ services:
       - ../platform/opencode.json:/app/opencode.json
       - /var/run/docker.sock:/var/run/docker.sock   # 应用部署引擎：后端控制宿主 Docker
       - ../data/repos:/data/repos                   # 产出应用源码（docker build 上下文）
+      - ../data/opencode:/root/.local/share/opencode  # opencode 会话/凭据持久化(跨 backend 重建不丢)
     depends_on:
       - agent-runtime
     expose:
