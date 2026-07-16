@@ -7,8 +7,11 @@
 package codews
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os/exec"
 	"sync"
 	"time"
@@ -36,6 +39,9 @@ type Session struct {
 	Port    int       `json:"port"`
 	URL     string    `json:"url"`
 	RepoDir string    `json:"-"`
+	// SessionID 预创建的会话(带项目上下文); 开发者打开 web UI 即见此会话而非空白。
+	// 空=未预创建或失败(非致命, 用户可手动新建)。
+	SessionID string `json:"session_id,omitempty"`
 	cmd     *exec.Cmd
 	started time.Time
 }
@@ -125,7 +131,36 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	if !waitListen(port, 6*time.Second) {
 		return nil, fmt.Errorf("%s 工作台启动后未监听 :%d", toolName, port)
 	}
+	// 预创建一个带项目上下文的会话: opencode 创建会话即关联 cwd 项目(directory=worktree),
+	// 开发者打开 web UI 便见此会话而非空白。失败非致命。
+	s.SessionID = initSession(port)
 	return s, nil
+}
+
+// wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。
+var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
+
+// initSession 在新启动的工作台上预创建一个会话(POST http://127.0.0.1:port/session)。
+// serve 刚 listen 时 API 可能短暂未就绪, 故重试几次; 持续失败返回空串(非致命)。
+func initSession(port int) string {
+	url := fmt.Sprintf("http://127.0.0.1:%d/session", port)
+	for i := 0; i < 4; i++ {
+		resp, err := wsHTTPClient.Post(url, "application/json", bytes.NewBufferString("{}"))
+		if err != nil {
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		var r struct {
+			ID string `json:"id"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&r)
+		resp.Body.Close()
+		if r.ID != "" {
+			return r.ID
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return ""
 }
 
 // Get 取某开发者在该应用的活跃会话；否则 nil。
