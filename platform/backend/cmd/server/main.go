@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -62,6 +63,27 @@ func main() {
 		logger.Fatal("seed users", zap.Error(err))
 	}
 	logger.Info("db ready", zap.String("url", cfg.DatabaseURL))
+
+	// opencode serve 只认默认路径 $HOME/.config/opencode/opencode.json，不读 OPENCODE_CONFIG env。
+	// 把平台维护的 opencode.json（本地 platform/opencode.json；容器内由 compose 挂载到 /app/opencode.json）
+	// 复制到该默认路径，否则交互编码工作台(serve)加载不到 provider(zai-coding)，web UI 卡在无 provider。
+	ocSrc := cfg.OpencodeConfigPath
+	if ocSrc == "" {
+		ocSrc = "/app/opencode.json"
+	}
+	ocDest := filepath.Join(os.Getenv("HOME"), ".config", "opencode", "opencode.json")
+	if data, rerr := os.ReadFile(ocSrc); rerr != nil {
+		logger.Warn("opencode 配置源读取失败，交互编码工作台将无 provider",
+			zap.String("path", ocSrc), zap.Error(rerr))
+	} else if merr := os.MkdirAll(filepath.Dir(ocDest), 0o755); merr != nil {
+		logger.Warn("opencode 配置目录创建失败", zap.String("dir", filepath.Dir(ocDest)), zap.Error(merr))
+	} else if werr := os.WriteFile(ocDest, data, 0o644); werr != nil {
+		logger.Warn("opencode 配置写入默认路径失败，工作台将无 provider",
+			zap.String("dest", ocDest), zap.Error(werr))
+	} else {
+		logger.Info("opencode 配置已安装到默认路径",
+			zap.String("src", ocSrc), zap.String("dest", ocDest))
+	}
 
 	// 业务模块：workspace（项目空间，多租户基础）
 	wsRepo := workspace.NewRepository(database)

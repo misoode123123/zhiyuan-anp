@@ -61,7 +61,7 @@ func Load() (*Config, error) {
 		DatabaseURL:        v.GetString("database_url"),
 		AgentRuntimeURL:    v.GetString("agent_runtime_url"),
 		ZhipuAPIKey:        v.GetString("zhipuai_api_key"),
-		OpencodeConfigPath: v.GetString("opencode"),
+		OpencodeConfigPath: v.GetString("opencode_config"),
 		GitBashPath:        v.GetString("opencode_git_bash_path"),
 		AppDeployHost:      v.GetString("appdeploy_host"),
 	}

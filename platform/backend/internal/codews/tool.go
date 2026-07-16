@@ -21,9 +21,11 @@ type OpenCodeTool struct{}
 
 func (OpenCodeTool) Name() string { return "opencode" }
 func (OpenCodeTool) Start(repoDir string, port int) (*exec.Cmd, error) {
+	// opencode serve 只读默认路径 $HOME/.config/opencode/opencode.json，不读 OPENCODE_CONFIG env；
+	// backend 启动时已把平台配置复制到该默认路径（见 cmd/server/main.go）。继承 env 仅为透传其他变量。
 	cmd := exec.Command("opencode", "serve", "--port", strconv.Itoa(port), "--hostname", "0.0.0.0")
 	cmd.Dir = repoDir
-	cmd.Env = os.Environ() // 继承容器 env（OPENCODE_CONFIG 等）
+	cmd.Env = os.Environ()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动 opencode serve: %w", err)
 	}
