@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
+import { devStep } from "@/lib/devstep";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
@@ -34,6 +35,36 @@ const STATUS_COLOR: Record<string, string> = {
   stopped: "bg-blue-100 text-blue-700",
   failed: "bg-red-100 text-red-700",
 };
+
+// DevWizard 开发向导：编码→测试→上线 进度条 + 项目上下文 + 引导文案。
+// 让开发者一眼看到当前在哪步、下一步做什么（解决"流程不明确"）。
+function DevWizard({ app }: { app: App }) {
+  const s = devStep({ image: app.image, instances: app.instances });
+  const testIns = app.instances?.find((i) => i.env === "test");
+  const prodIns = app.instances?.find((i) => i.env === "prod");
+  const step = (key: "code" | "test" | "prod", label: string) => {
+    const st = s[key];
+    const isCur = s.current === key;
+    const cls = st === "done" ? "text-emerald-600" : isCur ? "font-semibold text-blue-600" : "text-neutral-400";
+    const mark = st === "done" ? "✅" : isCur ? "●" : "○";
+    return <span className={cls}>{label} {mark}</span>;
+  };
+  return (
+    <div className="mb-2 rounded-md bg-blue-50/60 p-2 text-xs">
+      <div className="flex items-center gap-2">
+        {step("code", "✏ 编码")}<span className="text-neutral-300">→</span>
+        {step("test", "🧪 测试")}<span className="text-neutral-300">→</span>
+        {step("prod", "🚀 上线")}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 text-neutral-500">
+        <span>仓库 <code>{app.repo_dir}</code></span>
+        {testIns && <span>test <span className={testIns.status === "running" ? "text-emerald-600" : ""}>:{testIns.host_port} {testIns.status}</span></span>}
+        {prodIns && <span>prod <span className={prodIns.status === "running" ? "text-emerald-600" : ""}>:{prodIns.host_port} {prodIns.status}</span></span>}
+      </div>
+      <div className="mt-1 text-blue-700">👉 {s.hint}</div>
+    </div>
+  );
+}
 
 export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
@@ -217,6 +248,7 @@ export default function ApplicationsPage() {
       <div className="space-y-3">
         {apps.map((a) => (
           <div key={a.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+            <DevWizard app={a} />
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono font-medium">{a.name}</span>
               <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}>{a.status}</span>
