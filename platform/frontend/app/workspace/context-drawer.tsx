@@ -85,7 +85,11 @@ export function ContextDrawer({
                     {q.fixed_version && <div className="text-neutral-500">📦 计划版本:{q.fixed_version}</div>}
                     {q.description && <div>{q.description}</div>}
                     {q.user_story && <div>📝 {q.user_story}</div>}
-                    {q.acceptance_criteria && <div>✅ {q.acceptance_criteria}</div>}
+                    {q.acceptance_criteria && (() => {
+                      let arr: string[] = [];
+                      try { arr = JSON.parse(q.acceptance_criteria as string); } catch { arr = [q.acceptance_criteria as string]; }
+                      return <div>{arr.map((c, i) => <div key={i}>✅ {c}</div>)}</div>;
+                    })()}
                     {!q.description && !q.user_story && !q.acceptance_criteria && (
                       <div className="text-neutral-400">(无详情)</div>
                     )}
