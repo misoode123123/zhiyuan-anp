@@ -146,6 +146,10 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 			summary += cm.SHA + " " + cm.Message + "\n"
 		}
 	}
+	// 代码差异(改了哪些文件、哪些行),让审批人看清实际改动
+	if diff := Diff(c.Request.Context(), a.RepoDir, 3); diff != "" {
+		summary += "【diff】\n" + truncateStr(diff, 3000) + "\n"
+	}
 	chg := &change.ChangeRequest{
 		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
 		Prompt: in.Note, Output: strings.TrimSpace(summary),

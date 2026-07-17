@@ -137,6 +137,18 @@ func Log(ctx context.Context, repoDir string, n int) ([]CommitInfo, error) {
 	return list, nil
 }
 
+// Diff 返回最近 n 次提交的代码差异(git log -p),展示"实际改了什么"(文件 + 行级改动)。
+func Diff(ctx context.Context, repoDir string, n int) string {
+	if n <= 0 {
+		n = 3
+	}
+	out, err := runGit(ctx, repoDir, "log", "-p", fmt.Sprintf("-%d", n), "--pretty=commit %h %s")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 // CommitInfo 提交（版本）信息。
 type CommitInfo struct {
 	SHA     string `json:"sha"`
