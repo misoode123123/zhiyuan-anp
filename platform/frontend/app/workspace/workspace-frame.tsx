@@ -40,6 +40,9 @@ export default function WorkspaceFrame() {
   const [testUrl, setTestUrl] = useState("");
   const [deployErr, setDeployErr] = useState("");
   const [registering, setRegistering] = useState(false);
+  const [selectedReq, setSelectedReq] = useState(""); // 当前驱动开发的需求
+  const [dispatching, setDispatching] = useState(false);
+  const [taskMsg, setTaskMsg] = useState("");
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -167,7 +170,7 @@ export default function WorkspaceFrame() {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ req_id: selectedReq }),
       });
       const r = await res.json();
       if (r.code !== 0) {
@@ -196,6 +199,56 @@ export default function WorkspaceFrame() {
     }
   }
 
+  // 需求驱动:派发 AI 按需求规格编码(dispatch-code),轮询任务进度。
+  // 完成后代码落入 repo,开发者可在 opencode 协助/修正,再构建部署测试。
+  async function dispatchReq() {
+    if (!selectedReq) return;
+    setDispatching(true);
+    setTaskMsg("AI 编码中…");
+    try {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/dispatch-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const r = await res.json();
+      if (r.code !== 0 || !r.data?.task_id) {
+        setTaskMsg(r.message || "派发失败");
+        setDispatching(false);
+        return;
+      }
+      const tid = r.data.task_id;
+      let n = 0;
+      const t = setInterval(async () => {
+        n += 1;
+        try {
+          const tr = await fetch(`${API_BASE_URL}/code-tasks/${tid}`).then((rr) => rr.json());
+          const st = tr.data?.status;
+          if (st === "completed") {
+            clearInterval(t);
+            setTaskMsg("✅ AI 编码完成,可在 opencode 协助/修正,再构建部署测试");
+            setDispatching(false);
+            fetchDetail();
+          } else if (st === "failed") {
+            clearInterval(t);
+            setTaskMsg("❌ 编码失败:" + (tr.data?.error || ""));
+            setDispatching(false);
+          } else {
+            setTaskMsg("AI 编码中… (" + st + ")");
+          }
+        } catch {}
+        if (n > 60 && t) {
+          clearInterval(t);
+          setTaskMsg("超时");
+          setDispatching(false);
+        }
+      }, 5000);
+    } catch (e) {
+      setTaskMsg(String(e));
+      setDispatching(false);
+    }
+  }
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -214,6 +267,27 @@ export default function WorkspaceFrame() {
         drawerOpen={drawerOpen}
         onToggleDrawer={toggleDrawer}
       />
+      {selectedReq && (() => {
+        const req = detail?.requirements?.find((q) => q.id === selectedReq);
+        if (!req) return null;
+        return (
+          <div className="border-b border-blue-200 bg-blue-50 px-3 py-1 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-medium text-blue-700">🎯 当前需求:{req.title}</span>
+              <button
+                onClick={dispatchReq}
+                disabled={dispatching}
+                className="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-white"
+                title="AI 按此需求规格自动编码,完成后你可协助修正"
+              >
+                {dispatching ? "编码中…" : "🤖 AI 编码此需求"}
+              </button>
+              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); }} className="shrink-0 text-neutral-400">✕</button>
+            </div>
+            {taskMsg && <div className="mt-0.5 text-blue-600">{taskMsg}</div>}
+          </div>
+        );
+      })()}
       <div className="flex min-h-0 flex-1">
         {drawerOpen && !missingParams && (
           <ContextDrawer
@@ -225,6 +299,8 @@ export default function WorkspaceFrame() {
             onReject={(id) => decideChange(id, "reject")}
             psID={psID}
             appID={appID}
+            selectedReq={selectedReq}
+            onStartReq={(id) => { setSelectedReq(id); setTaskMsg(""); }}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">

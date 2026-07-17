@@ -120,7 +120,8 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Note string `json:"note"` // 可选:开发者补充说明
+		Note string `json:"note"`   // 可选:开发者补充说明
+		ReqID string `json:"req_id"` // 可选:关联的需求(需求驱动开发时,变更归属该需求)
 	}
 	_ = c.ShouldBindJSON(&in)
 
@@ -139,6 +140,9 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	commits, _ := Log(c.Request.Context(), a.RepoDir, 10)
 	diff := Diff(c.Request.Context(), a.RepoDir, 3)
 	var summary string
+	if in.ReqID != "" {
+		summary = "【需求】" + in.ReqID + "\n" // 关联的需求(需求驱动开发时标注)
+	}
 	// AI 总结:把 diff/对话总结成人话(改了什么、为什么),放最前让审批人一眼看懂
 	if h.cfg != nil {
 		if s := summarizeChange(c.Request.Context(), h.cfg.Get("zhipuai_api_key", ""), diff, conversation); s != "" {

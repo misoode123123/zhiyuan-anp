@@ -26,6 +26,8 @@ export function ContextDrawer({
   onReject,
   psID,
   appID,
+  selectedReq,
+  onStartReq,
 }: {
   detail: WorkspaceDetail | null;
   loading: boolean;
@@ -35,6 +37,8 @@ export function ContextDrawer({
   onReject: (id: string) => void;
   psID: string;
   appID: string;
+  selectedReq: string;
+  onStartReq: (id: string) => void;
 }) {
   const [openReq, setOpenReq] = useState<string | null>(null);
   const [openChg, setOpenChg] = useState<string | null>(null);
@@ -56,14 +60,23 @@ export function ContextDrawer({
               <div key={q.id}>
                 <button
                   onClick={() => setOpenReq(openReq === q.id ? null : q.id)}
-                  className="flex w-full gap-1 py-0.5 text-left"
+                  className="flex min-w-0 flex-1 gap-1 py-0.5 text-left"
                 >
                   <span>{STATUS_DOT[q.status] ?? "•"}</span>
                   {q.priority && (
                     <span className={`shrink-0 rounded px-1 text-[10px] ${q.priority === "P0" ? "bg-red-100 text-red-700" : q.priority === "P2" ? "bg-neutral-200 text-neutral-600" : "bg-blue-100 text-blue-700"}`} title="需求等级">{q.priority}</span>
                   )}
-                  <span className="truncate text-neutral-700">{q.title || "(无标题)"}</span>
+                  <span className={`truncate ${selectedReq === q.id ? "font-semibold text-blue-700" : "text-neutral-700"}`}>{q.title || "(无标题)"}</span>
                 </button>
+                {selectedReq !== q.id && (
+                  <button
+                    onClick={() => onStartReq(q.id)}
+                    className="shrink-0 rounded bg-blue-100 px-1.5 text-[10px] text-blue-700"
+                    title="以此需求驱动开发(AI 按需求编码)"
+                  >
+                    开发
+                  </button>
+                )}
                 {openReq === q.id && (
                   <div className="mb-1 ml-3 space-y-0.5 border-l border-neutral-300 pl-2 text-[11px] text-neutral-600">
                     {q.fixed_version && <div className="text-neutral-500">📦 计划版本:{q.fixed_version}</div>}
