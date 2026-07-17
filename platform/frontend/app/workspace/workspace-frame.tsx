@@ -205,14 +205,14 @@ export default function WorkspaceFrame() {
   }
 
   // 需求驱动:把需求规格注入 opencode 会话,AI 在工作台实时编码(看过程,可介入)。
-  async function dispatchReq() {
+  async function dispatchReq(taskIdx?: number) {
     if (!selectedReq) return;
     const req = detail?.requirements?.find((q) => q.id === selectedReq);
     if (!req) { setTaskMsg("需求不存在"); return; }
-    // 按子任务逐个:下一个未完成的子任务;没拆解则整个需求
-    const next = subtasks.find((t) => !t.done);
+    // 按子任务逐个:指定 taskIdx 或下一个未完成;没拆解则整个需求
+    const next = taskIdx !== undefined ? subtasks[taskIdx] : subtasks.find((t) => !t.done);
     const prompt = next
-      ? `当前在实现需求「${req.title}」。现在只做这一步(基于现有代码增量:先读现有代码再改,不重写已有功能):\n${next.text}\n\n需求背景:${req.description || req.user_story || ""}`
+      ? `当前在实现需求「${req.title}」。\n【严格·只做这一步】\n  👉 ${next.text}\n做完这一步就停,等我确认再做下一个。\n【禁止】不要做其他子任务、不要扩展范围、不要重构无关代码,只完成上面这一步。\n【方式】基于现有代码增量(先读 server.js/index.html/package.json 等再改),不重写已有功能。\n需求背景:${req.description || req.user_story || ""}`
       : `请按以下需求规格实现/修改代码。\n【重要·必须遵守】本应用已有代码,你不能从零重写:\n1. 第一步先用读文件工具读现有代码:README.md、docs/ 下文档、主要代码文件(server.js / index.html / package.json / Dockerfile 等),完整理解当前实现;\n2. 在现有代码基础上**增量修改/扩展**——只新增或修改实现本需求所需的部分,绝不删除或重写已有功能;\n3. 保持现有文件结构与技术栈,不另起炉灶。\n\n需求规格:\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
     setDispatching(true);
     setTaskMsg(next ? `发送子任务给 opencode:${next.text}` : "把需求发给 opencode…");
@@ -331,14 +331,17 @@ export default function WorkspaceFrame() {
             {subtasks.length > 0 && (
               <div className="mt-1 space-y-0.5">
                 {subtasks.map((t, i) => (
-                  <label key={i} className="flex gap-1">
+                  <div key={i} className="flex items-center gap-1">
                     <input
                       type="checkbox"
                       checked={t.done}
                       onChange={() => setSubtasks((prev) => prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
                     />
-                    <span className={t.done ? "line-through text-neutral-400" : "text-neutral-700"}>{t.text}</span>
-                  </label>
+                    <span className={`flex-1 ${t.done ? "line-through text-neutral-400" : "text-neutral-700"}`}>{t.text}</span>
+                    {!t.done && (
+                      <button onClick={() => dispatchReq(i)} className="shrink-0 text-blue-600" title="让 AI 做这一步">▶</button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
