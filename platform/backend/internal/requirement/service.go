@@ -91,6 +91,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Requirement, err
 		UserStory:          spec.UserStory,
 		AcceptanceCriteria: string(acJSON),
 		Status:             "specified",
+		Priority:           "P1", // 默认常规;后续可按紧急度调整
 	}
 	if err := s.repo.Create(ctx, req); err != nil {
 		return nil, err

@@ -7,7 +7,7 @@ import { ProjectDocs } from "./project-docs";
 // 让开发者在编码时一眼看到"这个项目要做什么、改了什么、发布了什么"——上下文不再缺失。
 // 纯展示组件,数据与状态全由 WorkspaceFrame 注入。
 
-type Req = { id: string; title: string; status: string; description?: string; user_story?: string; acceptance_criteria?: string };
+type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; description?: string; user_story?: string; acceptance_criteria?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string; output?: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
 export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
@@ -59,10 +59,14 @@ export function ContextDrawer({
                   className="flex w-full gap-1 py-0.5 text-left"
                 >
                   <span>{STATUS_DOT[q.status] ?? "•"}</span>
+                  {q.priority && (
+                    <span className={`shrink-0 rounded px-1 text-[10px] ${q.priority === "P0" ? "bg-red-100 text-red-700" : q.priority === "P2" ? "bg-neutral-200 text-neutral-600" : "bg-blue-100 text-blue-700"}`} title="需求等级">{q.priority}</span>
+                  )}
                   <span className="truncate text-neutral-700">{q.title || "(无标题)"}</span>
                 </button>
                 {openReq === q.id && (
                   <div className="mb-1 ml-3 space-y-0.5 border-l border-neutral-300 pl-2 text-[11px] text-neutral-600">
+                    {q.fixed_version && <div className="text-neutral-500">📦 计划版本:{q.fixed_version}</div>}
                     {q.description && <div>{q.description}</div>}
                     {q.user_story && <div>📝 {q.user_story}</div>}
                     {q.acceptance_criteria && <div>✅ {q.acceptance_criteria}</div>}

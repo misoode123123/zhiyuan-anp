@@ -13,6 +13,8 @@ type Requirement struct {
 	UserStory          string    `json:"user_story" db:"user_story"`
 	AcceptanceCriteria string    `json:"acceptance_criteria" db:"acceptance_criteria"` // JSON 数组字符串
 	Status             string    `json:"status" db:"status"`
+	Priority           string    `json:"priority" db:"priority"`           // P0紧急/P1常规/P2待定,默认 P1
+	FixedVersion       string    `json:"fixed_version" db:"fixed_version"` // 计划版本,空=未排期
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
