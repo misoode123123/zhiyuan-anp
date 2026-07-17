@@ -1,7 +1,9 @@
 package appdeploy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codews"
+	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -20,11 +23,12 @@ type Handler struct {
 	deployer *Deployer
 	codeWS   *codews.Manager // 交互编码工作台（opencode serve）；nil=未启用
 	changes  *change.Store   // 变更闸门（期2）；nil=未启用
+	cfg      *config.Store   // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
 }
 
-// NewHandler 构造。codeWS/changes 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store) *Handler {
-	return &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes}
+// NewHandler 构造。codeWS/changes/cfg 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store) *Handler {
+	return &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg}
 }
 
 // Register 注册路由。
@@ -133,9 +137,16 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	}
 
 	commits, _ := Log(c.Request.Context(), a.RepoDir, 10)
+	diff := Diff(c.Request.Context(), a.RepoDir, 3)
 	var summary string
+	// AI 总结:把 diff/对话总结成人话(改了什么、为什么),放最前让审批人一眼看懂
+	if h.cfg != nil {
+		if s := summarizeChange(c.Request.Context(), h.cfg.Get("zhipuai_api_key", ""), diff, conversation); s != "" {
+			summary = "【总结】" + s + "\n\n"
+		}
+	}
 	if in.Note != "" {
-		summary = "【说明】" + in.Note + "\n"
+		summary += "【说明】" + in.Note + "\n"
 	}
 	if conversation != "" {
 		summary += "【对话】\n" + truncateStr(conversation, 2000) + "\n"
@@ -146,8 +157,7 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 			summary += cm.SHA + " " + cm.Message + "\n"
 		}
 	}
-	// 代码差异(改了哪些文件、哪些行),让审批人看清实际改动
-	if diff := Diff(c.Request.Context(), a.RepoDir, 3); diff != "" {
+	if diff != "" {
 		summary += "【diff】\n" + truncateStr(diff, 3000) + "\n"
 	}
 	chg := &change.ChangeRequest{
@@ -170,6 +180,50 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return s[:n] + "...(截断)"
+}
+
+// summarizeChange 调 GLM 把 diff/对话总结成自然语言(改了什么、为什么、影响),让人看明白。
+// apiKey 空 或 无内容时返回空串(非致命,变更仍记录 diff/commits)。
+func summarizeChange(ctx context.Context, apiKey, diff, conversation string) string {
+	if apiKey == "" || (diff == "" && conversation == "") {
+		return ""
+	}
+	prompt := "你是变更总结助手。根据下面的代码变更,用 2-4 句中文总结:这次改了什么、为什么、影响。不要罗列代码或 diff。\n\n"
+	if conversation != "" {
+		prompt += "【对话】\n" + truncateStr(conversation, 1000) + "\n\n"
+	}
+	if diff != "" {
+		prompt += "【diff】\n" + truncateStr(diff, 2000)
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"model": "glm-5.1",
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var r struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&r) != nil {
+		return ""
+	}
+	if len(r.Choices) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(r.Choices[0].Message.Content)
 }
 
 // RepoDocs 扫描当前应用 repo 的文档(README/.md),供编码时查阅项目文档结构。
