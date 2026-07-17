@@ -45,6 +45,8 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
+	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
+	r.GET("/project-spaces/:id/apps/:aid/repo-file", h.RepoFile) // 读 repo 文件内容
 }
 
 // List 应用列表，附带各环境实例（前端展示 test/prod URL）。
@@ -161,6 +163,32 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return s[:n] + "...(截断)"
+}
+
+// RepoDocs 扫描当前应用 repo 的文档(README/.md),供编码时查阅项目文档结构。
+func (h *Handler) RepoDocs(c *gin.Context) {
+	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	docs, _ := ScanDocs(a.RepoDir)
+	httpx.OK(c, docs)
+}
+
+// RepoFile 读当前应用 repo 内某文件内容(供文档展开查看)。
+func (h *Handler) RepoFile(c *gin.Context) {
+	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	content, err := ReadRepoFile(a.RepoDir, c.Query("path"))
+	if err != nil {
+		httpx.Err(c, 400, 40001, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"path": c.Query("path"), "content": content})
 }
 
 // ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。

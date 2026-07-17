@@ -223,6 +223,8 @@ export default function WorkspaceFrame() {
             onClose={toggleDrawer}
             onApprove={(id) => decideChange(id, "approve")}
             onReject={(id) => decideChange(id, "reject")}
+            psID={psID}
+            appID={appID}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">

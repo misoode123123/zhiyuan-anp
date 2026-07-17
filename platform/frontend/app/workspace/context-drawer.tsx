@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { ProjectDocs } from "./project-docs";
 
 // 项目上下文抽屉:展示该应用的需求/变更/发布(数据来自 /detail)。
 // 让开发者在编码时一眼看到"这个项目要做什么、改了什么、发布了什么"——上下文不再缺失。
@@ -23,6 +24,8 @@ export function ContextDrawer({
   onClose,
   onApprove,
   onReject,
+  psID,
+  appID,
 }: {
   detail: WorkspaceDetail | null;
   loading: boolean;
@@ -30,6 +33,8 @@ export function ContextDrawer({
   onClose: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  psID: string;
+  appID: string;
 }) {
   const [openReq, setOpenReq] = useState<string | null>(null);
   const [openChg, setOpenChg] = useState<string | null>(null);
@@ -41,6 +46,9 @@ export function ContextDrawer({
       </div>
       {err && <div className="text-red-600">{err}</div>}
       {!err && loading && <div className="text-neutral-400">加载中…</div>}
+      <Section title="📁 项目文档">
+        <ProjectDocs psID={psID} appID={appID} />
+      </Section>
       {detail && !err && (
         <>
           <Section title={`需求(${detail.requirements?.length ?? 0})`}>

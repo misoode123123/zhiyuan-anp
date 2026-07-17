@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -113,6 +114,51 @@ type CommitInfo struct {
 	SHA     string `json:"sha"`
 	Message string `json:"message"`
 	Date    string `json:"date"`
+}
+
+// DocEntry repo 内文档条目(README/.md),供编码时查阅项目文档。
+type DocEntry struct {
+	Path string `json:"path"` // 相对 repo 的路径(正斜杠)
+	Name string `json:"name"` // 文件名
+}
+
+// ScanDocs 扫描 repo 内文档文件(README + .md),排除 .git/依赖/隐藏目录。
+func ScanDocs(repoDir string) ([]DocEntry, error) {
+	var docs []DocEntry
+	_ = filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(repoDir, path)
+		if rel == "." {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+		base := filepath.Base(rel)
+		// 跳过隐藏/依赖/.git
+		if strings.HasPrefix(base, ".") || strings.Contains(relSlash, "node_modules") || strings.Contains(relSlash, ".git/") {
+			return nil
+		}
+		if strings.HasPrefix(strings.ToUpper(base), "README") || strings.HasSuffix(base, ".md") {
+			docs = append(docs, DocEntry{Path: relSlash, Name: base})
+		}
+		return nil
+	})
+	return docs, nil
+}
+
+// ReadRepoFile 读 repo 内相对路径文件内容(防 path traversal 越权)。
+func ReadRepoFile(repoDir, rel string) (string, error) {
+	cleanRoot := filepath.Clean(repoDir)
+	abs := filepath.Clean(filepath.Join(cleanRoot, rel))
+	if !strings.HasPrefix(abs, cleanRoot) {
+		return "", fmt.Errorf("非法路径")
+	}
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
