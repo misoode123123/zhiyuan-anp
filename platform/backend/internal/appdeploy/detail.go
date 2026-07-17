@@ -23,6 +23,7 @@ type AppReqItem struct {
 	Status             string `json:"status" db:"status"`
 	Priority           string `json:"priority" db:"priority"`
 	FixedVersion       string `json:"fixed_version" db:"fixed_version"`
+	Tasks              string `json:"tasks" db:"tasks"`
 	Description        string `json:"description" db:"description"`
 	UserStory          string `json:"user_story" db:"user_story"`
 	AcceptanceCriteria string `json:"acceptance_criteria" db:"acceptance_criteria"`
@@ -58,7 +59,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	// 需求（直接归属，含详情字段供前端展开；按等级 P0→P1→P2 排序）
 	if err := s.db.SelectContext(ctx, &d.Requirements,
 		`SELECT id, COALESCE(title,'') AS title, status,
-		        COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version,
+		        COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks,
 		        COALESCE(description,'') AS description, COALESCE(user_story,'') AS user_story,
 		        COALESCE(acceptance_criteria,'') AS acceptance_criteria
 		 FROM requirement WHERE application_id=? ORDER BY COALESCE(NULLIF(priority,''),'P1'), created_at DESC`, appID); err != nil {

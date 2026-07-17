@@ -99,6 +99,38 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Requirement, err
 	return req, nil
 }
 
+// Breakdown 调 AI 把需求拆成可执行子任务清单(JSON 数组 [{text,done}]),存 tasks 字段并返回。
+func (s *Service) Breakdown(ctx context.Context, reqID string) (string, error) {
+	req, err := s.repo.Get(ctx, reqID)
+	if err != nil || req == nil || req.ID == "" {
+		return "", fmt.Errorf("需求不存在")
+	}
+	prompt := fmt.Sprintf("把下面的需求拆成 3-6 个可执行的开发子任务,每项一个简短动作。严格只返回 JSON 数组(不要 markdown/解释),格式 [{\"text\":\"子任务\",\"done\":false}]:\n标题:%s\n用户故事:%s\n验收标准:%s", req.Title, req.UserStory, req.AcceptanceCriteria)
+	buf, _ := json.Marshal(map[string]interface{}{
+		"messages": []map[string]interface{}{{"role": "user", "content": prompt}},
+	})
+	hr, _ := http.NewRequestWithContext(ctx, "POST", s.agentRuntimeURL+"/v1/chat", bytes.NewReader(buf))
+	hr.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(hr)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Content string `json:"content"`
+		Error   string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if out.Error != "" {
+		return "", fmt.Errorf(out.Error)
+	}
+	tasks := extractJSON(out.Content)
+	_ = s.repo.UpdateTasks(ctx, reqID, tasks)
+	return tasks, nil
+}
+
 // List 列出项目空间下的需求。
 func (s *Service) List(ctx context.Context, projectSpaceID string) ([]Requirement, error) {
 	return s.repo.List(ctx, projectSpaceID)

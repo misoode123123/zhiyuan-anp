@@ -46,6 +46,8 @@ export default function WorkspaceFrame() {
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState("");
   const [testResults, setTestResults] = useState<{ method?: string; path?: string; expected_status?: number; actual_status?: number }[] | null>(null);
+  const [subtasks, setSubtasks] = useState<{ text: string; done: boolean }[]>([]);
+  const [breaking, setBreaking] = useState(false);
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -274,6 +276,18 @@ export default function WorkspaceFrame() {
     setTesting(false);
   }
 
+  // AI 拆解当前需求→子任务 checklist(逐项打勾,引导按需求开发)
+  async function breakdownReq() {
+    if (!selectedReq) return;
+    setBreaking(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/breakdown`, { method: "POST" }).then((rr) => rr.json());
+      if (r.code !== 0) { alert(r.message || "拆解失败"); setBreaking(false); return; }
+      try { setSubtasks(JSON.parse(r.data?.tasks || "[]")); } catch { setSubtasks([]); }
+    } catch (e) { alert(String(e)); }
+    setBreaking(false);
+  }
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -315,7 +329,15 @@ export default function WorkspaceFrame() {
               >
                 {testing ? "测试中…" : "🧪 自动测试"}
               </button>
-              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); }} className="shrink-0 text-neutral-400">✕</button>
+              <button
+                onClick={breakdownReq}
+                disabled={breaking}
+                className="shrink-0 rounded bg-purple-100 px-2 py-0.5 text-purple-700"
+                title="AI 把需求拆成子任务清单,逐项打勾推进"
+              >
+                {breaking ? "拆解中…" : "📋 拆解子任务"}
+              </button>
+              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubtasks([]); }} className="shrink-0 text-neutral-400">✕</button>
             </div>
             {taskMsg && <div className="mt-0.5 text-blue-600">{taskMsg}</div>}
             {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
@@ -325,6 +347,20 @@ export default function WorkspaceFrame() {
                   <div key={i} className={tc.actual_status === tc.expected_status ? "text-emerald-700" : "text-red-600"}>
                     {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path} → {tc.actual_status || "(未跑)"}
                   </div>
+                ))}
+              </div>
+            )}
+            {subtasks.length > 0 && (
+              <div className="mt-1 space-y-0.5">
+                {subtasks.map((t, i) => (
+                  <label key={i} className="flex gap-1">
+                    <input
+                      type="checkbox"
+                      checked={t.done}
+                      onChange={() => setSubtasks((prev) => prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
+                    />
+                    <span className={t.done ? "line-through text-neutral-400" : "text-neutral-700"}>{t.text}</span>
+                  </label>
                 ))}
               </div>
             )}
