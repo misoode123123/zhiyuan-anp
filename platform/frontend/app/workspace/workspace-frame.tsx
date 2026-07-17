@@ -50,6 +50,7 @@ export default function WorkspaceFrame() {
   const [breaking, setBreaking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState("");
+  const [merging, setMerging] = useState(false);
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -268,6 +269,17 @@ export default function WorkspaceFrame() {
     setBreaking(false);
   }
 
+  // 合并 dev-<user> 到 main(上线前;worktree 模式必要)。
+  async function mergeReq() {
+    setMerging(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, { method: "POST" }).then((rr) => rr.json());
+      if (r.code !== 0) { alert(r.message || "合并失败"); setMerging(false); return; }
+      alert("✅ 已合并到主线 main,可点「🚀上线」");
+    } catch (e) { alert(String(e)); }
+    setMerging(false);
+  }
+
   // 提交核对门禁:AI 核对代码 vs 需求验收标准,不匹配拦(列差异),匹配放行。
   async function submitReq() {
     if (!selectedReq) { alert("先选需求"); return; }
@@ -349,6 +361,14 @@ export default function WorkspaceFrame() {
                 title="提交前 AI 核对代码是否实现需求验收标准,不匹配会被拦"
               >
                 {submitting ? "核对中…" : "🔒 提交核对"}
+              </button>
+              <button
+                onClick={mergeReq}
+                disabled={merging}
+                className="shrink-0 rounded bg-emerald-700 px-2 py-0.5 text-white"
+                title="合并 dev-<你> 到主线 main(worktree 模式上线前必做)"
+              >
+                {merging ? "合并中…" : "🔀 合并主线"}
               </button>
               <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubtasks([]); setSubmitMsg(""); }} className="shrink-0 text-neutral-400">✕</button>
             </div>

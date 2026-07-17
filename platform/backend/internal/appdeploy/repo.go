@@ -222,6 +222,22 @@ func runMkdir(ctx context.Context, dir string) error {
 	return exec.CommandContext(ctx, "mkdir", "-p", dir).Run()
 }
 
+// sanitizeID 同 codews,转 git 友好分支名(与 worktree 的 dev-<user> 分支一致)。
+func sanitizeID(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "dev"
+	}
+	return b.String()
+}
+
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
 
 func sanitizeName(s string) string {

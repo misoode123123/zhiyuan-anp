@@ -47,6 +47,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange)   // 登记交互编码变更为待审批（期2 闸门）
 	r.POST("/project-spaces/:id/apps/:aid/inject-requirement", h.InjectRequirement) // 把需求注入 opencode 会话(交互式编码)
 	r.POST("/project-spaces/:id/apps/:aid/submit", h.Submit)                        // 提交核对门禁(AI 核对代码 vs 需求,不匹配拦)
+	r.POST("/project-spaces/:id/apps/:aid/merge", h.Merge)                          // 合并 dev-<user> 到 main(上线前)
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
@@ -289,6 +290,30 @@ func (h *Handler) Submit(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"passed": true, "details": details, "note": "✅ 核对通过,可点「登记变更」提交"})
+}
+
+// Merge 把开发者分支(dev-<user>)合并到主线 main,供上线。冲突则放弃合并并报错。
+func (h *Handler) Merge(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	user := c.GetHeader("X-User")
+	if user == "" {
+		user = "anonymous"
+	}
+	branch := "dev-" + sanitizeID(user)
+	ctx := c.Request.Context()
+	_, _ = runGit(ctx, a.RepoDir, "checkout", "-q", "main")
+	out, err := runGit(ctx, a.RepoDir, "merge", "--no-ff", "-m", "merge "+branch, branch)
+	if err != nil {
+		_, _ = runGit(ctx, a.RepoDir, "merge", "--abort")
+		httpx.Err(c, 409, 40940, "合并冲突(需人工解决后重试):\n"+out)
+		return
+	}
+	httpx.OK(c, gin.H{"merged": branch, "note": "已合并到 main,可点「上线」"})
 }
 
 // readRepoCode 读 repo 内全部文件内容(代码+文档,截断),供 AI 核对。
