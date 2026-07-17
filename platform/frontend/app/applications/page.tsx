@@ -105,6 +105,16 @@ export default function ApplicationsPage() {
     const t = setInterval(() => load(psID), 3000);
     return () => clearInterval(t);
   }, [psID]);
+  async function loadStats(id: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/stats?env=prod`);
+      const r = await res.json();
+      if (r.code === 0) {
+        const d = r.data;
+        setAppStats((p) => ({ ...p, [id]: { health: d.health, cpu: d.stats?.cpu_perc, mem: d.stats?.mem_usage, deployed: d.deployed } }));
+      }
+    } catch {}
+  }
   // 轮询已上线(prod running)应用的资源/健康（运维可观测）
   useEffect(() => {
     const poll = () => apps.forEach((a) => {
@@ -167,16 +177,6 @@ export default function ApplicationsPage() {
   async function removeEnv(id: string, key: string) {
     await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
     reloadEnv(id);
-  }
-  async function loadStats(id: string) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/stats?env=prod`);
-      const r = await res.json();
-      if (r.code === 0) {
-        const d = r.data;
-        setAppStats((p) => ({ ...p, [id]: { health: d.health, cpu: d.stats?.cpu_perc, mem: d.stats?.mem_usage, deployed: d.deployed } }));
-      }
-    } catch {}
   }
   async function remove(id: string) {
     if (!confirm("删除应用（含容器）？")) return;
