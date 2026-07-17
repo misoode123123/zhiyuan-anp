@@ -160,16 +160,14 @@ export default function WorkspaceFrame() {
     }, 3000);
   }
 
-  // 登记变更:弹窗让开发者填写变更说明(文字描述改了什么/为什么,类似需求的描述),后端附 commit 日志。
+  // 登记变更:后端自动从 opencode 对话总结变更说明(免手填),刷新抽屉看 pending 变更。
   async function registerChange() {
-    const note = window.prompt("描述本次变更(改了什么 / 为什么):\n将作为变更说明(附 commit 日志),审批人据此判断是否上线。");
-    if (note === null) return; // 用户取消
     setRegistering(true);
     try {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note.trim() }),
+        body: JSON.stringify({}),
       });
       const r = await res.json();
       if (r.code !== 0) {

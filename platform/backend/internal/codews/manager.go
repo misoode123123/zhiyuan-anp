@@ -238,6 +238,41 @@ func (m *Manager) Get(appID, userID string) *Session {
 	return nil
 }
 
+// SessionMessages 返回某开发者当前 opencode 会话的对话文本（user/assistant 消息）。
+// 供登记变更时自动总结对话内容，免手填。无活跃会话/无消息返回空串（非致命）。
+func (m *Manager) SessionMessages(appID, userID string) (string, error) {
+	s := m.Get(appID, userID)
+	if s == nil || s.SessionID == "" {
+		return "", nil
+	}
+	resp, err := sessionListClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/message", s.Port, s.SessionID))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var r struct {
+		Data []struct {
+			Type  string `json:"type"`
+			Parts []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	for _, msg := range r.Data {
+		for _, p := range msg.Parts {
+			if p.Type == "text" && strings.TrimSpace(p.Text) != "" {
+				sb.WriteString("[" + msg.Type + "] " + p.Text + "\n")
+			}
+		}
+	}
+	return strings.TrimSpace(sb.String()), nil
+}
+
 func (m *Manager) allocPortLocked() int {
 	used := map[int]bool{}
 	for _, s := range m.sessions {

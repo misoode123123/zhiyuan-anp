@@ -100,7 +100,8 @@ func (h *Handler) Workspace(c *gin.Context) {
 }
 
 // RegisterChange 把 opencode 交互编码的产出登记为待审批变更（期2 变更闸门）。
-// source_id=应用ID；读 repo 最近提交日志作为变更摘要。审批通过后该应用方可 promote prod。
+// 自动总结:拉取 opencode 会话的对话内容 + repo 最近提交日志组成变更说明,免手填。
+// source_id=应用ID；审批通过后该应用方可 promote prod。
 func (h *Handler) RegisterChange(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -113,13 +114,35 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Note string `json:"note"`
+		Note string `json:"note"` // 可选:开发者补充说明
 	}
 	_ = c.ShouldBindJSON(&in)
+
+	// 自动获取 opencode 对话内容(免手填)
+	conversation := ""
+	if h.codeWS != nil {
+		user := c.GetHeader("X-User")
+		if user == "" {
+			user = "anonymous"
+		}
+		if conv, err := h.codeWS.SessionMessages(aid, user); err == nil {
+			conversation = conv
+		}
+	}
+
 	commits, _ := Log(c.Request.Context(), a.RepoDir, 10)
-	summary := in.Note
-	for _, cm := range commits {
-		summary += "\n" + cm.SHA + " " + cm.Message
+	var summary string
+	if in.Note != "" {
+		summary = "【说明】" + in.Note + "\n"
+	}
+	if conversation != "" {
+		summary += "【对话】\n" + truncateStr(conversation, 2000) + "\n"
+	}
+	if len(commits) > 0 {
+		summary += "【commits】\n"
+		for _, cm := range commits {
+			summary += cm.SHA + " " + cm.Message + "\n"
+		}
 	}
 	chg := &change.ChangeRequest{
 		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
@@ -130,6 +153,14 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		return
 	}
 	httpx.Created(c, chg)
+}
+
+// truncateStr 截断字符串到最多 n 字符(避免变更摘要过长)。
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "...(截断)"
 }
 
 // ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。
