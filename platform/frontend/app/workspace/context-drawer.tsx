@@ -46,7 +46,7 @@ export function ContextDrawer({
       </div>
       {err && <div className="text-red-600">{err}</div>}
       {!err && loading && <div className="text-neutral-400">加载中…</div>}
-      <Section title="📁 项目文档">
+      <Section title="📁 文件结构">
         <ProjectDocs psID={psID} appID={appID} />
       </Section>
       {detail && !err && (

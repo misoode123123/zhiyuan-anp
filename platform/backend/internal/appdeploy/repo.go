@@ -38,7 +38,23 @@ func EnsureRepo(ctx context.Context, repoDir string) error {
 	_, _ = runGit(ctx, repoDir, "config", "user.email", "anp@platform")
 	_, _ = runGit(ctx, repoDir, "config", "user.name", "ANP Platform")
 	// 允许初始提交（无 -u 主分支名差异）
+	// 标准开发结构:README + docs/(需求/设计/开发日志),幂等不覆盖已有内容
+	appName := filepath.Base(repoDir)
+	ensureFile(repoDir, "README.md", "# "+appName+"\n\n> 项目说明:用途、技术栈、运行方式。\n\n## 结构\n- 代码文件\n- `docs/` — 开发文档(需求/设计/开发日志)\n")
+	ensureFile(repoDir, "docs/需求.md", "# 需求\n\n> 本应用需求(与平台需求关联)。\n\n")
+	ensureFile(repoDir, "docs/设计.md", "# 设计\n\n> 架构 / 模块 / 接口设计。\n\n")
+	ensureFile(repoDir, "docs/开发日志.md", "# 开发日志\n\n> 每次变更的记录(登记变更时自动追加)。\n\n")
 	return nil
+}
+
+// ensureFile 若文件不存在则创建(含目录),幂等不覆盖已有内容。
+func ensureFile(repoDir, rel, content string) {
+	abs := filepath.Join(repoDir, rel)
+	if _, err := os.Stat(abs); err == nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(abs), 0755)
+	_ = os.WriteFile(abs, []byte(content), 0644)
 }
 
 // Commit 把仓库工作区全部变更提交（编码产出落地为版本）。
@@ -122,26 +138,31 @@ type DocEntry struct {
 	Name string `json:"name"` // 文件名
 }
 
-// ScanDocs 扫描 repo 内文档文件(README + .md),排除 .git/依赖/隐藏目录。
+// ScanDocs 扫描 repo 内全部文件(代码 + 文档),排除 .git/依赖/隐藏,供编码时看项目文件结构。
 func ScanDocs(repoDir string) ([]DocEntry, error) {
 	var docs []DocEntry
+	skipDir := func(base string) bool {
+		return strings.HasPrefix(base, ".") || base == "node_modules" || base == ".next" || base == "__pycache__" || base == "dist" || base == "target" || base == "build"
+	}
 	_ = filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || info.IsDir() {
+		if err != nil || info == nil {
 			return nil
 		}
 		rel, _ := filepath.Rel(repoDir, path)
 		if rel == "." {
 			return nil
 		}
-		relSlash := filepath.ToSlash(rel)
 		base := filepath.Base(rel)
-		// 跳过隐藏/依赖/.git
-		if strings.HasPrefix(base, ".") || strings.Contains(relSlash, "node_modules") || strings.Contains(relSlash, ".git/") {
+		if info.IsDir() {
+			if skipDir(base) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if strings.HasPrefix(strings.ToUpper(base), "README") || strings.HasSuffix(base, ".md") {
-			docs = append(docs, DocEntry{Path: relSlash, Name: base})
+		if strings.HasPrefix(base, ".") {
+			return nil
 		}
+		docs = append(docs, DocEntry{Path: filepath.ToSlash(rel), Name: base})
 		return nil
 	})
 	return docs, nil
