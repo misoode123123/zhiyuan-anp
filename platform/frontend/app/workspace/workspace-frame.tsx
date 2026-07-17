@@ -43,6 +43,9 @@ export default function WorkspaceFrame() {
   const [selectedReq, setSelectedReq] = useState(""); // 当前驱动开发的需求
   const [dispatching, setDispatching] = useState(false);
   const [taskMsg, setTaskMsg] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState("");
+  const [testResults, setTestResults] = useState<{ method?: string; path?: string; expected_status?: number; actual_status?: number }[] | null>(null);
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -249,6 +252,28 @@ export default function WorkspaceFrame() {
     }
   }
 
+  // 自动测试:当前需求 → AI 按验收标准生成用例 + 批量对着应用 URL 验收,显示通过/失败。
+  async function runAutoTest() {
+    if (!selectedReq) { alert("先在左侧选一个需求"); return; }
+    setTesting(true);
+    setTestMsg("生成测试用例…");
+    setTestResults(null);
+    try {
+      let r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/generate-tests`, { method: "POST" }).then((rr) => rr.json());
+      if (r.code !== 0) { setTestMsg(r.message || "生成用例失败"); setTesting(false); return; }
+      setTestMsg("运行自动验收…(需先构建部署 test)");
+      r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/run-tests`, { method: "POST" }).then((rr) => rr.json());
+      if (r.code !== 0) { setTestMsg(r.message || "运行失败"); setTesting(false); return; }
+      const list = r.data ?? [];
+      setTestResults(list);
+      const passed = list.filter((x: any) => x.actual_status === x.expected_status).length;
+      setTestMsg(`测试完成:${passed}/${list.length} 通过`);
+    } catch (e) {
+      setTestMsg(String(e));
+    }
+    setTesting(false);
+  }
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -282,9 +307,27 @@ export default function WorkspaceFrame() {
               >
                 {dispatching ? "编码中…" : "🤖 AI 编码此需求"}
               </button>
-              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); }} className="shrink-0 text-neutral-400">✕</button>
+              <button
+                onClick={runAutoTest}
+                disabled={testing}
+                className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-emerald-700"
+                title="AI 按需求验收标准生成用例 + 对着应用 URL 自动验收"
+              >
+                {testing ? "测试中…" : "🧪 自动测试"}
+              </button>
+              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); }} className="shrink-0 text-neutral-400">✕</button>
             </div>
             {taskMsg && <div className="mt-0.5 text-blue-600">{taskMsg}</div>}
+            {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
+            {testResults && testResults.length > 0 && (
+              <div className="mt-1 space-y-0.5">
+                {testResults.map((tc, i) => (
+                  <div key={i} className={tc.actual_status === tc.expected_status ? "text-emerald-700" : "text-red-600"}>
+                    {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path} → {tc.actual_status || "(未跑)"}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })()}
