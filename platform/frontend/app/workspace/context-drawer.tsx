@@ -7,7 +7,7 @@ import { ProjectDocs } from "./project-docs";
 // 让开发者在编码时一眼看到"这个项目要做什么、改了什么、发布了什么"——上下文不再缺失。
 // 纯展示组件,数据与状态全由 WorkspaceFrame 注入。
 
-type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; description?: string; user_story?: string; acceptance_criteria?: string };
+type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; tasks?: string; description?: string; user_story?: string; acceptance_criteria?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string; output?: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
 export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
