@@ -159,14 +159,20 @@ var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
 // sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计,
 // 会话较多时序列化偏慢，放宽到 15s，避免 ensureSession 误判超时→新建多余会话。
-var sessionListClient = &http.Client{Timeout: 15 * time.Second}
+var sessionListClient = &http.Client{Timeout: 3 * time.Second}
 
 // ensureSession 复用 opencode 已有会话(按 repo 目录匹配,取 updated 最近的一个);无则新建。
 // opencode 会话持久化在磁盘(/root/.local/share/opencode),进程或后端重启后仍可据此
 // 恢复开发者上次的编码上下文,而非每次打开都新建空会话。
 func ensureSession(port int, repoDir string) string {
-	resp, err := sessionListClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session", port))
-	if err == nil {
+	// opencode serve 刚 listen 时 HTTP handler 可能尚未就绪（请求挂起直至起来），
+	// 用短超时 + 重试等就绪；就绪后 /api/session 仅几毫秒。
+	for i := 0; i < 6; i++ {
+		resp, err := sessionListClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session", port))
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
 		var r struct {
 			Data []struct {
 				ID       string `json:"id"`
@@ -193,10 +199,10 @@ func ensureSession(port int, repoDir string) string {
 			return bestID // 复用最近会话
 		}
 		log.Printf("[codews] 新建 opencode 会话 (repo=%s, 现有 %d 个均不匹配 directory)", repoDir, len(r.Data))
-	} else {
-		log.Printf("[codews] 查询 opencode 会话失败将新建: %v", err)
+		return initSession(port) // 查到了但无匹配 → 新建
 	}
-	return initSession(port) // 无匹配 → 新建
+	log.Printf("[codews] 查询 opencode 会话重试6次仍失败将新建")
+	return initSession(port)
 }
 
 // initSession 在新启动的工作台上预创建一个会话(POST http://127.0.0.1:port/session)。
