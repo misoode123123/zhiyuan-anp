@@ -134,6 +134,16 @@ func (s *Service) Breakdown(ctx context.Context, reqID string) (string, error) {
 	return tasks, nil
 }
 
+// Assign 认领需求(互斥):已被他人认领返回错误。
+func (s *Service) Assign(ctx context.Context, reqID, user string) error {
+	return s.repo.Assign(ctx, reqID, user)
+}
+
+// Release 释放认领(合并/完成/手动)。
+func (s *Service) Release(ctx context.Context, reqID string) error {
+	return s.repo.Release(ctx, reqID)
+}
+
 // List 列出项目空间下的需求。
 func (s *Service) List(ctx context.Context, projectSpaceID string) ([]Requirement, error) {
 	return s.repo.List(ctx, projectSpaceID)

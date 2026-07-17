@@ -14,7 +14,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -112,7 +114,9 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	}
 	m.mu.Unlock()
 
-	cmd, err := tool.Start(repoDir, port)
+	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
+	workDir := ensureWorktree(repoDir, userID)
+	cmd, err := tool.Start(workDir, port)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +293,36 @@ func (m *Manager) SendPrompt(appID, userID, text string) error {
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+// ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。
+func ensureWorktree(repoDir, userID string) string {
+	wt := filepath.Join(repoDir, ".worktrees", sanitizeID(userID))
+	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
+		return wt // 已存在
+	}
+	_ = os.MkdirAll(filepath.Dir(wt), 0755)
+	// git worktree add -b dev-<user> <wt>(从主 repo 当前 HEAD)
+	_ = exec.Command("git", "-C", repoDir, "worktree", "add", "-b", "dev-"+sanitizeID(userID), wt).Run()
+	_ = exec.Command("git", "-C", wt, "config", "user.email", "anp@platform").Run()
+	_ = exec.Command("git", "-C", wt, "config", "user.name", "ANP "+userID).Run()
+	return wt
+}
+
+// sanitizeID 把 userID 转为 git 友好的分支/目录名(小写字母数字,-分隔)。
+func sanitizeID(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "dev"
+	}
+	return b.String()
 }
 
 func (m *Manager) allocPortLocked() int {

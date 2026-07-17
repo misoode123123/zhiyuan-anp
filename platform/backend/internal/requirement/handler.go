@@ -21,6 +21,8 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/requirements", h.ListByApp) // 应用一等公民：应用的需求池
 	r.POST("/project-spaces/:id/requirements/:rid/dispatch-code", h.DispatchCode)
 	r.POST("/project-spaces/:id/requirements/:rid/breakdown", h.Breakdown) // AI 拆解需求→子任务
+	r.POST("/project-spaces/:id/requirements/:rid/assign", h.Assign)       // 认领需求(互斥)
+	r.POST("/project-spaces/:id/requirements/:rid/release", h.Release)     // 释放认领
 }
 
 type createRequest struct {
@@ -80,6 +82,28 @@ func (h *Handler) Breakdown(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"tasks": tasks})
+}
+
+// Assign 认领需求(互斥:已被他人认领返回 409)。
+func (h *Handler) Assign(c *gin.Context) {
+	user := c.GetHeader("X-User")
+	if user == "" {
+		user = "anonymous"
+	}
+	if err := h.svc.Assign(c.Request.Context(), c.Param("rid"), user); err != nil {
+		httpx.Err(c, 409, 40901, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"assigned_to": user})
+}
+
+// Release 释放需求认领。
+func (h *Handler) Release(c *gin.Context) {
+	if err := h.svc.Release(c.Request.Context(), c.Param("rid")); err != nil {
+		httpx.Err(c, 500, 50003, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"released": true})
 }
 
 // DispatchCode 需求规格 → 异步编码（立即返回 task_id）。

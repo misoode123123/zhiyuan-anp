@@ -2,6 +2,7 @@ package requirement
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -15,11 +16,34 @@ type Repository struct {
 func NewRepository(db *sqlx.DB) *Repository { return &Repository{db: db} }
 
 // reqCols 显式列（application_id 可空，用 COALESCE 避免 NULL→string 扫描错误）。
-const reqCols = `id, project_space_id, COALESCE(application_id,'') AS application_id, title, description, user_story, acceptance_criteria, status, COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks, created_at, updated_at`
+const reqCols = `id, project_space_id, COALESCE(application_id,'') AS application_id, title, description, user_story, acceptance_criteria, status, COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks, COALESCE(assignee,'') AS assignee, assigned_at, created_at, updated_at`
 
 // UpdateTasks 更新需求的子任务清单(JSON)。
 func (r *Repository) UpdateTasks(ctx context.Context, id, tasks string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET tasks = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, tasks, id)
+	return err
+}
+
+// Assign 认领需求(互斥):已被他人认赖则返回错误(含当前认领人)。
+func (r *Repository) Assign(ctx context.Context, id, user string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE requirement SET assignee = ?, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ? AND (assignee IS NULL OR assignee = '' OR assignee = ?)`,
+		user, id, user)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		var cur string
+		_ = r.db.GetContext(ctx, &cur, `SELECT COALESCE(assignee,'') FROM requirement WHERE id = ?`, id)
+		return fmt.Errorf("需求已被 %s 认领", cur)
+	}
+	return nil
+}
+
+// Release 释放认领(合并/完成/手动)。
+func (r *Repository) Release(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET assignee = '', assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
 	return err
 }
 

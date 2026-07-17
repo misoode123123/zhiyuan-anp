@@ -7,7 +7,7 @@ import { ProjectDocs } from "./project-docs";
 // 让开发者在编码时一眼看到"这个项目要做什么、改了什么、发布了什么"——上下文不再缺失。
 // 纯展示组件,数据与状态全由 WorkspaceFrame 注入。
 
-type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; tasks?: string; description?: string; user_story?: string; acceptance_criteria?: string };
+type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; tasks?: string; assignee?: string; description?: string; user_story?: string; acceptance_criteria?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string; output?: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
 export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
@@ -69,15 +69,17 @@ export function ContextDrawer({
                   )}
                   <span className={`truncate ${selectedReq === q.id ? "font-semibold text-blue-700" : "text-neutral-700"}`}>{q.title || "(无标题)"}</span>
                 </button>
-                {selectedReq !== q.id && (
+                {q.assignee && selectedReq !== q.id ? (
+                  <span className="shrink-0 text-[10px] text-neutral-400" title="已被认领">{q.assignee} 开发中</span>
+                ) : selectedReq !== q.id ? (
                   <button
                     onClick={() => onStartReq(q.id)}
                     className="shrink-0 rounded bg-blue-100 px-1.5 text-[10px] text-blue-700"
-                    title="以此需求驱动开发(AI 按需求编码)"
+                    title={q.assignee ? "继续开发(已认领)" : "认领并开发(互斥,被他人认领会拒绝)"}
                   >
-                    开发
+                    {q.assignee ? "继续" : "认领开发"}
                   </button>
-                )}
+                ) : null}
                 {openReq === q.id && (
                   <div className="mb-1 ml-3 space-y-0.5 border-l border-neutral-300 pl-2 text-[11px] text-neutral-600">
                     {q.fixed_version && <div className="text-neutral-500">📦 计划版本:{q.fixed_version}</div>}

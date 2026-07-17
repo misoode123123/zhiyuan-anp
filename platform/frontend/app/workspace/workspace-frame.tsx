@@ -396,9 +396,15 @@ export default function WorkspaceFrame() {
             psID={psID}
             appID={appID}
             selectedReq={selectedReq}
-            onStartReq={(id) => {
-              setSelectedReq(id); setTaskMsg(""); setTestMsg(""); setTestResults(null);
+            onStartReq={async (id) => {
+              // 认领(互斥):被他人认领会 409 拒绝
+              try {
+                const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`, { method: "POST" }).then((rr) => rr.json());
+                if (r.code !== 0) { alert(r.message || "认领失败"); return; }
+              } catch (e) { alert(String(e)); return; }
+              setSelectedReq(id); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubmitMsg("");
               try { setSubtasks(JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]")); } catch { setSubtasks([]); }
+              fetchDetail();
             }}
           />
         )}

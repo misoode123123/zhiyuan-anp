@@ -438,6 +438,8 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 		{"requirement", "priority", "TEXT"},      // 需求等级 P0/P1/P2
 		{"requirement", "fixed_version", "TEXT"}, // 计划版本(需求规划到版本)
 		{"requirement", "tasks", "TEXT"},         // JSON 子任务清单(AI 拆解)
+		{"requirement", "assignee", "TEXT"},      // 认领的开发者(认领互斥)
+		{"requirement", "assigned_at", "DATETIME"},
 		{"change_request", "application_id", "TEXT"},
 		{"release_record", "application_id", "TEXT"},
 		// 测试中心：可执行 HTTP 检查 + 运行结果回写（幂等补列，兼容已部署库）。
