@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os/exec"
@@ -173,15 +174,23 @@ func ensureSession(port int, repoDir string) string {
 		resp.Body.Close()
 		var bestID string
 		var bestT int64
+		match := 0
 		for _, s := range r.Data {
-			if s.Location.Directory == repoDir && s.Time.Updated > bestT {
-				bestID = s.ID
-				bestT = s.Time.Updated
+			if s.Location.Directory == repoDir {
+				match++
+				if s.Time.Updated > bestT {
+					bestID = s.ID
+					bestT = s.Time.Updated
+				}
 			}
 		}
 		if bestID != "" {
+			log.Printf("[codews] 复用 opencode 会话 %s (repo=%s, 匹配 %d/%d)", bestID, repoDir, match, len(r.Data))
 			return bestID // 复用最近会话
 		}
+		log.Printf("[codews] 新建 opencode 会话 (repo=%s, 现有 %d 个均不匹配 directory)", repoDir, len(r.Data))
+	} else {
+		log.Printf("[codews] 查询 opencode 会话失败将新建: %v", err)
 	}
 	return initSession(port) // 无匹配 → 新建
 }

@@ -7,7 +7,7 @@ import { useState, type ReactNode } from "react";
 // 纯展示组件,数据与状态全由 WorkspaceFrame 注入。
 
 type Req = { id: string; title: string; status: string; description?: string; user_story?: string; acceptance_criteria?: string };
-type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string };
+type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string; output?: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
 export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
 
@@ -32,6 +32,7 @@ export function ContextDrawer({
   onReject: (id: string) => void;
 }) {
   const [openReq, setOpenReq] = useState<string | null>(null);
+  const [openChg, setOpenChg] = useState<string | null>(null);
   return (
     <aside className="w-64 shrink-0 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-2 text-xs">
       <div className="mb-2 flex items-center justify-between">
@@ -65,15 +66,23 @@ export function ContextDrawer({
               </div>
             )) : <Empty />}
           </Section>
-          <Section title={`变更(${detail.changes?.length ?? 0})`}>
+          <Section title={`变更(${detail.changes?.length ?? 0}) · 审批后可上线`}>
             {detail.changes?.length ? detail.changes!.map((c) => (
-              <div key={c.id} className="py-0.5">
-                <span>{STATUS_DOT[c.status] ?? "•"}</span> {c.kind} · <span className="text-neutral-500">{c.status}</span>
-                {c.status === "pending" && (
-                  <span className="ml-1">
-                    <button onClick={() => onApprove(c.id)} className="text-emerald-600" title="批准">✅</button>
-                    <button onClick={() => onReject(c.id)} className="ml-1 text-red-600" title="拒绝">❌</button>
-                  </span>
+              <div key={c.id}>
+                <div className="flex py-0.5">
+                  <button onClick={() => setOpenChg(openChg === c.id ? null : c.id)} className="flex gap-1 text-left">
+                    <span>{STATUS_DOT[c.status] ?? "•"}</span>
+                    <span>{c.kind} · <span className="text-neutral-500">{c.status}</span></span>
+                  </button>
+                  {c.status === "pending" && (
+                    <span className="ml-auto shrink-0">
+                      <button onClick={() => onApprove(c.id)} className="text-emerald-600" title="批准上线">✅</button>
+                      <button onClick={() => onReject(c.id)} className="ml-1 text-red-600" title="拒绝">❌</button>
+                    </span>
+                  )}
+                </div>
+                {openChg === c.id && (
+                  <pre className="mb-1 ml-3 max-h-32 overflow-auto whitespace-pre-wrap border-l border-neutral-300 pl-2 text-[11px] text-neutral-600">{c.output || "(无内容)"}</pre>
                 )}
               </div>
             )) : <Empty />}

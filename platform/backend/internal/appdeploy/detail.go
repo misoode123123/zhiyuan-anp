@@ -32,6 +32,7 @@ type AppChangeItem struct {
 	Status   string    `json:"status" db:"status"`
 	SourceID string    `json:"source_id" db:"source_id"`
 	Kind     string    `json:"kind" db:"kind"`
+	Output   string    `json:"output" db:"output"`
 	CreateAt time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -62,7 +63,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	}
 	// 变更：source_id=应用ID（交互编码登记，期2）OR source_id=需求ID（AI 编码派生）
 	if err := s.db.SelectContext(ctx, &d.Changes,
-		`SELECT id, status, COALESCE(source_id,'') AS source_id, COALESCE(kind,'') AS kind, created_at
+		`SELECT id, status, COALESCE(source_id,'') AS source_id, COALESCE(kind,'') AS kind, COALESCE(output,'') AS output, created_at
 		 FROM change_request
 		 WHERE source_id = ? OR source_id IN (SELECT id FROM requirement WHERE application_id=?)
 		 ORDER BY created_at DESC`, appID, appID); err != nil {
