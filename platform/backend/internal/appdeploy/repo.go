@@ -57,6 +57,18 @@ func ensureFile(repoDir, rel, content string) {
 	_ = os.WriteFile(abs, []byte(content), 0644)
 }
 
+// appendFile 追加内容到文件(不存在则创建),把变更/需求记录写到 repo docs/,随代码版本管理。
+func appendFile(repoDir, rel, content string) {
+	abs := filepath.Join(repoDir, rel)
+	_ = os.MkdirAll(filepath.Dir(abs), 0755)
+	f, err := os.OpenFile(abs, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(content)
+}
+
 // Commit 把仓库工作区全部变更提交（编码产出落地为版本）。
 func Commit(ctx context.Context, repoDir, message string) (string, error) {
 	if _, err := runGit(ctx, repoDir, "add", "-A"); err != nil {

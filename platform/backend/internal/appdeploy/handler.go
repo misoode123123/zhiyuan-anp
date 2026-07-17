@@ -154,6 +154,9 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
+	// 把变更说明追加到 repo docs/开发日志.md(文档随代码版本管理,可追溯)
+	appendFile(a.RepoDir, "docs/开发日志.md",
+		"\n## 变更 "+chg.ID+" ("+time.Now().Format("2006-01-02 15:04")+")\n"+summary+"\n")
 	httpx.Created(c, chg)
 }
 
