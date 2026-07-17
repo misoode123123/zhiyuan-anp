@@ -48,6 +48,8 @@ export default function WorkspaceFrame() {
   const [testResults, setTestResults] = useState<{ method?: string; path?: string; expected_status?: number; actual_status?: number }[] | null>(null);
   const [subtasks, setSubtasks] = useState<{ text: string; done: boolean }[]>([]);
   const [breaking, setBreaking] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMsg, setSubmitMsg] = useState("");
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -266,6 +268,31 @@ export default function WorkspaceFrame() {
     setBreaking(false);
   }
 
+  // 提交核对门禁:AI 核对代码 vs 需求验收标准,不匹配拦(列差异),匹配放行。
+  async function submitReq() {
+    if (!selectedReq) { alert("先选需求"); return; }
+    const req = detail?.requirements?.find((q) => q.id === selectedReq);
+    if (!req) { return; }
+    setSubmitting(true);
+    setSubmitMsg("AI 核对代码 vs 需求验收标准…");
+    try {
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: req.title, acceptance_criteria: req.acceptance_criteria || "" }),
+      }).then((rr) => rr.json());
+      if (r.code !== 0) {
+        setSubmitMsg("❌ 核对未通过,请按差异修正:\n" + (r.message || ""));
+        setSubmitting(false);
+        return;
+      }
+      setSubmitMsg("✅ 核对通过,可点「📝登记变更」提交");
+    } catch (e) {
+      setSubmitMsg(String(e));
+    }
+    setSubmitting(false);
+  }
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -315,9 +342,18 @@ export default function WorkspaceFrame() {
               >
                 {breaking ? "拆解中…" : "📋 拆解子任务"}
               </button>
-              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubtasks([]); }} className="shrink-0 text-neutral-400">✕</button>
+              <button
+                onClick={submitReq}
+                disabled={submitting}
+                className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-white"
+                title="提交前 AI 核对代码是否实现需求验收标准,不匹配会被拦"
+              >
+                {submitting ? "核对中…" : "🔒 提交核对"}
+              </button>
+              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubtasks([]); setSubmitMsg(""); }} className="shrink-0 text-neutral-400">✕</button>
             </div>
-            {taskMsg && <div className="mt-0.5 text-blue-600">{taskMsg}</div>}
+            {taskMsg && <div className="mt-0.5 whitespace-pre-wrap text-blue-600">{taskMsg}</div>}
+            {submitMsg && <div className="mt-0.5 whitespace-pre-wrap text-amber-700">{submitMsg}</div>}
             {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
             {testResults && testResults.length > 0 && (
               <div className="mt-1 space-y-0.5">

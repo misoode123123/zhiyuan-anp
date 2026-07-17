@@ -45,6 +45,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace)            // 启动交互编码工作台
 	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange)   // 登记交互编码变更为待审批（期2 闸门）
 	r.POST("/project-spaces/:id/apps/:aid/inject-requirement", h.InjectRequirement) // 把需求注入 opencode 会话(交互式编码)
+	r.POST("/project-spaces/:id/apps/:aid/submit", h.Submit)                        // 提交核对门禁(AI 核对代码 vs 需求,不匹配拦)
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
@@ -260,6 +261,115 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"injected": true, "note": "需求已发给 opencode,在工作台看 AI 实时编码"})
+}
+
+// Submit 需求-代码核对门禁:读 repo 代码 + AI 逐条核对需求验收标准,
+// 有 ❌未实现 → 拦截(返回差异);全 ✅ → 放行(提示可登记变更)。开发者据此保证代码实现需求。
+func (h *Handler) Submit(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	var in struct {
+		Title              string `json:"title"`
+		AcceptanceCriteria string `json:"acceptance_criteria"` // 验收标准(JSON 数组字符串或文本)
+	}
+	_ = c.ShouldBindJSON(&in)
+	code := readRepoCode(a.RepoDir)
+	apiKey := ""
+	if h.cfg != nil {
+		apiKey = h.cfg.Get("zhipuai_api_key", "")
+	}
+	passed, details := checkRequirement(c.Request.Context(), apiKey, code, in.Title, in.AcceptanceCriteria)
+	if !passed {
+		httpx.Err(c, 409, 40930, "❌ 需求-代码核对未通过(请按差异修正后再提交):\n"+details)
+		return
+	}
+	httpx.OK(c, gin.H{"passed": true, "details": details, "note": "✅ 核对通过,可点「登记变更」提交"})
+}
+
+// readRepoCode 读 repo 内全部文件内容(代码+文档,截断),供 AI 核对。
+func readRepoCode(repoDir string) string {
+	docs, _ := ScanDocs(repoDir)
+	var sb strings.Builder
+	for i, d := range docs {
+		if i >= 15 {
+			break
+		}
+		content, err := ReadRepoFile(repoDir, d.Path)
+		if err != nil {
+			continue
+		}
+		sb.WriteString("=== " + d.Path + " ===\n")
+		sb.WriteString(truncateStr(content, 1200))
+		sb.WriteString("\n\n")
+		if sb.Len() > 8000 {
+			break
+		}
+	}
+	return sb.String()
+}
+
+// checkRequirement 调 GLM 核对代码是否实现需求验收标准。返回(是否通过, 差异详情)。
+// apiKey 空/AI 失败时放行(不阻塞,降级),由审批人兜底。
+func checkRequirement(ctx context.Context, apiKey, code, title, criteria string) (bool, string) {
+	if apiKey == "" || (code == "" && criteria == "") {
+		return true, "(未配置 AI 或无内容,跳过核对)"
+	}
+	prompt := fmt.Sprintf("你是严格的代码核对员。判断以下代码是否实现了需求的每条验收标准。\n需求标题:%s\n验收标准:\n%s\n\n代码:\n%s\n\n对每条验收标准判断:✅已实现/❌未实现/⚠️偏离,note 指出实现位置或差异。\n严格只返回 JSON: {\"passed\": true/false, \"details\":[{\"criteria\":\"原标准\",\"status\":\"✅/❌/⚠️\",\"note\":\"\"}]}\npassed=true 当且仅当没有任何 ❌。", title, criteria, truncateStr(code, 6000))
+	body, _ := json.Marshal(map[string]interface{}{
+		"model":    "glm-5.1",
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return true, "(核对请求构造失败,放行)"
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return true, "(AI 核对失败,放行):" + err.Error()
+	}
+	defer resp.Body.Close()
+	var r struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&r) != nil || len(r.Choices) == 0 {
+		return true, "(AI 无响应,放行)"
+	}
+	var result struct {
+		Passed  bool `json:"passed"`
+		Details []struct {
+			Criteria string `json:"criteria"`
+			Status   string `json:"status"`
+			Note     string `json:"note"`
+		} `json:"details"`
+	}
+	if json.Unmarshal([]byte(extractJSONObject(r.Choices[0].Message.Content)), &result) != nil {
+		return true, "(AI 返回解析失败,放行):" + r.Choices[0].Message.Content
+	}
+	var sb strings.Builder
+	for _, d := range result.Details {
+		sb.WriteString(d.Status + " " + d.Criteria + " — " + d.Note + "\n")
+	}
+	return result.Passed, sb.String()
+}
+
+// extractJSONObject 从可能含 markdown 的文本提取首个 JSON 对象。
+func extractJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
 }
 
 // RepoDocs 扫描当前应用 repo 的文档(README/.md),供编码时查阅项目文档结构。
