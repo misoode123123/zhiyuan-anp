@@ -15,6 +15,7 @@ export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?
 // 状态→圆点映射(需求/变更/发布共用,缺失则普通圆点)
 const STATUS_DOT: Record<string, string> = {
   delivered: "✅", approved: "✅", pending: "⏳", draft: "📝", rejected: "❌", reviewed: "👍",
+  specified: "📋", developing: "🔨",
 };
 
 export function ContextDrawer({

@@ -173,6 +173,7 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 	if repoDir == "" {
 		return nil, fmt.Errorf("无法确定代码位置：需求未归属应用且自动创建托管应用失败")
 	}
+	_ = s.repo.UpdateStatus(ctx, reqID, "developing") // 需求进入开发(specified→developing→delivered)
 	return s.coder.Submit(ctx, projectSpaceID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
 }
 
