@@ -39,6 +39,7 @@ export default function WorkspaceFrame() {
   const [deployState, setDeployState] = useState<DeployState>("idle");
   const [testUrl, setTestUrl] = useState("");
   const [deployErr, setDeployErr] = useState("");
+  const [registering, setRegistering] = useState(false);
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -159,6 +160,42 @@ export default function WorkspaceFrame() {
     }, 3000);
   }
 
+  // 登记交互编码产出为待审批变更（期2 变更闸门）
+  async function registerChange() {
+    setRegistering(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const r = await res.json();
+      if (r.code !== 0) {
+        alert(r.message || "登记失败");
+      } else {
+        await fetchDetail();
+      }
+    } catch (e) {
+      alert(String(e));
+    }
+    setRegistering(false);
+  }
+
+  // 变更审批（approve/reject）：pending 变更可直接在抽屉审批
+  async function decideChange(id: string, decision: "approve" | "reject") {
+    try {
+      const res = await fetch(`${API_BASE_URL}/changes/${id}/${decision}`, { method: "POST" });
+      const r = await res.json();
+      if (r.code !== 0) {
+        alert(r.message);
+        return;
+      }
+      await fetchDetail();
+    } catch (e) {
+      alert(String(e));
+    }
+  }
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -170,6 +207,8 @@ export default function WorkspaceFrame() {
         testUrl={testUrl}
         deployErr={deployErr}
         onDeploy={deploy}
+        onRegister={registerChange}
+        registering={registering}
         onOpenWindow={() => { if (url) window.open(url, "_blank"); }}
         onReconnect={() => { setUrl(""); setReloadKey((k) => k + 1); }}
         drawerOpen={drawerOpen}
@@ -177,7 +216,14 @@ export default function WorkspaceFrame() {
       />
       <div className="flex min-h-0 flex-1">
         {drawerOpen && !missingParams && (
-          <ContextDrawer detail={detail} loading={!detail && !detailErr} err={detailErr} onClose={toggleDrawer} />
+          <ContextDrawer
+            detail={detail}
+            loading={!detail && !detailErr}
+            err={detailErr}
+            onClose={toggleDrawer}
+            onApprove={(id) => decideChange(id, "approve")}
+            onReject={(id) => decideChange(id, "reject")}
+          />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
           {loading && !missingParams && (

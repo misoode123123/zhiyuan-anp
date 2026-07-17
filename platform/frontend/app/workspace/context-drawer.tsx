@@ -21,11 +21,15 @@ export function ContextDrawer({
   loading,
   err,
   onClose,
+  onApprove,
+  onReject,
 }: {
   detail: WorkspaceDetail | null;
   loading: boolean;
   err: string;
   onClose: () => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
 }) {
   return (
     <aside className="w-64 shrink-0 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-2 text-xs">
@@ -49,6 +53,12 @@ export function ContextDrawer({
             {detail.changes?.length ? detail.changes!.map((c) => (
               <div key={c.id} className="py-0.5">
                 <span>{STATUS_DOT[c.status] ?? "•"}</span> {c.kind} · <span className="text-neutral-500">{c.status}</span>
+                {c.status === "pending" && (
+                  <span className="ml-1">
+                    <button onClick={() => onApprove(c.id)} className="text-emerald-600" title="批准">✅</button>
+                    <button onClick={() => onReject(c.id)} className="ml-1 text-red-600" title="拒绝">❌</button>
+                  </span>
+                )}
               </div>
             )) : <Empty />}
           </Section>

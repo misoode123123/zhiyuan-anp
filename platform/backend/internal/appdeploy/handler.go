@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
@@ -18,11 +19,12 @@ type Handler struct {
 	store    *Store
 	deployer *Deployer
 	codeWS   *codews.Manager // 交互编码工作台（opencode serve）；nil=未启用
+	changes  *change.Store   // 变更闸门（期2）；nil=未启用
 }
 
-// NewHandler 构造。codeWS 可为 nil（不启用交互编码）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager) *Handler {
-	return &Handler{store: store, deployer: deployer, codeWS: codeWS}
+// NewHandler 构造。codeWS/changes 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store) *Handler {
+	return &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes}
 }
 
 // Register 注册路由。
@@ -36,7 +38,8 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/stop", h.Stop)
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
-	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace) // 启动交互编码工作台
+	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace)            // 启动交互编码工作台
+	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange) // 登记交互编码变更为待审批（期2 闸门）
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
@@ -94,6 +97,39 @@ func (h *Handler) Workspace(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "deep_url": s.DeepURL, "port": s.Port, "session_id": s.SessionID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
+}
+
+// RegisterChange 把 opencode 交互编码的产出登记为待审批变更（期2 变更闸门）。
+// source_id=应用ID；读 repo 最近提交日志作为变更摘要。审批通过后该应用方可 promote prod。
+func (h *Handler) RegisterChange(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	if h.changes == nil {
+		httpx.Err(c, 500, 50021, "变更闸门未启用")
+		return
+	}
+	var in struct {
+		Note string `json:"note"`
+	}
+	_ = c.ShouldBindJSON(&in)
+	commits, _ := Log(c.Request.Context(), a.RepoDir, 10)
+	summary := in.Note
+	for _, cm := range commits {
+		summary += "\n" + cm.SHA + " " + cm.Message
+	}
+	chg := &change.ChangeRequest{
+		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		Prompt: in.Note, Output: strings.TrimSpace(summary),
+	}
+	if err := h.changes.Create(c.Request.Context(), chg); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.Created(c, chg)
 }
 
 // ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。
@@ -200,6 +236,16 @@ func (h *Handler) Promote(c *gin.Context) {
 	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
+	}
+	// 🚪 变更闸门（grandfather）：登记过变更的应用，必须有 approved 变更才能上线 prod。
+	// 从未登记过的老应用不受约束——一旦开始登记变更，即进入治理流程。
+	if h.changes != nil {
+		if hasAny, _ := h.changes.HasAny(c.Request.Context(), aid); hasAny {
+			if ok, _ := h.changes.HasApproved(c.Request.Context(), aid); !ok {
+				httpx.Err(c, 409, 40920, "需先登记变更并审批通过才能上线 prod（变更闸门）")
+				return
+			}
+		}
 	}
 	go h.buildAndDeploy(psID, aid, "", EnvProd)
 	httpx.OK(c, gin.H{"id": aid, "env": EnvProd, "status": "building", "note": "上线中：部署到 prod 环境"})

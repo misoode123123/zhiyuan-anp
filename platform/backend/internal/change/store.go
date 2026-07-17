@@ -50,6 +50,20 @@ func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error
 	return list, err
 }
 
+// HasAny 该 source（应用/需求）是否登记过变更——grandfather：未登记过的不受 promote 闸门约束。
+func (s *Store) HasAny(ctx context.Context, sourceID string) (bool, error) {
+	var c int
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = ?`, sourceID)
+	return c > 0, err
+}
+
+// HasApproved 该 source 是否有已批准变更（promote 闸门放行条件）。
+func (s *Store) HasApproved(ctx context.Context, sourceID string) (bool, error) {
+	var c int
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = ? AND status = 'approved'`, sourceID)
+	return c > 0, err
+}
+
 // Decide 审批决定（approved / rejected）。
 func (s *Store) Decide(ctx context.Context, id, decision, reviewer string) error {
 	res, err := s.db.ExecContext(ctx,

@@ -11,6 +11,8 @@ export function WorkspaceToolbar({
   testUrl,
   deployErr,
   onDeploy,
+  onRegister,
+  registering,
   onOpenWindow,
   onReconnect,
   drawerOpen,
@@ -22,6 +24,8 @@ export function WorkspaceToolbar({
   testUrl: string;
   deployErr: string;
   onDeploy: () => void;
+  onRegister: () => void;
+  registering: boolean;
   onOpenWindow: () => void;
   onReconnect: () => void;
   drawerOpen: boolean;
@@ -46,6 +50,14 @@ export function WorkspaceToolbar({
             title="把当前代码构建并部署到 test 环境(需先在 opencode 里 commit)"
           >
             {deployState === "building" ? "构建中…" : "⚙ 构建部署(test)"}
+          </button>
+          <button
+            onClick={onRegister}
+            disabled={registering}
+            className="rounded bg-purple-100 px-2 py-0.5 text-purple-700"
+            title="把 opencode 编码的产出登记为待审批变更;审批通过才能上线 prod"
+          >
+            {registering ? "登记中…" : "📝 登记变更"}
           </button>
           <button onClick={onOpenWindow} className="text-blue-600" title="opencode 开新窗口">↗</button>
           <button onClick={onReconnect} className="text-neutral-500" title="重连工作台">重连</button>
