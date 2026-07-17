@@ -136,9 +136,9 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	if !waitListen(port, 6*time.Second) {
 		return nil, fmt.Errorf("%s 工作台启动后未监听 :%d", toolName, port)
 	}
-	// 预创建一个带项目上下文的会话: opencode 创建会话即关联 cwd 项目(directory=worktree),
-	// 开发者打开 web UI 便见此会话而非空白。失败非致命。
-	s.SessionID = initSession(port)
+	// 复用 opencode 已有会话(按 repo 目录匹配,取最近);无则预创建一个带项目上下文的会话。
+	// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
+	s.SessionID = ensureSession(port, repoDir)
 	if s.SessionID != "" {
 		s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
 	}
@@ -155,6 +155,36 @@ func sessionDeepURL(baseURL, repoDir, sessionID string) string {
 
 // wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。
 var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
+
+// ensureSession 复用 opencode 已有会话(按 repo 目录匹配,取 updated 最近的一个);无则新建。
+// opencode 会话持久化在磁盘(/root/.local/share/opencode),进程或后端重启后仍可据此
+// 恢复开发者上次的编码上下文,而非每次打开都新建空会话。
+func ensureSession(port int, repoDir string) string {
+	resp, err := wsHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session", port))
+	if err == nil {
+		var r struct {
+			Data []struct {
+				ID       string `json:"id"`
+				Time     struct{ Updated int64 `json:"updated"` } `json:"time"`
+				Location struct{ Directory string `json:"directory"` } `json:"location"`
+			} `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&r)
+		resp.Body.Close()
+		var bestID string
+		var bestT int64
+		for _, s := range r.Data {
+			if s.Location.Directory == repoDir && s.Time.Updated > bestT {
+				bestID = s.ID
+				bestT = s.Time.Updated
+			}
+		}
+		if bestID != "" {
+			return bestID // 复用最近会话
+		}
+	}
+	return initSession(port) // 无匹配 → 新建
+}
 
 // initSession 在新启动的工作台上预创建一个会话(POST http://127.0.0.1:port/session)。
 // serve 刚 listen 时 API 可能短暂未就绪, 故重试几次; 持续失败返回空串(非致命)。

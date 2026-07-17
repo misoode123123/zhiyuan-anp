@@ -16,11 +16,14 @@ type AppDetail struct {
 	Instances    []AppInstance   `json:"instances"` // 各环境部署实例（test/prod）
 }
 
-// AppReqItem 需求条目（详情用精简字段）。
+// AppReqItem 需求条目（详情用，含展开所需的描述/用户故事/验收标准）。
 type AppReqItem struct {
-	ID     string `json:"id" db:"id"`
-	Title  string `json:"title" db:"title"`
-	Status string `json:"status" db:"status"`
+	ID                 string `json:"id" db:"id"`
+	Title              string `json:"title" db:"title"`
+	Status             string `json:"status" db:"status"`
+	Description        string `json:"description" db:"description"`
+	UserStory          string `json:"user_story" db:"user_story"`
+	AcceptanceCriteria string `json:"acceptance_criteria" db:"acceptance_criteria"`
 }
 
 // AppChangeItem 变更条目。
@@ -49,17 +52,20 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	}
 	d := &AppDetail{Application: *a}
 
-	// 需求（直接归属）
+	// 需求（直接归属，含详情字段供前端展开）
 	if err := s.db.SelectContext(ctx, &d.Requirements,
-		`SELECT id, COALESCE(title,'') AS title, status FROM requirement WHERE application_id=? ORDER BY created_at DESC`, appID); err != nil {
+		`SELECT id, COALESCE(title,'') AS title, status,
+		        COALESCE(description,'') AS description, COALESCE(user_story,'') AS user_story,
+		        COALESCE(acceptance_criteria,'') AS acceptance_criteria
+		 FROM requirement WHERE application_id=? ORDER BY created_at DESC`, appID); err != nil {
 		return nil, err
 	}
-	// 变更（经 source_id→requirement→app 派生）
+	// 变更：source_id=应用ID（交互编码登记，期2）OR source_id=需求ID（AI 编码派生）
 	if err := s.db.SelectContext(ctx, &d.Changes,
 		`SELECT id, status, COALESCE(source_id,'') AS source_id, COALESCE(kind,'') AS kind, created_at
 		 FROM change_request
-		 WHERE source_id IN (SELECT id FROM requirement WHERE application_id=?)
-		 ORDER BY created_at DESC`, appID); err != nil {
+		 WHERE source_id = ? OR source_id IN (SELECT id FROM requirement WHERE application_id=?)
+		 ORDER BY created_at DESC`, appID, appID); err != nil {
 		return nil, err
 	}
 	// 发布（经 change_id→change→source_id→requirement→app 派生）

@@ -1,12 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 // 项目上下文抽屉:展示该应用的需求/变更/发布(数据来自 /detail)。
 // 让开发者在编码时一眼看到"这个项目要做什么、改了什么、发布了什么"——上下文不再缺失。
 // 纯展示组件,数据与状态全由 WorkspaceFrame 注入。
 
-type Req = { id: string; title: string; status: string };
+type Req = { id: string; title: string; status: string; description?: string; user_story?: string; acceptance_criteria?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
 export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
@@ -31,6 +31,7 @@ export function ContextDrawer({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const [openReq, setOpenReq] = useState<string | null>(null);
   return (
     <aside className="w-64 shrink-0 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-2 text-xs">
       <div className="mb-2 flex items-center justify-between">
@@ -43,9 +44,24 @@ export function ContextDrawer({
         <>
           <Section title={`需求(${detail.requirements?.length ?? 0})`}>
             {detail.requirements?.length ? detail.requirements!.map((q) => (
-              <div key={q.id} className="flex gap-1 py-0.5">
-                <span>{STATUS_DOT[q.status] ?? "•"}</span>
-                <span className="truncate text-neutral-700" title={q.title}>{q.title}</span>
+              <div key={q.id}>
+                <button
+                  onClick={() => setOpenReq(openReq === q.id ? null : q.id)}
+                  className="flex w-full gap-1 py-0.5 text-left"
+                >
+                  <span>{STATUS_DOT[q.status] ?? "•"}</span>
+                  <span className="truncate text-neutral-700">{q.title || "(无标题)"}</span>
+                </button>
+                {openReq === q.id && (
+                  <div className="mb-1 ml-3 space-y-0.5 border-l border-neutral-300 pl-2 text-[11px] text-neutral-600">
+                    {q.description && <div>{q.description}</div>}
+                    {q.user_story && <div>📝 {q.user_story}</div>}
+                    {q.acceptance_criteria && <div>✅ {q.acceptance_criteria}</div>}
+                    {!q.description && !q.user_story && !q.acceptance_criteria && (
+                      <div className="text-neutral-400">(无详情)</div>
+                    )}
+                  </div>
+                )}
               </div>
             )) : <Empty />}
           </Section>
