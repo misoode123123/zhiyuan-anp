@@ -273,6 +273,24 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 	return strings.TrimSpace(sb.String()), nil
 }
 
+// SendPrompt 向某开发者当前 opencode 会话发送一条 prompt(注入需求/指令),
+// opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。替代 dispatch 黑盒。
+func (m *Manager) SendPrompt(appID, userID, text string) error {
+	s := m.Get(appID, userID)
+	if s == nil || s.SessionID == "" {
+		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"prompt": map[string]string{"text": text},
+	})
+	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/prompt", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 func (m *Manager) allocPortLocked() int {
 	used := map[int]bool{}
 	for _, s := range m.sessions {

@@ -43,7 +43,8 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
 	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace)            // 启动交互编码工作台
-	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange) // 登记交互编码变更为待审批（期2 闸门）
+	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange)   // 登记交互编码变更为待审批（期2 闸门）
+	r.POST("/project-spaces/:id/apps/:aid/inject-requirement", h.InjectRequirement) // 把需求注入 opencode 会话(交互式编码)
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
@@ -228,6 +229,37 @@ func summarizeChange(ctx context.Context, apiKey, diff, conversation string) str
 		return ""
 	}
 	return strings.TrimSpace(r.Choices[0].Message.Content)
+}
+
+// InjectRequirement 把需求规格作为 prompt 注入 opencode 会话,AI 在工作台实时编码(开发者看过程/介入)。
+// 替代 dispatch 黑盒:交互式需求驱动开发。prompt 由前端从需求规格拼装。
+func (h *Handler) InjectRequirement(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	if h.codeWS == nil {
+		httpx.Err(c, 500, 50021, "交互编码工作台未启用")
+		return
+	}
+	var in struct {
+		Prompt string `json:"prompt" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	user := c.GetHeader("X-User")
+	if user == "" {
+		user = "anonymous"
+	}
+	if err := h.codeWS.SendPrompt(aid, user, in.Prompt); err != nil {
+		httpx.Err(c, 500, 50021, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"injected": true, "note": "需求已发给 opencode,在工作台看 AI 实时编码"})
 }
 
 // RepoDocs 扫描当前应用 repo 的文档(README/.md),供编码时查阅项目文档结构。

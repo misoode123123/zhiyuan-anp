@@ -204,54 +204,26 @@ export default function WorkspaceFrame() {
     }
   }
 
-  // 需求驱动:派发 AI 按需求规格编码(dispatch-code),轮询任务进度。
-  // 完成后代码落入 repo,开发者可在 opencode 协助/修正,再构建部署测试。
+  // 需求驱动:把需求规格注入 opencode 会话,AI 在工作台实时编码(看过程,可介入)。
   async function dispatchReq() {
     if (!selectedReq) return;
+    const req = detail?.requirements?.find((q) => q.id === selectedReq);
+    if (!req) { setTaskMsg("需求不存在"); return; }
+    const prompt = `请按以下需求规格实现/修改代码(基于现有代码增量,不要全量重写):\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
     setDispatching(true);
-    setTaskMsg("AI 编码中…");
+    setTaskMsg("把需求发给 opencode…");
     try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/dispatch-code`, {
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/inject-requirement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const r = await res.json();
-      if (r.code !== 0 || !r.data?.task_id) {
-        setTaskMsg(r.message || "派发失败");
-        setDispatching(false);
-        return;
-      }
-      const tid = r.data.task_id;
-      let n = 0;
-      const t = setInterval(async () => {
-        n += 1;
-        try {
-          const tr = await fetch(`${API_BASE_URL}/code-tasks/${tid}`).then((rr) => rr.json());
-          const st = tr.data?.status;
-          if (st === "completed") {
-            clearInterval(t);
-            setTaskMsg("✅ AI 编码完成,可在 opencode 协助/修正,再构建部署测试");
-            setDispatching(false);
-            fetchDetail();
-          } else if (st === "failed") {
-            clearInterval(t);
-            setTaskMsg("❌ 编码失败:" + (tr.data?.error || ""));
-            setDispatching(false);
-          } else {
-            setTaskMsg("AI 编码中… (" + st + ")");
-          }
-        } catch {}
-        if (n > 60 && t) {
-          clearInterval(t);
-          setTaskMsg("超时");
-          setDispatching(false);
-        }
-      }, 5000);
+        body: JSON.stringify({ prompt }),
+      }).then((rr) => rr.json());
+      if (r.code !== 0) { setTaskMsg(r.message || "失败"); setDispatching(false); return; }
+      setTaskMsg("✅ 需求已发给 opencode → 在右侧工作台看 AI 实时编码,可随时介入/纠偏");
     } catch (e) {
       setTaskMsg(String(e));
-      setDispatching(false);
     }
+    setDispatching(false);
   }
 
   // 自动测试:当前需求 → AI 按验收标准生成用例 + 批量对着应用 URL 验收,显示通过/失败。
