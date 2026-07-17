@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { devStep } from "@/lib/devstep";
 
@@ -82,8 +83,7 @@ export default function ApplicationsPage() {
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
   const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
   const [appStats, setAppStats] = useState<Record<string, AppStats>>({});
-  const [embedFor, setEmbedFor] = useState("");  // 页内嵌入编码工作台的应用 id
-  const [embedUrl, setEmbedUrl] = useState("");  // 嵌入的 opencode 工作台 URL(deep_url 直达会话)
+  const router = useRouter();
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -141,18 +141,10 @@ export default function ApplicationsPage() {
     if (r.code !== 0) alert(r.message);
     load(psID);
   }
-  async function openWorkspace(id: string, tool: string) {
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/workspace`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool }),
-    });
-    const r = await res.json();
-    if (r.code === 0 && r.data?.url) {
-      // 页内嵌入 opencode 工作台(直达预创建会话), 不弹新窗口——编码+部署同页不割裂
-      setEmbedUrl(r.data.deep_url || r.data.url);
-      setEmbedFor(id);
-    } else {
-      alert(r.message || "启动编码工作台失败");
-    }
+  // 跳转到「编码工作台」tab(/workspace):由该页自己调 /workspace 接口拉起 opencode 并全屏加载。
+  // 走 tab 系统而非弹窗/页内嵌入——与平台其他功能一致,可在 tab 间切换、不离开平台。
+  function openWorkspace(id: string, tool: string) {
+    router.push(`/workspace?app=${id}&ps=${psID}&tool=${encodeURIComponent(tool)}`);
   }
   async function reloadEnv(id: string) {
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`);
@@ -275,18 +267,6 @@ export default function ApplicationsPage() {
                 <button onClick={() => remove(a.id)} className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">删除</button>
               </div>
             </div>
-            {embedFor === a.id && embedUrl && (
-              <div className="mt-2 overflow-hidden rounded border border-neutral-300">
-                <div className="flex items-center justify-between bg-neutral-50 px-2 py-1 text-xs">
-                  <span className="text-neutral-500">🧑‍💻 编码工作台（页内编码；用卡片顶部「构建部署/上线」按钮部署）</span>
-                  <span className="flex gap-3">
-                    <a href={embedUrl} target="_blank" rel="noreferrer" className="text-blue-600">↗ 新窗口</a>
-                    <button onClick={() => { setEmbedFor(""); setEmbedUrl(""); }} className="text-neutral-500">收起 ✕</button>
-                  </span>
-                </div>
-                <iframe src={embedUrl} className="h-[70vh] w-full" title="opencode 编码工作台" />
-              </div>
-            )}
             <div className="mt-1 text-xs text-neutral-500">
               repo: <code>{a.repo_dir}</code> · 内部端口 {a.internal_port}
               {a.host_port ? ` · 宿主端口 ${a.host_port}` : ""}
