@@ -157,11 +157,15 @@ func sessionDeepURL(baseURL, repoDir, sessionID string) string {
 // wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。
 var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
+// sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计,
+// 会话较多时序列化偏慢，放宽到 15s，避免 ensureSession 误判超时→新建多余会话。
+var sessionListClient = &http.Client{Timeout: 15 * time.Second}
+
 // ensureSession 复用 opencode 已有会话(按 repo 目录匹配,取 updated 最近的一个);无则新建。
 // opencode 会话持久化在磁盘(/root/.local/share/opencode),进程或后端重启后仍可据此
 // 恢复开发者上次的编码上下文,而非每次打开都新建空会话。
 func ensureSession(port int, repoDir string) string {
-	resp, err := wsHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session", port))
+	resp, err := sessionListClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session", port))
 	if err == nil {
 		var r struct {
 			Data []struct {
