@@ -264,9 +264,9 @@ export default function WorkspaceFrame() {
       setTestMsg("运行自动验收…(需先构建部署 test)");
       r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/run-tests`, { method: "POST" }).then((rr) => rr.json());
       if (r.code !== 0) { setTestMsg(r.message || "运行失败"); setTesting(false); return; }
-      const list = r.data ?? [];
+      const list: { method?: string; path?: string; expected_status?: number; actual_status?: number }[] = r.data ?? [];
       setTestResults(list);
-      const passed = list.filter((x: any) => x.actual_status === x.expected_status).length;
+      const passed = list.filter((x) => x.actual_status === x.expected_status).length;
       setTestMsg(`测试完成:${passed}/${list.length} 通过`);
     } catch (e) {
       setTestMsg(String(e));
