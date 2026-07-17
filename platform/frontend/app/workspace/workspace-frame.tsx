@@ -209,7 +209,7 @@ export default function WorkspaceFrame() {
     if (!selectedReq) return;
     const req = detail?.requirements?.find((q) => q.id === selectedReq);
     if (!req) { setTaskMsg("需求不存在"); return; }
-    const prompt = `请按以下需求规格实现/修改代码(基于现有代码增量,不要全量重写):\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
+    const prompt = `请按以下需求规格实现/修改代码。\n【重要·必须遵守】本应用已有代码,你不能从零重写:\n1. 第一步先用读文件工具读现有代码:README.md、docs/ 下文档、主要代码文件(server.js / index.html / package.json / Dockerfile 等),完整理解当前实现;\n2. 在现有代码基础上**增量修改/扩展**——只新增或修改实现本需求所需的部分,绝不删除或重写已有功能;\n3. 保持现有文件结构与技术栈,不另起炉灶。\n\n需求规格:\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
     setDispatching(true);
     setTaskMsg("把需求发给 opencode…");
     try {
