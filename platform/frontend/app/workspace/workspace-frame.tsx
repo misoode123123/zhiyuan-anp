@@ -379,7 +379,10 @@ export default function WorkspaceFrame() {
             psID={psID}
             appID={appID}
             selectedReq={selectedReq}
-            onStartReq={(id) => { setSelectedReq(id); setTaskMsg(""); }}
+            onStartReq={(id) => {
+              setSelectedReq(id); setTaskMsg(""); setTestMsg(""); setTestResults(null);
+              try { setSubtasks(JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]")); } catch { setSubtasks([]); }
+            }}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">

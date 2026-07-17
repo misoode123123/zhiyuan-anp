@@ -126,7 +126,10 @@ func (s *Service) Breakdown(ctx context.Context, reqID string) (string, error) {
 	if out.Error != "" {
 		return "", fmt.Errorf(out.Error)
 	}
-	tasks := extractJSON(out.Content)
+	tasks := strings.TrimSpace(extractJSON(out.Content))
+	if !strings.HasPrefix(tasks, "[") {
+		tasks = "[" + tasks + "]" // GLM 偶尔漏掉数组外层括号,补上保证合法 JSON 数组
+	}
 	_ = s.repo.UpdateTasks(ctx, reqID, tasks)
 	return tasks, nil
 }
