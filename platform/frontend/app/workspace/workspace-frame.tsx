@@ -292,7 +292,7 @@ export default function WorkspaceFrame() {
             <div className="flex items-center gap-2">
               <span className="truncate font-medium text-blue-700">🎯 当前需求:{req.title}</span>
               <button
-                onClick={dispatchReq}
+                onClick={() => dispatchReq()}
                 disabled={dispatching}
                 className="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-white"
                 title="AI 按此需求规格自动编码,完成后你可协助修正"
