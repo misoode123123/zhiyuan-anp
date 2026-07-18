@@ -7,7 +7,7 @@ type Envelope<T> = { code: number; data: T };
 type PS = { id: string; name: string; slug: string };
 type Overview = { space: PS; members: number; apps: number; deployed_apps: number; requirements: number; changes: number; releases: number };
 type Req = { id: string; title: string; status: string; priority?: string; application_id?: string; assignee?: string; created_at?: string };
-type Chg = { id: string; kind: string; status: string; source_id: string; output?: string; created_at?: string; reviewer?: string };type TaskItem = { id: string; label: string; sub?: string; tag?: string; action: string; path: string };
+type Chg = { id: string; kind: string; status: string; source_id: string; output?: string; created_at?: string; reviewer?: string };
 type MyTasks = { roles: string[]; toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
 
 const FLOW = [
@@ -57,11 +57,14 @@ export default function Home() {
     if (roles.includes("gatekeeper") && i >= 6) return true;
     return false;
   };
-  const visibleFlow = FLOW.filter((_, i) => nodeVisible(i));
   const allBadges = [toClaim.length, toClaim.length, myDev.length, myDev.length, myDev.length, myDev.length, toApprove.length, toRelease.length];
   const showClaim = isAdmin || roles.includes("business") || roles.includes("dev");
   const showDev = isAdmin || roles.includes("dev");
   const showApprove = isAdmin || roles.includes("gatekeeper");
+  const appName = (id: string) => appNames[id] || "?";
+  const fmtDate = (d?: string) => d ? new Date(d).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?";
+  const chgLabel = (c: Chg) => ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50);
+  const ws = (q: Req) => `/workspace?app=${q.application_id || ""}&ps=${psID}`;
 
   return (
     <div>
@@ -76,7 +79,7 @@ export default function Home() {
         {roles.length > 0 && <span className="text-xs text-neutral-400">角色:{roles.join(",")}</span>}
       </div>
 
-      {/* 流程向导(按角色过滤节点) */}
+      {/* 流程向导(全8步可见,非角色灰显) */}
       <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
         <div className="mb-2 text-sm font-medium text-neutral-600">开发流程向导(高亮=有我的待办,点击进入)</div>
         <div className="flex items-center gap-0.5 overflow-x-auto pb-1">
@@ -85,7 +88,7 @@ export default function Home() {
             const relevant = nodeVisible(i);
             const active = cnt > 0 && relevant;
             return (
-              <a key={n.key} href={n.path} className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${active ? "bg-blue-50 text-blue-700" : relevant ? "text-neutral-600 hover:bg-neutral-100" : "text-neutral-300 hover:bg-neutral-50"}`} title={relevant ? n.key : `${n.key}（非你的角色）`}>
+              <a key={n.key} href={n.path} className={`flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs ${active ? "bg-blue-50 text-blue-700" : relevant ? "text-neutral-600 hover:bg-neutral-100" : "text-neutral-300 hover:bg-neutral-50"}`} title={relevant ? n.key : `${n.key}（非你的角色）`}>
                 <span>{n.icon}</span>
                 <span>{n.key}</span>
                 {active && <span className="rounded-full bg-blue-600 px-1.5 text-[10px] text-white">{cnt}</span>}
@@ -96,12 +99,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 我的任务(按角色过滤) */}
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {showClaim && <TaskGroup title="待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, sub: `应用: ${appNames[q.application_id || ""] || "?"} · 创建: ${q.created_at ? new Date(q.created_at).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?"}`, tag: q.priority, action: "认领", path: "/requirements" }))} />}
-        {showDev && <TaskGroup title="我的开发中" items={myDev.map((q) => ({ id: q.id, label: q.title, sub: `应用: ${appNames[q.application_id || ""] || "?"} · 认领: ${q.assignee || "?"} · ${q.created_at ? new Date(q.created_at).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?"}`, tag: q.status, action: "去编码", path: `/workspace?app=${q.application_id || ""}&ps=${psID}` }))} />}
-        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), sub: `应用: ${appNames[c.source_id || ""] || "?"} · 提交: ${c.reviewer || "?"} · ${c.created_at ? new Date(c.created_at).toLocaleString("zh-CN", {hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}) : "?"}`, tag: c.status, action: "审批", path: "/approvals" }))} />}
-        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), sub: `应用: ${appNames[c.source_id || ""] || "?"} · 提交: ${c.reviewer || "?"} · ${c.created_at ? new Date(c.created_at).toLocaleString("zh-CN", {hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}) : "?"}`, tag: c.status, action: "上线", path: "/applications" }))} />}
+      {/* 我的任务(8步对应卡片) */}
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {showClaim && <TaskGroup title="💬 待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, sub: `应用: ${appName(q.application_id || "")} · 创建: ${fmtDate(q.created_at)}`, tag: q.priority, action: "认领", path: "/requirements" }))} />}
+        {showDev && <TaskGroup title="🧑‍💻 编码中" items={myDev.map((q) => ({ id: q.id, label: q.title, sub: `应用: ${appName(q.application_id || "")} · 认领: ${q.assignee || "?"}`, tag: "编码", action: "去编码", path: ws(q) }))} />}
+        {showDev && <TaskGroup title="🧪 待测试" items={myDev.map((q) => ({ id: `t-${q.id}`, label: q.title, sub: `应用: ${appName(q.application_id || "")}`, tag: "测试", action: "去测试", path: ws(q) }))} />}
+        {showDev && <TaskGroup title="🔒 待核对" items={myDev.map((q) => ({ id: `c-${q.id}`, label: q.title, sub: `应用: ${appName(q.application_id || "")}`, tag: "核对", action: "去核对", path: ws(q) }))} />}
+        {showDev && <TaskGroup title="📝 待登记" items={myDev.map((q) => ({ id: `r-${q.id}`, label: q.title, sub: `应用: ${appName(q.application_id || "")}`, tag: "登记", action: "去登记", path: ws(q) }))} />}
+        {showApprove && <TaskGroup title="✅ 待审批" items={toApprove.map((c) => ({ id: c.id, label: chgLabel(c), sub: `应用: ${appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`, tag: c.status, action: "审批", path: "/approvals" }))} />}
+        {showApprove && <TaskGroup title="🚀 待上线" items={toRelease.map((c) => ({ id: c.id, label: chgLabel(c), sub: `应用: ${appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`, tag: c.status, action: "上线", path: `/applications` }))} />}
       </div>
 
       {/* 统计 */}
