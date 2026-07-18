@@ -135,7 +135,7 @@ func main() {
 	// 业务模块：requirement（需求工作台，AI 生成规格入库）
 	reqRepo := requirement.NewRepository(database)
 	reqSvc := requirement.NewService(reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore)
-	reqHandler := requirement.NewHandler(reqSvc)
+	reqHandler := requirement.NewHandler(reqSvc, changeStore)
 
 	// 对话式需求梳理（AI agent 多轮对话梳理需求 → 生成 requirement）
 	convSvc := conversation.NewService(conversation.NewStore(database), reqRepo, cfg.AgentRuntimeURL)

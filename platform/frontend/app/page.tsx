@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE_URL, currentProjectSpace, currentUser } from "@/lib/api";
+import { API_BASE_URL, currentProjectSpace } from "@/lib/api";
 
 type Envelope<T> = { code: number; data: T };
 type PS = { id: string; name: string; slug: string };
 type Overview = { space: PS; members: number; apps: number; deployed_apps: number; requirements: number; changes: number; releases: number };
-type Req = { id: string; title: string; status: string; priority?: string; assignee?: string; application_id?: string };
+type Req = { id: string; title: string; status: string; priority?: string; application_id?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string };
+type MyTasks = { toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
 
 // 开发流程 8 节点(需求→上线),点击跳转对应模块
 const FLOW = [
@@ -25,9 +26,7 @@ export default function Home() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
   const [ov, setOv] = useState<Overview | null>(null);
-  const [reqs, setReqs] = useState<Req[]>([]);
-  const [chgs, setChgs] = useState<Chg[]>([]);
-  const user = currentUser();
+  const [tasks, setTasks] = useState<MyTasks>({ toClaim: [], myDev: [], toApprove: [], toRelease: [] });
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`).then((r) => r.json()).then((r: Envelope<PS[]>) => {
@@ -41,15 +40,11 @@ export default function Home() {
   useEffect(() => {
     if (!psID) return;
     fetch(`${API_BASE_URL}/project-spaces/${psID}/overview`).then((r) => r.json()).then((r: Envelope<Overview>) => setOv(r.data ?? null));
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements`).then((r) => r.json()).then((r: Envelope<Req[]>) => setReqs(r.data ?? []));
-    fetch(`${API_BASE_URL}/changes`).then((r) => r.json()).then((r: Envelope<Chg[]>) => setChgs(r.data ?? []));
+    // 期2:用后端 my-tasks 聚合接口(一次请求拿全部待办)
+    fetch(`${API_BASE_URL}/project-spaces/${psID}/my-tasks`).then((r) => r.json()).then((r: Envelope<MyTasks>) => setTasks(r.data ?? { toClaim: [], myDev: [], toApprove: [], toRelease: [] }));
   }, [psID]);
 
-  // 我的任务聚合(前端按 assignee/status 过滤)
-  const toClaim = reqs.filter((q) => !q.assignee); // 待认领
-  const myDev = reqs.filter((q) => q.assignee === user && q.status === "developing"); // 我的开发中
-  const toApprove = chgs.filter((c) => c.status === "pending"); // 待审批
-  const toRelease = chgs.filter((c) => c.status === "approved"); // 待上线
+  const { toClaim, myDev, toApprove, toRelease } = tasks;
   // 各节点角标:需求/认领=待认领, 编码/测试/核对/登记=我的开发中, 审批=待审批, 上线=待上线
   const badges = [toClaim.length, toClaim.length, myDev.length, myDev.length, myDev.length, myDev.length, toApprove.length, toRelease.length];
 

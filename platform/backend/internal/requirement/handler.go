@@ -3,19 +3,22 @@ package requirement
 import (
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
 // Handler 需求工作台 HTTP 接口。
 type Handler struct {
-	svc *Service
+	svc      *Service
+	chgStore *change.Store // 变更(用于 my-tasks 聚合待审批/上线);nil=不聚合
 }
 
-// NewHandler 构造 Handler。
-func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+// NewHandler 构造 Handler。chgStore 可为 nil。
+func NewHandler(svc *Service, chgStore *change.Store) *Handler { return &Handler{svc: svc, chgStore: chgStore} }
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
+	r.GET("/project-spaces/:id/my-tasks", h.MyTasks) // 我的任务聚合(待认领/开发中/待审批/待上线)
 	r.POST("/project-spaces/:id/requirements", h.Create)
 	r.GET("/project-spaces/:id/requirements", h.List)
 	r.GET("/project-spaces/:id/apps/:aid/requirements", h.ListByApp) // 应用一等公民：应用的需求池
@@ -23,6 +26,39 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/requirements/:rid/breakdown", h.Breakdown) // AI 拆解需求→子任务
 	r.POST("/project-spaces/:id/requirements/:rid/assign", h.Assign)       // 认领需求(互斥)
 	r.POST("/project-spaces/:id/requirements/:rid/release", h.Release)     // 释放认领
+}
+
+// MyTasks 聚合当前用户各开发阶段的待办(待认领需求/我的开发中/待审批变更/待上线变更),供首页"我的任务"。
+func (h *Handler) MyTasks(c *gin.Context) {
+	psID := c.Param("id")
+	user := c.GetHeader("X-User")
+	if user == "" {
+		user = "anonymous"
+	}
+	ctx := c.Request.Context()
+	reqs, _ := h.svc.List(ctx, psID)
+	var toClaim, myDev []Requirement
+	for _, q := range reqs {
+		if q.Assignee == "" {
+			toClaim = append(toClaim, q)
+		}
+		if q.Assignee == user && q.Status == "developing" {
+			myDev = append(myDev, q)
+		}
+	}
+	var toApprove, toRelease []change.ChangeRequest
+	if h.chgStore != nil {
+		chgs, _ := h.chgStore.List(ctx, "")
+		for _, ch := range chgs {
+			if ch.Status == "pending" {
+				toApprove = append(toApprove, ch)
+			}
+			if ch.Status == "approved" {
+				toRelease = append(toRelease, ch)
+			}
+		}
+	}
+	httpx.OK(c, gin.H{"toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
 }
 
 type createRequest struct {
