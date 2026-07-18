@@ -43,7 +43,7 @@ func (h *Handler) MyTasks(c *gin.Context) {
 	reqs, _ := h.svc.List(ctx, psID)
 	toClaim, myDev := []Requirement{}, []Requirement{}
 	for _, q := range reqs {
-		if q.Assignee == "" {
+		if q.Assignee == "" && q.Status == "specified" {
 			toClaim = append(toClaim, q)
 		}
 		if q.Assignee == user && q.Status == "developing" {
