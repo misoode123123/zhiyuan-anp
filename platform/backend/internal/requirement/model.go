@@ -17,7 +17,7 @@ type Requirement struct {
 	FixedVersion       string    `json:"fixed_version" db:"fixed_version"` // 计划版本,空=未排期
 	Tasks              string    `json:"tasks" db:"tasks"`                 // JSON 子任务清单 [{text,done}]
 	Assignee           string    `json:"assignee" db:"assignee"`           // 认领的开发者(空=未认领,互斥)
-	AssignedAt         time.Time `json:"assigned_at" db:"assigned_at"`     // 认领时间
+	AssignedAt         *time.Time `json:"assigned_at" db:"assigned_at"`    // 认领时间(可空)
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
