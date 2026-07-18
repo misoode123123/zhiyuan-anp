@@ -83,6 +83,7 @@ export default function ApplicationsPage() {
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
   const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
   const [appStats, setAppStats] = useState<Record<string, AppStats>>({});
+  const [appChanges, setAppChanges] = useState<Record<string, { id: string; status: string; output?: string; created_at?: string }[]>>({});
   const router = useRouter();
 
   useEffect(() => {
@@ -115,12 +116,22 @@ export default function ApplicationsPage() {
       }
     } catch {}
   }
+  async function loadChanges(id: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/detail`);
+      const r = await res.json();
+      if (r.code === 0 && r.data?.changes) {
+        setAppChanges((p) => ({ ...p, [id]: r.data.changes }));
+      }
+    } catch {}
+  }
   // 轮询已上线(prod running)应用的资源/健康（运维可观测）
   useEffect(() => {
     const poll = () => apps.forEach((a) => {
       if (a.instances?.some((i) => i.env === "prod" && i.status === "running")) loadStats(a.id);
     });
     poll();
+    apps.forEach((a) => loadChanges(a.id));
     const t = setInterval(poll, 30000);
     return () => clearInterval(t);
   }, [apps]);
@@ -146,6 +157,11 @@ export default function ApplicationsPage() {
     load(psID);
   }
   async function promote(id: string) {
+    const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
+    if (chgs.length > 0) {
+      const summaries = chgs.map((c) => "• " + (((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60))).join("\n");
+      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`)) return;
+    }
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, { method: "POST" });
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
@@ -297,6 +313,14 @@ export default function ApplicationsPage() {
                         <span className="text-neutral-400">健康</span>
                         <span className={(appStats[a.id].health === "up" ? "text-emerald-600" : "text-red-600") + " font-medium"}>{appStats[a.id].health}</span>
                         {appStats[a.id].cpu && <span className="text-neutral-400">CPU {appStats[a.id].cpu} · 内存 {appStats[a.id].mem}</span>}
+                      </div>
+                    )}
+                    {env === "prod" && (appChanges[a.id] || []).filter((c) => c.status === "approved").length > 0 && (
+                      <div className="mt-1 rounded bg-amber-50 p-1 text-[11px]">
+                        <div className="font-medium text-amber-700">📋 待上线变更({(appChanges[a.id] || []).filter((c) => c.status === "approved").length})：</div>
+                        {(appChanges[a.id] || []).filter((c) => c.status === "approved").map((c) => (
+                          <div key={c.id} className="truncate text-amber-600">{((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 50)}</div>
+                        ))}
                       </div>
                     )}
                   </div>
