@@ -537,6 +537,8 @@ func (h *Handler) Promote(c *gin.Context) {
 				httpx.Err(c, 409, 40920, "需先登记变更并审批通过才能上线 prod（变更闸门）")
 				return
 			}
+			// 上线后:把该应用的 approved 变更标记为 released（从待上线列表消失）
+			h.changes.MarkReleased(c.Request.Context(), aid)
 		}
 	}
 	go h.buildAndDeploy(psID, aid, "", EnvProd)

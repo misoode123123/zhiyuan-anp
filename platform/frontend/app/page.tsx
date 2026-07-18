@@ -7,7 +7,7 @@ type Envelope<T> = { code: number; data: T };
 type PS = { id: string; name: string; slug: string };
 type Overview = { space: PS; members: number; apps: number; deployed_apps: number; requirements: number; changes: number; releases: number };
 type Req = { id: string; title: string; status: string; priority?: string; application_id?: string };
-type Chg = { id: string; kind: string; status: string; source_id: string; output?: string };
+type Chg = { id: string; kind: string; status: string; source_id: string; output?: string; created_at?: string; reviewer?: string };type TaskItem = { id: string; label: string; sub?: string; tag?: string; action: string; path: string };
 type MyTasks = { roles: string[]; toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
 
 const FLOW = [
@@ -94,8 +94,8 @@ export default function Home() {
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {showClaim && <TaskGroup title="待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, tag: q.priority, action: "认领", path: "/requirements" }))} />}
         {showDev && <TaskGroup title="我的开发中" items={myDev.map((q) => ({ id: q.id, label: q.title, tag: q.status, action: "去编码", path: `/workspace?app=${q.application_id || ""}&ps=${psID}` }))} />}
-        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), tag: `${(c.source_id || "?").slice(0, 12)} · ${c.status}`, action: "审批", path: "/approvals" }))} />}
-        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), tag: `${(c.source_id || "?").slice(0, 12)} · ${c.status}`, action: "上线", path: "/applications" }))} />}
+        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), sub: `应用: ${(c.source_id || "?").slice(0, 12)} · 提交: ${c.reviewer || "?"} · ${c.created_at ? new Date(c.created_at).toLocaleString("zh-CN", {hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}) : "?"}`, tag: c.status, action: "审批", path: "/approvals" }))} />}
+        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), sub: `应用: ${(c.source_id || "?").slice(0, 12)} · 提交: ${c.reviewer || "?"} · ${c.created_at ? new Date(c.created_at).toLocaleString("zh-CN", {hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}) : "?"}`, tag: c.status, action: "上线", path: "/applications" }))} />}
       </div>
 
       {/* 统计 */}
@@ -111,17 +111,20 @@ export default function Home() {
   );
 }
 
-function TaskGroup({ title, items }: { title: string; items: { id: string; label: string; tag?: string; action: string; path: string }[] }) {
+function TaskGroup({ title, items }: { title: string; items: { id: string; label: string; sub?: string; tag?: string; action: string; path: string }[] }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-3">
       <div className="mb-2 text-sm font-medium text-neutral-600">{title}({items.length})</div>
       {items.length === 0 ? (<div className="text-xs text-neutral-400">暂无</div>) : (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {items.map((it) => (
-            <div key={it.id} className="flex items-center gap-2 text-xs">
-              {it.tag && <span className="shrink-0 rounded bg-neutral-100 px-1 text-neutral-500">{it.tag}</span>}
-              <span className="flex-1 truncate">{it.label}</span>
-              <a href={it.path} className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-blue-700">{it.action}</a>
+            <div key={it.id} className="text-xs">
+              <div className="flex items-center gap-2">
+                {it.tag && <span className="shrink-0 rounded bg-neutral-100 px-1 text-neutral-500">{it.tag}</span>}
+                <span className="flex-1 truncate">{it.label}</span>
+                <a href={it.path} className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-blue-700">{it.action}</a>
+              </div>
+              {it.sub && <div className="mt-0.5 text-[10px] text-neutral-400">{it.sub}</div>}
             </div>
           ))}
         </div>

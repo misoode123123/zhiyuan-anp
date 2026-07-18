@@ -79,6 +79,14 @@ func (s *Store) Decide(ctx context.Context, id, decision, reviewer string) error
 	return nil
 }
 
+// MarkReleased 把某应用( source_id)的所有 approved 变更标记为 released(已上线,从待上线消失)。
+func (s *Store) MarkReleased(ctx context.Context, sourceID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE change_request SET status = 'released' WHERE source_id = ? AND status = 'approved'`,
+		sourceID)
+	return err
+}
+
 // errNotPending 非 pending 状态不可审批。
 var errNotPending = errorString("变更非待审状态，不可审批")
 
