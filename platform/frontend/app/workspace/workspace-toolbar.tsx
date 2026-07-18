@@ -76,7 +76,7 @@ export function WorkspaceToolbar({
         <div className="bg-red-50 px-3 py-0.5 text-red-700">❌ {deployErr}</div>
       )}
       <div className="px-3 py-0.5 text-[11px] text-neutral-400">
-        💡 在 opencode 里 commit 改动后,点「构建部署(test)」验证效果
+        💡 步骤：① 在 opencode 对话框输入"提交代码"让 AI commit → ② 点「构建部署(test)」→ ③ 点「打开 test 环境」查看效果
       </div>
     </div>
   );
