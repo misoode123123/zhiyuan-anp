@@ -311,6 +311,7 @@ export default function WorkspaceFrame() {
     <div className="-m-4 flex h-[calc(100vh-2.25rem)] flex-col md:-m-6">
       <WorkspaceToolbar
         appID={appID}
+        appName={detail?.application?.name}
         tool={tool}
         deployState={deployState}
         testUrl={testUrl}

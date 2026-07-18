@@ -10,7 +10,7 @@ import { ProjectDocs } from "./project-docs";
 type Req = { id: string; title: string; status: string; priority?: string; fixed_version?: string; tasks?: string; assignee?: string; description?: string; user_story?: string; acceptance_criteria?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string; created_at: string; output?: string };
 type Rel = { id: string; version: string; status: string; created_at: string };
-export type WorkspaceDetail = { requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
+export type WorkspaceDetail = { application?: { name?: string; instances?: { env: string; status: string; url: string }[]; last_error?: string }; requirements?: Req[]; changes?: Chg[]; releases?: Rel[] };
 
 // 状态→圆点映射(需求/变更/发布共用,缺失则普通圆点)
 const STATUS_DOT: Record<string, string> = {

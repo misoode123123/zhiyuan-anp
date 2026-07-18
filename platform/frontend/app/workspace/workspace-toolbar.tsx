@@ -19,6 +19,7 @@ export function WorkspaceToolbar({
   onToggleDrawer,
 }: {
   appID: string;
+  appName?: string;
   tool: string;
   deployState: DeployState;
   testUrl: string;
@@ -39,7 +40,7 @@ export function WorkspaceToolbar({
             <button onClick={onToggleDrawer} className="text-neutral-500" title="展开项目上下文">☰</button>
           )}
           <span className="truncate text-neutral-500">
-            🧑‍💻 编码工作台 · <span className="font-mono text-neutral-700">{appID || "?"}</span> · {tool}
+            🧑‍💻 编码工作台 · <span className="font-semibold text-neutral-700">{appName || appID || "?"}</span> · {tool}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-3">
@@ -65,8 +66,9 @@ export function WorkspaceToolbar({
         </span>
       </div>
       {deployState === "running" && testUrl && (
-        <div className="bg-emerald-50 px-3 py-0.5 text-emerald-700">
-          ✅ test 已部署:<a href={testUrl} target="_blank" rel="noreferrer" className="underline">{testUrl}</a>
+        <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1 text-emerald-700">
+          <span>✅ test 已部署,点击打开：</span>
+          <a href={testUrl} target="_blank" rel="noreferrer" className="rounded bg-emerald-600 px-3 py-0.5 font-medium text-white">▶ 打开 test 环境</a>
         </div>
       )}
       {deployState === "failed" && deployErr && (
