@@ -6,6 +6,7 @@ export type DeployState = "idle" | "building" | "running" | "failed";
 // 纯展示+回调,状态由 WorkspaceFrame 注入。
 export function WorkspaceToolbar({
   appID,
+  appName,
   tool,
   deployState,
   testUrl,
