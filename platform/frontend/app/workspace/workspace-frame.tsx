@@ -70,7 +70,7 @@ export default function WorkspaceFrame() {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
       const r = await res.json();
       if (r.code === 0 && r.data) {
-        setDetail({ requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
+        setDetail({ application: r.data.application, requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
         setDetailErr("");
         return r.data;
       }
