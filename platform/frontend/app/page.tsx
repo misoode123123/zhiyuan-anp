@@ -7,7 +7,7 @@ type Envelope<T> = { code: number; data: T };
 type PS = { id: string; name: string; slug: string };
 type Overview = { space: PS; members: number; apps: number; deployed_apps: number; requirements: number; changes: number; releases: number };
 type Req = { id: string; title: string; status: string; priority?: string; application_id?: string };
-type Chg = { id: string; kind: string; status: string; source_id: string };
+type Chg = { id: string; kind: string; status: string; source_id: string; output?: string };
 type MyTasks = { roles: string[]; toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
 
 const FLOW = [
@@ -94,8 +94,8 @@ export default function Home() {
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {showClaim && <TaskGroup title="待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, tag: q.priority, action: "认领", path: "/requirements" }))} />}
         {showDev && <TaskGroup title="我的开发中" items={myDev.map((q) => ({ id: q.id, label: q.title, tag: q.status, action: "去编码", path: `/workspace?app=${q.application_id || ""}&ps=${psID}` }))} />}
-        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "审批", path: "/approvals" }))} />}
-        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "上线", path: "/applications" }))} />}
+        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), tag: `${(c.source_id || "?").slice(0, 12)} · ${c.status}`, action: "审批", path: "/approvals" }))} />}
+        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50), tag: `${(c.source_id || "?").slice(0, 12)} · ${c.status}`, action: "上线", path: "/applications" }))} />}
       </div>
 
       {/* 统计 */}
