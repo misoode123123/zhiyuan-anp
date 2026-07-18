@@ -115,6 +115,7 @@ func main() {
 
 	// 变更闸门（🚪G3 代码审批流）
 	changeStore := change.NewStore(database)
+	authStore := auth.NewStore(database)
 
 	// 异步编码任务（解决同步阻塞）
 	codeTaskStore := codetask.NewStore(database)
@@ -135,7 +136,7 @@ func main() {
 	// 业务模块：requirement（需求工作台，AI 生成规格入库）
 	reqRepo := requirement.NewRepository(database)
 	reqSvc := requirement.NewService(reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore)
-	reqHandler := requirement.NewHandler(reqSvc, changeStore)
+	reqHandler := requirement.NewHandler(reqSvc, changeStore, authStore)
 
 	// 对话式需求梳理（AI agent 多轮对话梳理需求 → 生成 requirement）
 	convSvc := conversation.NewService(conversation.NewStore(database), reqRepo, cfg.AgentRuntimeURL)
@@ -167,7 +168,6 @@ func main() {
 	standardHandler := standard.NewHandler(standardStore, validator.New())
 	docsHandler := docs.NewHandler(docs.NewService(store))
 	changeHandler := change.NewHandler(changeStore)
-	authStore := auth.NewStore(database)
 	// 真实登录：首次为 admin 设默认密码（已有不覆盖；建议登录后改密）。
 	_ = authStore.EnsurePassword(context.Background(), "admin", "admin123")
 	authHandler := auth.NewHandler(authStore)

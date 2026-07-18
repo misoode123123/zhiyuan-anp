@@ -3,18 +3,22 @@ package requirement
 import (
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
 // Handler 需求工作台 HTTP 接口。
 type Handler struct {
-	svc      *Service
-	chgStore *change.Store // 变更(用于 my-tasks 聚合待审批/上线);nil=不聚合
+	svc       *Service
+	chgStore  *change.Store  // 变更(用于 my-tasks 聚合待审批/上线);nil=不聚合
+	authStore *auth.Store    // 用户角色(用于 my-tasks RBAC 过滤);nil=不过滤
 }
 
-// NewHandler 构造 Handler。chgStore 可为 nil。
-func NewHandler(svc *Service, chgStore *change.Store) *Handler { return &Handler{svc: svc, chgStore: chgStore} }
+// NewHandler 构造 Handler。chgStore/authStore 可为 nil。
+func NewHandler(svc *Service, chgStore *change.Store, authStore *auth.Store) *Handler {
+	return &Handler{svc: svc, chgStore: chgStore, authStore: authStore}
+}
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
@@ -58,7 +62,12 @@ func (h *Handler) MyTasks(c *gin.Context) {
 			}
 		}
 	}
-	httpx.OK(c, gin.H{"toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
+	// RBAC:查用户角色,前端据此过滤可见阶段
+	roles := []string{}
+	if h.authStore != nil {
+		roles, _ = h.authStore.Roles(ctx, user, psID)
+	}
+	httpx.OK(c, gin.H{"roles": roles, "toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
 }
 
 type createRequest struct {

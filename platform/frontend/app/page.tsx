@@ -8,9 +8,8 @@ type PS = { id: string; name: string; slug: string };
 type Overview = { space: PS; members: number; apps: number; deployed_apps: number; requirements: number; changes: number; releases: number };
 type Req = { id: string; title: string; status: string; priority?: string; application_id?: string };
 type Chg = { id: string; kind: string; status: string; source_id: string };
-type MyTasks = { toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
+type MyTasks = { roles: string[]; toClaim: Req[]; myDev: Req[]; toApprove: Chg[]; toRelease: Chg[] };
 
-// 开发流程 8 节点(需求→上线),点击跳转对应模块
 const FLOW = [
   { key: "需求", icon: "💬", path: "/requirements" },
   { key: "认领", icon: "👤", path: "/requirements" },
@@ -26,7 +25,7 @@ export default function Home() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
   const [ov, setOv] = useState<Overview | null>(null);
-  const [tasks, setTasks] = useState<MyTasks>({ toClaim: [], myDev: [], toApprove: [], toRelease: [] });
+  const [tasks, setTasks] = useState<MyTasks>({ roles: [], toClaim: [], myDev: [], toApprove: [], toRelease: [] });
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`).then((r) => r.json()).then((r: Envelope<PS[]>) => {
@@ -40,13 +39,23 @@ export default function Home() {
   useEffect(() => {
     if (!psID) return;
     fetch(`${API_BASE_URL}/project-spaces/${psID}/overview`).then((r) => r.json()).then((r: Envelope<Overview>) => setOv(r.data ?? null));
-    // 期2:用后端 my-tasks 聚合接口(一次请求拿全部待办)
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/my-tasks`).then((r) => r.json()).then((r: Envelope<MyTasks>) => setTasks(r.data ?? { toClaim: [], myDev: [], toApprove: [], toRelease: [] }));
+    fetch(`${API_BASE_URL}/project-spaces/${psID}/my-tasks`).then((r) => r.json()).then((r: Envelope<MyTasks>) => setTasks(r.data ?? { roles: [], toClaim: [], myDev: [], toApprove: [], toRelease: [] }));
   }, [psID]);
 
-  const { toClaim, myDev, toApprove, toRelease } = tasks;
-  // 各节点角标:需求/认领=待认领, 编码/测试/核对/登记=我的开发中, 审批=待审批, 上线=待上线
-  const badges = [toClaim.length, toClaim.length, myDev.length, myDev.length, myDev.length, myDev.length, toApprove.length, toRelease.length];
+  const { roles, toClaim, myDev, toApprove, toRelease } = tasks;
+  const isAdmin = roles.includes("admin") || roles.length === 0;
+  const nodeVisible = (i: number) => {
+    if (isAdmin) return true;
+    if (roles.includes("business") && i === 0) return true;
+    if (roles.includes("dev") && i >= 1 && i <= 5) return true;
+    if (roles.includes("gatekeeper") && i >= 6) return true;
+    return false;
+  };
+  const visibleFlow = FLOW.filter((_, i) => nodeVisible(i));
+  const allBadges = [toClaim.length, toClaim.length, myDev.length, myDev.length, myDev.length, myDev.length, toApprove.length, toRelease.length];
+  const showClaim = isAdmin || roles.includes("business") || roles.includes("dev");
+  const showDev = isAdmin || roles.includes("dev");
+  const showApprove = isAdmin || roles.includes("gatekeeper");
 
   return (
     <div>
@@ -58,14 +67,16 @@ export default function Home() {
         <select value={psID} onChange={(e) => setPsID(e.target.value)} className="rounded-md border border-neutral-300 px-2 py-1 text-sm">
           {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.slug})</option>))}
         </select>
+        {roles.length > 0 && <span className="text-xs text-neutral-400">角色:{roles.join(",")}</span>}
       </div>
 
-      {/* 图形化流程向导 */}
+      {/* 流程向导(按角色过滤节点) */}
       <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
         <div className="mb-2 text-sm font-medium text-neutral-600">开发流程向导(高亮=有我的待办,点击进入)</div>
         <div className="flex flex-wrap items-center gap-1">
-          {FLOW.map((n, i) => {
-            const cnt = badges[i];
+          {visibleFlow.map((n) => {
+            const i = FLOW.indexOf(n);
+            const cnt = allBadges[i];
             const active = cnt > 0;
             return (
               <a key={n.key} href={n.path} className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${active ? "bg-blue-50 text-blue-700" : "text-neutral-500 hover:bg-neutral-100"}`}>
@@ -79,15 +90,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 我的任务(按阶段分组) */}
+      {/* 我的任务(按角色过滤) */}
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <TaskGroup title="待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, tag: q.priority, action: "认领", path: "/requirements" }))} />
-        <TaskGroup title="我的开发中" items={myDev.map((q) => ({ id: q.id, label: q.title, tag: q.status, action: "去编码", path: `/workspace?app=${q.application_id || ""}&ps=${psID}` }))} />
-        <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "审批", path: "/approvals" }))} />
-        <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "上线", path: "/applications" }))} />
+        {showClaim && <TaskGroup title="待认领" items={toClaim.map((q) => ({ id: q.id, label: q.title, tag: q.priority, action: "认领", path: "/requirements" }))} />}
+        {showDev && <TaskGroup title="我的开发中" items={myDev.map((q) => ({ id: q.id, label: q.title, tag: q.status, action: "去编码", path: `/workspace?app=${q.application_id || ""}&ps=${psID}` }))} />}
+        {showApprove && <TaskGroup title="待我审批" items={toApprove.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "审批", path: "/approvals" }))} />}
+        {showApprove && <TaskGroup title="待上线" items={toRelease.map((c) => ({ id: c.id, label: `变更 ${c.id.slice(0, 12)}`, tag: c.status, action: "上线", path: "/applications" }))} />}
       </div>
 
-      {/* 统计(保留) */}
+      {/* 统计 */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="成员" value={ov?.members} />
         <Stat label="应用" value={ov?.apps} hint={ov ? `运行中 ${ov.deployed_apps}` : undefined} />
@@ -100,14 +111,11 @@ export default function Home() {
   );
 }
 
-// 任务分组组件
 function TaskGroup({ title, items }: { title: string; items: { id: string; label: string; tag?: string; action: string; path: string }[] }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-3">
       <div className="mb-2 text-sm font-medium text-neutral-600">{title}({items.length})</div>
-      {items.length === 0 ? (
-        <div className="text-xs text-neutral-400">暂无</div>
-      ) : (
+      {items.length === 0 ? (<div className="text-xs text-neutral-400">暂无</div>) : (
         <div className="space-y-1">
           {items.map((it) => (
             <div key={it.id} className="flex items-center gap-2 text-xs">
