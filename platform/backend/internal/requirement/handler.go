@@ -62,10 +62,14 @@ func (h *Handler) MyTasks(c *gin.Context) {
 			}
 		}
 	}
-	// RBAC:查用户角色,前端据此过滤可见阶段
+	// RBAC:查用户角色(先按 name 解析 user_id),前端据此过滤可见阶段
 	roles := []string{}
 	if h.authStore != nil {
-		roles, _ = h.authStore.Roles(ctx, user, psID)
+		if u, err := h.authStore.GetUserByName(ctx, user); err == nil && u != nil {
+			if r, _ := h.authStore.Roles(ctx, u.ID, psID); r != nil {
+				roles = r
+			}
+		}
 	}
 	httpx.OK(c, gin.H{"roles": roles, "toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
 }
