@@ -37,7 +37,7 @@ func (h *Handler) MyTasks(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	reqs, _ := h.svc.List(ctx, psID)
-	var toClaim, myDev []Requirement
+	toClaim, myDev := []Requirement{}, []Requirement{}
 	for _, q := range reqs {
 		if q.Assignee == "" {
 			toClaim = append(toClaim, q)
@@ -46,7 +46,7 @@ func (h *Handler) MyTasks(c *gin.Context) {
 			myDev = append(myDev, q)
 		}
 	}
-	var toApprove, toRelease []change.ChangeRequest
+	toApprove, toRelease := []change.ChangeRequest{}, []change.ChangeRequest{}
 	if h.chgStore != nil {
 		chgs, _ := h.chgStore.List(ctx, "")
 		for _, ch := range chgs {
