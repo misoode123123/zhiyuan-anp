@@ -691,6 +691,7 @@ func (h *Handler) Start(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a != nil {
+		// 删除所有环境的容器
 		inss, _ := h.store.ListInstancesByApp(c.Request.Context(), a.ID)
 		for _, ins := range inss {
 			if ins.ContainerName != "" {
@@ -700,6 +701,8 @@ func (h *Handler) Delete(c *gin.Context) {
 		if a.ContainerName != "" { // 兜底：旧概览容器名
 			_, _ = h.deployer.Remove(c.Request.Context(), a.ContainerName)
 		}
+		// 删除该应用的所有镜像(避免堆积)
+		_, _ = h.deployer.RemoveImages(c.Request.Context(), a.Name)
 	}
 	if err := h.store.Delete(c.Request.Context(), c.Param("id"), c.Param("aid")); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())

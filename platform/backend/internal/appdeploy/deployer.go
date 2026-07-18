@@ -153,6 +153,20 @@ func (d *Deployer) RemoveByPrefix(ctx context.Context, prefix string) (string, e
 	return combined, nil
 }
 
+// RemoveImages 删除某应用名的所有镜像(appdeploy/<name>-*:*)，避免删除应用后镜像堆积。
+func (d *Deployer) RemoveImages(ctx context.Context, appName string) (string, error) {
+	out, _ := runDocker(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", "appdeploy/"+appName+"-*")
+	var combined string
+	for _, img := range parseContainerNames(out) { // 复用换行分割
+		if img == "" {
+			continue
+		}
+		o, _ := runDocker(ctx, "rmi", "-f", img)
+		combined += o
+	}
+	return combined, nil
+}
+
 // parseContainerNames 解析 `docker ps --format {{.Names}}` 输出为容器名列表（纯函数，可单测）。
 func parseContainerNames(out string) []string {
 	var names []string
