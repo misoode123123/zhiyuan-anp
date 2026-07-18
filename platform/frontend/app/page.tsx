@@ -80,12 +80,12 @@ export default function Home() {
       <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
         <div className="mb-2 text-sm font-medium text-neutral-600">开发流程向导(高亮=有我的待办,点击进入)</div>
         <div className="flex flex-wrap items-center gap-1">
-          {visibleFlow.map((n) => {
-            const i = FLOW.indexOf(n);
+          {FLOW.map((n, i) => {
             const cnt = allBadges[i];
-            const active = cnt > 0;
+            const relevant = nodeVisible(i);
+            const active = cnt > 0 && relevant;
             return (
-              <a key={n.key} href={n.path} className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${active ? "bg-blue-50 text-blue-700" : "text-neutral-500 hover:bg-neutral-100"}`}>
+              <a key={n.key} href={n.path} className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${active ? "bg-blue-50 text-blue-700" : relevant ? "text-neutral-600 hover:bg-neutral-100" : "text-neutral-300 hover:bg-neutral-50"}`} title={relevant ? n.key : `${n.key}（非你的角色）`}>
                 <span>{n.icon}</span>
                 <span>{n.key}</span>
                 {active && <span className="rounded-full bg-blue-600 px-1.5 text-[10px] text-white">{cnt}</span>}
