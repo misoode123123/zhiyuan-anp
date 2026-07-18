@@ -79,7 +79,7 @@ export default function Home() {
       {/* 流程向导(按角色过滤节点) */}
       <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
         <div className="mb-2 text-sm font-medium text-neutral-600">开发流程向导(高亮=有我的待办,点击进入)</div>
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto pb-1">
           {FLOW.map((n, i) => {
             const cnt = allBadges[i];
             const relevant = nodeVisible(i);
