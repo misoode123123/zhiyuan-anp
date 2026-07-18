@@ -91,7 +91,7 @@ export default function WorkspaceFrame() {
       .then((r) => {
         if (aborted) return;
         if (r.code === 0 && r.data) {
-          setDetail({ requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
+          setDetail({ application: r.data.application, requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
           setDetailErr("");
         } else {
           setDetailErr(r.message || "加载失败");
