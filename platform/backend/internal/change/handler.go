@@ -24,6 +24,14 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // List 列出变更（?status=pending|approved|rejected，默认全部）。
+//
+// @Summary      列出变更
+// @Tags         change
+// @Produce      json
+// @Param        status  query  string  false  "状态过滤(pending|approved|rejected)"
+// @Success      200  {object}  map[string]interface{}  "变更列表"
+// @Security     BearerAuth
+// @Router       /changes [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.store.List(c.Request.Context(), c.Query("status"))
 	if err != nil {
@@ -34,6 +42,16 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Approve 批准（🚪G3 通过 → 合入）。
+//
+// @Summary      批准变更
+// @Tags         change
+// @Produce      json
+// @Param        id      path    string  true   "变更ID"
+// @Param        X-User  header  string  false  "审批人(默认 user)"
+// @Success      200  {object}  map[string]interface{}  "approved"
+// @Failure      409  {object}  map[string]interface{}  "非 pending 状态"
+// @Security     BearerAuth
+// @Router       /changes/{id}/approve [post]
 func (h *Handler) Approve(c *gin.Context) {
 	if err := h.store.Decide(c.Request.Context(), c.Param("id"), "approved", reviewer(c)); err != nil {
 		if errors.Is(err, errNotPending) {
@@ -47,6 +65,16 @@ func (h *Handler) Approve(c *gin.Context) {
 }
 
 // Reject 拒绝（需回滚/重做）。
+//
+// @Summary      拒绝变更
+// @Tags         change
+// @Produce      json
+// @Param        id      path    string  true   "变更ID"
+// @Param        X-User  header  string  false  "审批人(默认 user)"
+// @Success      200  {object}  map[string]interface{}  "rejected"
+// @Failure      409  {object}  map[string]interface{}  "非 pending 状态"
+// @Security     BearerAuth
+// @Router       /changes/{id}/reject [post]
 func (h *Handler) Reject(c *gin.Context) {
 	if err := h.store.Decide(c.Request.Context(), c.Param("id"), "rejected", reviewer(c)); err != nil {
 		if errors.Is(err, errNotPending) {

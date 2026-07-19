@@ -51,6 +51,18 @@ type createRequest struct {
 // Create 把已审批变更发布上线（🚪G5 后），版本号自增；
 // 并追溯 change.source_id → 标记来源需求为"已交付"（需求生命周期闭环）。
 // 若 deploy=true 且变更含 repo_dir，自动触发应用部署引擎构建部署。
+//
+// @Summary      发布上线
+// @Tags         release
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string         true  "项目空间ID"
+// @Param        body  body  createRequest  true  "发布入参(change_id)"
+// @Success      200  {object}  map[string]interface{}  "version/status/deploy_triggered"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      409  {object}  map[string]interface{}  "测试门禁拦截"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/releases [post]
 func (h *Handler) Create(c *gin.Context) {
 	psID := c.Param("id")
 	var in createRequest
@@ -111,6 +123,14 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 // List 发布历史。
+//
+// @Summary      发布历史
+// @Tags         release
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "发布列表"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/releases [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.store.List(c.Request.Context(), c.Param("id"))
 	if err != nil {

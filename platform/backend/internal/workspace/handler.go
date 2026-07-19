@@ -30,6 +30,17 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/projects", h.ListProjects)
 }
 
+// CreateProjectSpace 创建项目空间。
+//
+// @Summary      创建项目空间
+// @Tags         workspace
+// @Accept       json
+// @Produce      json
+// @Param        body  body  CreateProjectSpaceInput  true  "项目空间(name+slug)"
+// @Success      200  {object}  map[string]interface{}  "创建的项目空间"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /project-spaces [post]
 func (h *Handler) CreateProjectSpace(c *gin.Context) {
 	var in CreateProjectSpaceInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -48,6 +59,14 @@ func (h *Handler) CreateProjectSpace(c *gin.Context) {
 	httpx.Created(c, ps)
 }
 
+// ListProjectSpaces 列出项目空间。
+//
+// @Summary      列出项目空间
+// @Tags         workspace
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "项目空间列表"
+// @Security     BearerAuth
+// @Router       /project-spaces [get]
 func (h *Handler) ListProjectSpaces(c *gin.Context) {
 	list, err := h.svc.ListProjectSpaces(c.Request.Context())
 	if err != nil {
@@ -57,6 +76,16 @@ func (h *Handler) ListProjectSpaces(c *gin.Context) {
 	httpx.OK(c, list)
 }
 
+// GetProjectSpace 获取项目空间详情。
+//
+// @Summary      获取项目空间详情
+// @Tags         workspace
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "项目空间"
+// @Failure      404  {object}  map[string]interface{}  "project space not found"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id} [get]
 func (h *Handler) GetProjectSpace(c *gin.Context) {
 	ps, err := h.svc.GetProjectSpace(c.Request.Context(), c.Param("id"))
 	if errors.Is(err, ErrNotFound) {
@@ -71,6 +100,14 @@ func (h *Handler) GetProjectSpace(c *gin.Context) {
 }
 
 // Overview 空间概览：元信息 + 成员/应用/需求/变更/发布计数。
+//
+// @Summary      项目空间概览
+// @Tags         workspace
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "概览统计"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/overview [get]
 func (h *Handler) Overview(c *gin.Context) {
 	o, err := h.svc.Overview(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -80,6 +117,18 @@ func (h *Handler) Overview(c *gin.Context) {
 	httpx.OK(c, o)
 }
 
+// CreateProject 在指定项目空间下创建项目（project_space_id 只取自路径，多租户隔离）。
+//
+// @Summary      创建项目
+// @Tags         workspace
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string              true  "项目空间ID"
+// @Param        body  body  CreateProjectInput  true  "项目(name+slug)"
+// @Success      200  {object}  map[string]interface{}  "创建的项目"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/projects [post]
 func (h *Handler) CreateProject(c *gin.Context) {
 	// 多租户隔离：project_space_id 只取自路径，不信任请求体
 	psID := c.Param("id")
@@ -100,6 +149,15 @@ func (h *Handler) CreateProject(c *gin.Context) {
 	httpx.Created(c, p)
 }
 
+// ListProjects 列出项目空间下的项目。
+//
+// @Summary      列出项目空间下的项目
+// @Tags         workspace
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "项目列表"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/projects [get]
 func (h *Handler) ListProjects(c *gin.Context) {
 	list, err := h.svc.ListProjects(c.Request.Context(), c.Param("id"))
 	if err != nil {

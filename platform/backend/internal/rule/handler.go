@@ -29,6 +29,13 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // List 全部规则。
+//
+// @Summary      列出规则
+// @Tags         rule
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "规则列表"
+// @Security     BearerAuth
+// @Router       /rules [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.store.List(c.Request.Context())
 	if err != nil {
@@ -69,6 +76,16 @@ func defaults(in *createRequest) {
 }
 
 // Create 新建规则。
+//
+// @Summary      新建规则
+// @Tags         rule
+// @Accept       json
+// @Produce      json
+// @Param        body  body  createRequest  true  "规则(name/condition 等)"
+// @Success      200  {object}  map[string]interface{}  "创建的规则"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /rules [post]
 func (h *Handler) Create(c *gin.Context) {
 	var in createRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -102,6 +119,17 @@ type updateRequest struct {
 }
 
 // Update 更新规则。
+//
+// @Summary      更新规则
+// @Tags         rule
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string         true  "规则ID"
+// @Param        body  body  updateRequest  true  "规则新值"
+// @Success      200  {object}  map[string]interface{}  "更新后的规则"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /rules/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
 	var in updateRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -125,6 +153,17 @@ type setEnabledRequest struct {
 }
 
 // SetEnabled 启用/禁用。
+//
+// @Summary      启用/禁用规则
+// @Tags         rule
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string             true  "规则ID"
+// @Param        body  body  setEnabledRequest  true  "enabled"
+// @Success      200  {object}  map[string]interface{}  "id/enabled"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /rules/{id}/enabled [patch]
 func (h *Handler) SetEnabled(c *gin.Context) {
 	var in setEnabledRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -139,6 +178,14 @@ func (h *Handler) SetEnabled(c *gin.Context) {
 }
 
 // Delete 删除规则。
+//
+// @Summary      删除规则
+// @Tags         rule
+// @Produce      json
+// @Param        id   path  string  true  "规则ID"
+// @Success      200  {object}  map[string]interface{}  "id/deleted"
+// @Security     BearerAuth
+// @Router       /rules/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	if err := h.store.Delete(c.Request.Context(), c.Param("id")); err != nil {
 		httpx.Err(c, 500, 50006, err.Error())
@@ -154,6 +201,16 @@ type checkRequest struct {
 }
 
 // Check 手动校验（也可供其他模块内部调用）。
+//
+// @Summary      规则校验
+// @Tags         rule
+// @Accept       json
+// @Produce      json
+// @Param        body  body  checkRequest  true  "校验入参(scope/field/content)"
+// @Success      200  {object}  map[string]interface{}  "violations/blocked"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /rules/check [post]
 func (h *Handler) Check(c *gin.Context) {
 	var in checkRequest
 	if err := c.ShouldBindJSON(&in); err != nil {

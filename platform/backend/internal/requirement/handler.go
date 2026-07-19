@@ -33,6 +33,15 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // MyTasks 聚合当前用户各开发阶段的待办(待认领需求/我的开发中/待审批变更/待上线变更),供首页"我的任务"。
+//
+// @Summary      我的任务聚合
+// @Tags         requirement
+// @Produce      json
+// @Param        id      path    string  true   "项目空间ID"
+// @Param        X-User  header  string  false  "用户名(默认 anonymous)"
+// @Success      200  {object}  map[string]interface{}  "roles/toClaim/myDev/toApprove/toRelease"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/my-tasks [get]
 func (h *Handler) MyTasks(c *gin.Context) {
 	psID := c.Param("id")
 	user := c.GetHeader("X-User")
@@ -81,6 +90,17 @@ type createRequest struct {
 }
 
 // Create 业务描述（可带图片）→ AI 生成规格（多模态走 GLM-4V）→ 入库。
+//
+// @Summary      创建需求(AI生成规格)
+// @Tags         requirement
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string         true  "项目空间ID"
+// @Param        body  body  createRequest  true  "需求(application_id?/description/images?)"
+// @Success      200  {object}  map[string]interface{}  "创建的需求"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements [post]
 func (h *Handler) Create(c *gin.Context) {
 	var in createRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -99,6 +119,14 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 // List 列出项目空间下的需求。
+//
+// @Summary      列出项目空间需求
+// @Tags         requirement
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "需求列表"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.List(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -109,6 +137,15 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // ListByApp 列出某应用的需求池。
+//
+// @Summary      列出应用需求池
+// @Tags         requirement
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "需求列表"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/requirements [get]
 func (h *Handler) ListByApp(c *gin.Context) {
 	list, err := h.svc.ListByApp(c.Request.Context(), c.Param("aid"))
 	if err != nil {
@@ -124,6 +161,15 @@ type dispatchRequest struct {
 }
 
 // Breakdown AI 把需求拆成子任务清单,存 tasks 并返回。
+//
+// @Summary      AI拆解需求为子任务
+// @Tags         requirement
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        rid  path  string  true  "需求ID"
+// @Success      200  {object}  map[string]interface{}  "tasks"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/breakdown [post]
 func (h *Handler) Breakdown(c *gin.Context) {
 	tasks, err := h.svc.Breakdown(c.Request.Context(), c.Param("rid"))
 	if err != nil {
@@ -134,6 +180,17 @@ func (h *Handler) Breakdown(c *gin.Context) {
 }
 
 // Assign 认领需求(互斥:已被他人认领返回 409)。
+//
+// @Summary      认领需求
+// @Tags         requirement
+// @Produce      json
+// @Param        id      path    string  true   "项目空间ID"
+// @Param        rid     path    string  true   "需求ID"
+// @Param        X-User  header  string  false  "用户名(默认 anonymous)"
+// @Success      200  {object}  map[string]interface{}  "assigned_to"
+// @Failure      409  {object}  map[string]interface{}  "已被他人认领"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/assign [post]
 func (h *Handler) Assign(c *gin.Context) {
 	user := c.GetHeader("X-User")
 	if user == "" {
@@ -147,6 +204,15 @@ func (h *Handler) Assign(c *gin.Context) {
 }
 
 // Release 释放需求认领。
+//
+// @Summary      释放需求认领
+// @Tags         requirement
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        rid  path  string  true  "需求ID"
+// @Success      200  {object}  map[string]interface{}  "released"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/release [post]
 func (h *Handler) Release(c *gin.Context) {
 	if err := h.svc.Release(c.Request.Context(), c.Param("rid")); err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
@@ -156,6 +222,18 @@ func (h *Handler) Release(c *gin.Context) {
 }
 
 // DispatchCode 需求规格 → 异步编码（立即返回 task_id）。
+//
+// @Summary      派发编码任务
+// @Tags         requirement
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string           true  "项目空间ID"
+// @Param        rid   path  string           true  "需求ID"
+// @Param        body  body  dispatchRequest  true  "编码参数(repo_dir?/model?)"
+// @Success      200  {object}  map[string]interface{}  "task_id/status"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/dispatch-code [post]
 func (h *Handler) DispatchCode(c *gin.Context) {
 	var in dispatchRequest
 	if err := c.ShouldBindJSON(&in); err != nil {

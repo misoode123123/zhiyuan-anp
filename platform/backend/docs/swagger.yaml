@@ -10,6 +10,163 @@ definitions:
     - name
     - password
     type: object
+  internal_release.createRequest:
+    properties:
+      change_id:
+        type: string
+    required:
+    - change_id
+    type: object
+  internal_requirement.createRequest:
+    properties:
+      application_id:
+        description: 可选：归属应用
+        type: string
+      description:
+        type: string
+      images:
+        description: data URL 或 http URL
+        items:
+          type: string
+        type: array
+    required:
+    - description
+    type: object
+  internal_requirement.dispatchRequest:
+    properties:
+      model:
+        type: string
+      repo_dir:
+        description: 可选；空=用需求归属应用的托管仓库
+        type: string
+    type: object
+  internal_rule.checkRequest:
+    properties:
+      content:
+        type: string
+      field:
+        type: string
+      scope:
+        type: string
+    type: object
+  internal_rule.createRequest:
+    properties:
+      action:
+        type: string
+      category:
+        type: string
+      condition:
+        type: string
+      condition_field:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      scope:
+        type: string
+      type:
+        type: string
+    required:
+    - condition
+    - name
+    type: object
+  internal_rule.setEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  internal_rule.updateRequest:
+    properties:
+      action:
+        type: string
+      category:
+        type: string
+      condition:
+        type: string
+      condition_field:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      scope:
+        type: string
+      type:
+        type: string
+    required:
+    - condition
+    - name
+    type: object
+  internal_standard.createBody:
+    properties:
+      category:
+        type: string
+      content:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      priority:
+        type: integer
+    required:
+    - content
+    - name
+    type: object
+  internal_standard.setEnabledBody:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  internal_standard.updateBody:
+    properties:
+      category:
+        type: string
+      content:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      priority:
+        type: integer
+    required:
+    - content
+    - name
+    type: object
+  internal_workspace.CreateProjectInput:
+    properties:
+      name:
+        maxLength: 128
+        minLength: 1
+        type: string
+      slug:
+        maxLength: 64
+        minLength: 1
+        type: string
+    required:
+    - name
+    - slug
+    type: object
+  internal_workspace.CreateProjectSpaceInput:
+    properties:
+      name:
+        maxLength: 128
+        minLength: 1
+        type: string
+      slug:
+        maxLength: 64
+        minLength: 1
+        type: string
+    required:
+    - name
+    - slug
+    type: object
 info:
   contact: {}
   description: 企业 AI 原生研发平台后端（AI 驱动 需求→研发→测试→审批→发布 全流程）
@@ -78,6 +235,886 @@ paths:
       summary: 当前登录用户
       tags:
       - 认证
+  /changes:
+    get:
+      parameters:
+      - description: 状态过滤(pending|approved|rejected)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 变更列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出变更
+      tags:
+      - change
+  /changes/{id}/approve:
+    post:
+      parameters:
+      - description: 变更ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 审批人(默认 user)
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: approved
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 非 pending 状态
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批准变更
+      tags:
+      - change
+  /changes/{id}/reject:
+    post:
+      parameters:
+      - description: 变更ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 审批人(默认 user)
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: rejected
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 非 pending 状态
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 拒绝变更
+      tags:
+      - change
+  /project-spaces:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 项目空间列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间
+      tags:
+      - workspace
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间(name+slug)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_workspace.CreateProjectSpaceInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的项目空间
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建项目空间
+      tags:
+      - workspace
+  /project-spaces/{id}:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 项目空间
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: project space not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取项目空间详情
+      tags:
+      - workspace
+  /project-spaces/{id}/apps/{aid}/requirements:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 需求列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出应用需求池
+      tags:
+      - requirement
+  /project-spaces/{id}/my-tasks:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 用户名(默认 anonymous)
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: roles/toClaim/myDev/toApprove/toRelease
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 我的任务聚合
+      tags:
+      - requirement
+  /project-spaces/{id}/overview:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 概览统计
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 项目空间概览
+      tags:
+      - workspace
+  /project-spaces/{id}/projects:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 项目列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间下的项目
+      tags:
+      - workspace
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 项目(name+slug)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_workspace.CreateProjectInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的项目
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建项目
+      tags:
+      - workspace
+  /project-spaces/{id}/releases:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 发布列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发布历史
+      tags:
+      - release
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 发布入参(change_id)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_release.createRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: version/status/deploy_triggered
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 测试门禁拦截
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发布上线
+      tags:
+      - release
+  /project-spaces/{id}/requirements:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 需求列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间需求
+      tags:
+      - requirement
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求(application_id?/description/images?)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_requirement.createRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的需求
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建需求(AI生成规格)
+      tags:
+      - requirement
+  /project-spaces/{id}/requirements/{rid}/assign:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      - description: 用户名(默认 anonymous)
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: assigned_to
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 已被他人认领
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 认领需求
+      tags:
+      - requirement
+  /project-spaces/{id}/requirements/{rid}/breakdown:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: tasks
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: AI拆解需求为子任务
+      tags:
+      - requirement
+  /project-spaces/{id}/requirements/{rid}/dispatch-code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      - description: 编码参数(repo_dir?/model?)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_requirement.dispatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: task_id/status
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 派发编码任务
+      tags:
+      - requirement
+  /project-spaces/{id}/requirements/{rid}/release:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: released
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 释放需求认领
+      tags:
+      - requirement
+  /project-spaces/{id}/standards:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 项目级规范列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目级规范
+      tags:
+      - standard
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 规范(name/content 等)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_standard.createBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的规范
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新建项目级规范
+      tags:
+      - standard
+  /project-spaces/{id}/standards/effective:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: standards/prompt_section
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 预览生效规范
+      tags:
+      - standard
+  /rules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 规则列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出规则
+      tags:
+      - rule
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则(name/condition 等)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_rule.createRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的规则
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新建规则
+      tags:
+      - rule
+  /rules/{id}:
+    delete:
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: id/deleted
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除规则
+      tags:
+      - rule
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 规则新值
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_rule.updateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的规则
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新规则
+      tags:
+      - rule
+  /rules/{id}/enabled:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: enabled
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_rule.setEnabledRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: id/enabled
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启用/禁用规则
+      tags:
+      - rule
+  /rules/check:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 校验入参(scope/field/content)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_rule.checkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: violations/blocked
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 规则校验
+      tags:
+      - rule
+  /standards:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 全局规范列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出全局规范
+      tags:
+      - standard
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规范(name/content 等)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_standard.createBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的规范
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新建全局规范
+      tags:
+      - standard
+  /standards/{id}:
+    delete:
+      parameters:
+      - description: 规范ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: id/deleted
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除规范
+      tags:
+      - standard
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规范ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 规范新值
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_standard.updateBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的规范
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新规范
+      tags:
+      - standard
+  /standards/{id}/enabled:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规范ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: enabled
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_standard.setEnabledBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: id/enabled
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启用/禁用规范
+      tags:
+      - standard
 securityDefinitions:
   BearerAuth:
     in: header
