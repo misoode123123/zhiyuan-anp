@@ -28,7 +28,7 @@ func (s *Store) Create(ctx context.Context, a *Application) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, internal_port, status)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
 		a.ID, a.ProjectSpaceID, a.Name, a.RepoDir, a.InternalPort, a.Status)
 	return err
 }
@@ -37,28 +37,28 @@ func (s *Store) Create(ctx context.Context, a *Application) error {
 func (s *Store) List(ctx context.Context, psID string) ([]Application, error) {
 	var list []Application
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+appCols()+` FROM appdeploy_application WHERE project_space_id=? ORDER BY created_at DESC`, psID)
+		`SELECT `+appCols()+` FROM appdeploy_application WHERE project_space_id=$1 ORDER BY created_at DESC`, psID)
 	return list, err
 }
 
 // Get 取单条。
 func (s *Store) Get(ctx context.Context, psID, id string) (*Application, error) {
 	var a Application
-	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE id=? AND project_space_id=?`, id, psID)
+	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return &a, err
 }
 
 // GetByName 按名取（去重/查找）。
 func (s *Store) GetByName(ctx context.Context, psID, name string) (*Application, error) {
 	var a Application
-	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE project_space_id=? AND name=?`, psID, name)
+	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE project_space_id=$1 AND name=$2`, psID, name)
 	return &a, err
 }
 
 // GetByAppID 按应用 id 取（跨空间，id 全局唯一）。
 func (s *Store) GetByAppID(ctx context.Context, appID string) (*Application, error) {
 	var a Application
-	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE id=?`, appID)
+	err := s.db.GetContext(ctx, &a, `SELECT `+appCols()+` FROM appdeploy_application WHERE id=$1`, appID)
 	return &a, err
 }
 
@@ -93,7 +93,7 @@ const insCols = `id, app_id, env, COALESCE(image,'') AS image, COALESCE(containe
 // GetInstance 取某应用某环境实例（不存在返回 nil,nil）。
 func (s *Store) GetInstance(ctx context.Context, appID, env string) (*AppInstance, error) {
 	var list []AppInstance
-	if err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=? AND env=?`, appID, env); err != nil {
+	if err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=$1 AND env=$2`, appID, env); err != nil {
 		return nil, err
 	}
 	if len(list) == 0 {
@@ -112,14 +112,14 @@ func (s *Store) GetOrCreateInstance(ctx context.Context, appID, env string) (*Ap
 		return ins, nil
 	}
 	ins = &AppInstance{ID: "ins_" + uuid.NewString()[:20], AppID: appID, Env: env, Status: "registered"}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES (?, ?, ?, 'registered')`, ins.ID, appID, env)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1, $2, $3, 'registered')`, ins.ID, appID, env)
 	return ins, err
 }
 
 // UpdateInstance 更新实例部署态字段。
 func (s *Store) UpdateInstance(ctx context.Context, ins *AppInstance) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE appdeploy_instance SET image=?, container_name=?, host_port=?, url=?, version=?, status=?, last_error=?, build_log=?, updated_at=CURRENT_TIMESTAMP WHERE app_id=? AND env=?`,
+		`UPDATE appdeploy_instance SET image=$1, container_name=$2, host_port=$3, url=$4, version=$5, status=$6, last_error=$7, build_log=$8, updated_at=CURRENT_TIMESTAMP WHERE app_id=$9 AND env=$10`,
 		ins.Image, ins.ContainerName, ins.HostPort, ins.URL, ins.Version, ins.Status, ins.LastError, ins.BuildLog, ins.AppID, ins.Env)
 	return err
 }
@@ -127,7 +127,7 @@ func (s *Store) UpdateInstance(ctx context.Context, ins *AppInstance) error {
 // SetInstanceStatus 更新实例状态 + 错误/日志。
 func (s *Store) SetInstanceStatus(ctx context.Context, appID, env, status, lastErr, buildLog string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE appdeploy_instance SET status=?, last_error=?, build_log=?, updated_at=CURRENT_TIMESTAMP WHERE app_id=? AND env=?`,
+		`UPDATE appdeploy_instance SET status=$1, last_error=$2, build_log=$3, updated_at=CURRENT_TIMESTAMP WHERE app_id=$4 AND env=$5`,
 		status, lastErr, buildLog, appID, env)
 	return err
 }
@@ -135,7 +135,7 @@ func (s *Store) SetInstanceStatus(ctx context.Context, appID, env, status, lastE
 // ListInstancesByApp 列出应用的所有环境实例。
 func (s *Store) ListInstancesByApp(ctx context.Context, appID string) ([]AppInstance, error) {
 	var list []AppInstance
-	err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=? ORDER BY env`, appID)
+	err := s.db.SelectContext(ctx, &list, `SELECT `+insCols+` FROM appdeploy_instance WHERE app_id=$1 ORDER BY env`, appID)
 	return list, err
 }
 
@@ -145,7 +145,7 @@ const envCols = `id, app_id, key, COALESCE(value,'') AS value, is_secret, create
 // ListEnv 列出应用的环境变量（部署注入用；接口层对 is_secret 的 value 做 mask）。
 func (s *Store) ListEnv(ctx context.Context, appID string) ([]EnvVar, error) {
 	var list []EnvVar
-	err := s.db.SelectContext(ctx, &list, `SELECT `+envCols+` FROM appdeploy_env WHERE app_id=? ORDER BY key`, appID)
+	err := s.db.SelectContext(ctx, &list, `SELECT `+envCols+` FROM appdeploy_env WHERE app_id=$1 ORDER BY key`, appID)
 	return list, err
 }
 
@@ -157,7 +157,7 @@ func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecre
 		sec = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret) VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret) VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT(app_id, key) DO UPDATE SET value=excluded.value, is_secret=excluded.is_secret`,
 		id, appID, key, value, sec)
 	return err
@@ -165,7 +165,7 @@ func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecre
 
 // DeleteEnv 删除环境变量。
 func (s *Store) DeleteEnv(ctx context.Context, appID, key string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_env WHERE app_id=? AND key=?`, appID, key)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_env WHERE app_id=$1 AND key=$2`, appID, key)
 	return err
 }
 
@@ -203,7 +203,7 @@ func (s *Store) EnsureAppForRequirement(ctx context.Context, psID, appName strin
 // UpdateDeploy 更新部署态字段（镜像/容器/端口/URL/版本/状态）。
 func (s *Store) UpdateDeploy(ctx context.Context, a *Application) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE appdeploy_application SET image=?, container_name=?, host_port=?, url=?, version=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		`UPDATE appdeploy_application SET image=$1, container_name=$2, host_port=$3, url=$4, version=$5, status=$6, updated_at=CURRENT_TIMESTAMP WHERE id=$7`,
 		a.Image, a.ContainerName, a.HostPort, a.URL, a.Version, a.Status, a.ID)
 	return err
 }
@@ -211,7 +211,7 @@ func (s *Store) UpdateDeploy(ctx context.Context, a *Application) error {
 // SetStatus 更新状态 + 最近错误/构建日志。
 func (s *Store) SetStatus(ctx context.Context, psID, id, status, lastErr, buildLog string) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE appdeploy_application SET status=?, last_error=?, build_log=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND project_space_id=?`,
+		`UPDATE appdeploy_application SET status=$1, last_error=$2, build_log=$3, updated_at=CURRENT_TIMESTAMP WHERE id=$4 AND project_space_id=$5`,
 		status, lastErr, buildLog, id, psID)
 	if err != nil {
 		return err
@@ -224,6 +224,6 @@ func (s *Store) SetStatus(ctx context.Context, psID, id, status, lastErr, buildL
 
 // Delete 删除记录。
 func (s *Store) Delete(ctx context.Context, psID, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_application WHERE id=? AND project_space_id=?`, id, psID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_application WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return err
 }

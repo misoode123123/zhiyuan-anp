@@ -63,14 +63,14 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 		        COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks, COALESCE(assignee,'') AS assignee,
 		        COALESCE(description,'') AS description, COALESCE(user_story,'') AS user_story,
 		        COALESCE(acceptance_criteria,'') AS acceptance_criteria
-		 FROM requirement WHERE application_id=? ORDER BY COALESCE(NULLIF(priority,''),'P1'), created_at DESC`, appID); err != nil {
+		 FROM requirement WHERE application_id=$1 ORDER BY COALESCE(NULLIF(priority,''),'P1'), created_at DESC`, appID); err != nil {
 		return nil, err
 	}
 	// 变更：source_id=应用ID（交互编码登记，期2）OR source_id=需求ID（AI 编码派生）
 	if err := s.db.SelectContext(ctx, &d.Changes,
 		`SELECT id, status, COALESCE(source_id,'') AS source_id, COALESCE(kind,'') AS kind, COALESCE(output,'') AS output, created_at
 		 FROM change_request
-		 WHERE source_id = ? OR source_id IN (SELECT id FROM requirement WHERE application_id=?)
+		 WHERE source_id = $1 OR source_id IN (SELECT id FROM requirement WHERE application_id=$2)
 		 ORDER BY created_at DESC`, appID, appID); err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	if err := s.db.SelectContext(ctx, &d.Releases,
 		`SELECT id, version, status, COALESCE(change_id,'') AS change_id, created_at
 		 FROM release_record
-		 WHERE change_id IN (SELECT id FROM change_request WHERE source_id IN (SELECT id FROM requirement WHERE application_id=?))
+		 WHERE change_id IN (SELECT id FROM change_request WHERE source_id IN (SELECT id FROM requirement WHERE application_id=$1))
 		 ORDER BY created_at DESC`, appID); err != nil {
 		return nil, err
 	}

@@ -24,7 +24,7 @@ func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 	c.ID = "chg_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO change_request (id, project_space_id, kind, source_id, repo_dir, prompt, model, output, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')`,
 		c.ID, c.ProjectSpaceID, c.Kind, c.SourceID, c.RepoDir, c.Prompt, c.Model, c.Output)
 	return err
 }
@@ -32,7 +32,7 @@ func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 // Get 读取单条变更。
 func (s *Store) Get(ctx context.Context, id string) (*ChangeRequest, error) {
 	var c ChangeRequest
-	err := s.db.GetContext(ctx, &c, `SELECT `+chgCols+` FROM change_request WHERE id = ?`, id)
+	err := s.db.GetContext(ctx, &c, `SELECT `+chgCols+` FROM change_request WHERE id = $1`, id)
 	return &c, err
 }
 
@@ -42,7 +42,7 @@ func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error
 	q := `SELECT ` + chgCols + ` FROM change_request`
 	args := []interface{}{}
 	if status != "" {
-		q += ` WHERE status = ?`
+		q += ` WHERE status = $1`
 		args = append(args, status)
 	}
 	q += ` ORDER BY created_at DESC`
@@ -53,21 +53,21 @@ func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error
 // HasAny 该 source（应用/需求）是否登记过变更——grandfather：未登记过的不受 promote 闸门约束。
 func (s *Store) HasAny(ctx context.Context, sourceID string) (bool, error) {
 	var c int
-	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = ?`, sourceID)
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = $1`, sourceID)
 	return c > 0, err
 }
 
 // HasApproved 该 source 是否有已批准变更（promote 闸门放行条件）。
 func (s *Store) HasApproved(ctx context.Context, sourceID string) (bool, error) {
 	var c int
-	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = ? AND status = 'approved'`, sourceID)
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = $1 AND status = 'approved'`, sourceID)
 	return c > 0, err
 }
 
 // Decide 审批决定（approved / rejected）。
 func (s *Store) Decide(ctx context.Context, id, decision, reviewer string) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE change_request SET status = ?, reviewer = ?, reviewed_at = ? WHERE id = ? AND status = 'pending'`,
+		`UPDATE change_request SET status = $1, reviewer = $2, reviewed_at = $3 WHERE id = $4 AND status = 'pending'`,
 		decision, reviewer, time.Now(), id)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func (s *Store) Decide(ctx context.Context, id, decision, reviewer string) error
 // MarkReleased 把某应用( source_id)的所有 approved 变更标记为 released(已上线,从待上线消失)。
 func (s *Store) MarkReleased(ctx context.Context, sourceID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE change_request SET status = 'released' WHERE source_id = ? AND status = 'approved'`,
+		`UPDATE change_request SET status = 'released' WHERE source_id = $1 AND status = 'approved'`,
 		sourceID)
 	return err
 }

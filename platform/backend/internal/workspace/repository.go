@@ -21,14 +21,14 @@ func NewRepository(db *sqlx.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) CreateProjectSpace(ctx context.Context, ps *ProjectSpace) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO project_space (id, name, slug, status) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO project_space (id, name, slug, status) VALUES ($1, $2, $3, $4)`,
 		ps.ID, ps.Name, ps.Slug, ps.Status)
 	return err
 }
 
 func (r *Repository) GetProjectSpace(ctx context.Context, id string) (*ProjectSpace, error) {
 	var ps ProjectSpace
-	err := r.db.GetContext(ctx, &ps, `SELECT * FROM project_space WHERE id = ?`, id)
+	err := r.db.GetContext(ctx, &ps, `SELECT * FROM project_space WHERE id = $1`, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -44,7 +44,7 @@ func (r *Repository) ListProjectSpaces(ctx context.Context) ([]ProjectSpace, err
 
 func (r *Repository) CreateProject(ctx context.Context, p *Project) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO project (id, project_space_id, name, slug, status) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO project (id, project_space_id, name, slug, status) VALUES ($1, $2, $3, $4, $5)`,
 		p.ID, p.ProjectSpaceID, p.Name, p.Slug, p.Status)
 	return err
 }
@@ -52,7 +52,7 @@ func (r *Repository) CreateProject(ctx context.Context, p *Project) error {
 func (r *Repository) ListProjects(ctx context.Context, projectSpaceID string) ([]Project, error) {
 	var list []Project
 	err := r.db.SelectContext(ctx, &list,
-		`SELECT * FROM project WHERE project_space_id = ? ORDER BY created_at DESC`,
+		`SELECT * FROM project WHERE project_space_id = $1 ORDER BY created_at DESC`,
 		projectSpaceID)
 	return list, err
 }
@@ -69,12 +69,12 @@ func (r *Repository) Overview(ctx context.Context, psID string) (*Overview, erro
 		_ = r.db.GetContext(ctx, &n, q, psID)
 		return n
 	}
-	o.Members = cnt(`SELECT COUNT(*) FROM membership WHERE project_space_id=?`)
-	o.Apps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=?`)
-	o.DeployedApps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=? AND status='running'`)
-	o.Requirements = cnt(`SELECT COUNT(*) FROM requirement WHERE project_space_id=?`)
-	o.Changes = cnt(`SELECT COUNT(*) FROM change_request WHERE project_space_id=?`)
-	o.Releases = cnt(`SELECT COUNT(*) FROM release_record WHERE project_space_id=?`)
+	o.Members = cnt(`SELECT COUNT(*) FROM membership WHERE project_space_id=$1`)
+	o.Apps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=$1`)
+	o.DeployedApps = cnt(`SELECT COUNT(*) FROM appdeploy_application WHERE project_space_id=$1 AND status='running'`)
+	o.Requirements = cnt(`SELECT COUNT(*) FROM requirement WHERE project_space_id=$1`)
+	o.Changes = cnt(`SELECT COUNT(*) FROM change_request WHERE project_space_id=$1`)
+	o.Releases = cnt(`SELECT COUNT(*) FROM release_record WHERE project_space_id=$1`)
 	return o, nil
 }
 

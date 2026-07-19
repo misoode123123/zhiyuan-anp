@@ -30,7 +30,7 @@ func (s *Store) ListGlobal(ctx context.Context) ([]Standard, error) {
 func (s *Store) ListByProjectSpace(ctx context.Context, psID string) ([]Standard, error) {
 	var list []Standard
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+cols+` FROM coding_standard WHERE project_space_id=? ORDER BY priority, created_at`, psID)
+		`SELECT `+cols+` FROM coding_standard WHERE project_space_id=$1 ORDER BY priority, created_at`, psID)
 	return list, err
 }
 
@@ -39,7 +39,7 @@ func (s *Store) ListEffective(ctx context.Context, psID string) ([]Standard, err
 	var list []Standard
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT `+cols+` FROM coding_standard
-		 WHERE enabled=1 AND (project_space_id IS NULL OR project_space_id=?)
+		 WHERE enabled AND (project_space_id IS NULL OR project_space_id=$1)
 		 ORDER BY priority, created_at`, psID)
 	return list, err
 }
@@ -47,7 +47,7 @@ func (s *Store) ListEffective(ctx context.Context, psID string) ([]Standard, err
 // Get 取单条。
 func (s *Store) Get(ctx context.Context, id string) (*Standard, error) {
 	var st Standard
-	err := s.db.GetContext(ctx, &st, `SELECT `+cols+` FROM coding_standard WHERE id=?`, id)
+	err := s.db.GetContext(ctx, &st, `SELECT `+cols+` FROM coding_standard WHERE id=$1`, id)
 	return &st, err
 }
 
@@ -56,7 +56,7 @@ func (s *Store) Create(ctx context.Context, st *Standard) error {
 	st.ID = "std_" + uuid.NewString()[:21]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO coding_standard (id, project_space_id, name, category, content, priority, enabled)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		st.ID, st.ProjectSpaceID, st.Name, st.Category, st.Content, st.Priority, st.Enabled)
 	return err
 }
@@ -64,8 +64,8 @@ func (s *Store) Create(ctx context.Context, st *Standard) error {
 // Update 更新（不含 project_space_id，层级不可改）。
 func (s *Store) Update(ctx context.Context, st *Standard) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE coding_standard SET name=?, category=?, content=?, priority=?, enabled=?, updated_at=CURRENT_TIMESTAMP
-		 WHERE id=?`, st.Name, st.Category, st.Content, st.Priority, st.Enabled, st.ID)
+		`UPDATE coding_standard SET name=$1, category=$2, content=$3, priority=$4, enabled=$5, updated_at=CURRENT_TIMESTAMP
+		 WHERE id=$6`, st.Name, st.Category, st.Content, st.Priority, st.Enabled, st.ID)
 	if err != nil {
 		return err
 	}
@@ -77,12 +77,12 @@ func (s *Store) Update(ctx context.Context, st *Standard) error {
 
 // SetEnabled 启用/禁用。
 func (s *Store) SetEnabled(ctx context.Context, id string, enabled bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE coding_standard SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, enabled, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE coding_standard SET enabled=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`, enabled, id)
 	return err
 }
 
 // Delete 删除。
 func (s *Store) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM coding_standard WHERE id=?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM coding_standard WHERE id=$1`, id)
 	return err
 }

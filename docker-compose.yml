@@ -1,5 +1,7 @@
-# 智源 ANP 平台本地编排（M0）
-# 注：本机暂未安装 Docker；装好 Docker Desktop 后执行 `docker compose up -d` 一键起依赖。
+# 智源 ANP 平台本地依赖编排（PostgreSQL+pgvector / redis / minio）
+# 起 PG: docker compose up -d postgres
+# 后端连 PG: DATABASE_URL=postgres://anp:anp@localhost:5432/anp bash scripts/dev.sh
+# （本机无 Docker 时，可用 .28 开发库 deploy_pg_dev：DATABASE_URL=postgres://anp:anp_dev_pwd@10.10.0.28:5432/anp_dev）
 services:
   postgres:
     image: pgvector/pgvector:pg16

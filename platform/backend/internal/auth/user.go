@@ -27,7 +27,7 @@ func (s *Store) CreateUser(ctx context.Context, u *User) error {
 		u.Status = "active"
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO "user" (id, name, email, status) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO "user" (id, name, email, status) VALUES ($1, $2, $3, $4)`,
 		u.ID, u.Name, u.Email, u.Status)
 	return err
 }
@@ -44,7 +44,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 func (s *Store) GetUser(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := s.db.GetContext(ctx, &u,
-		`SELECT id, name, COALESCE(email,'') AS email, status, created_at FROM "user" WHERE id=?`, id)
+		`SELECT id, name, COALESCE(email,'') AS email, status, created_at FROM "user" WHERE id=$1`, id)
 	return &u, err
 }
 
@@ -52,7 +52,7 @@ func (s *Store) GetUser(ctx context.Context, id string) (*User, error) {
 func (s *Store) GetUserByName(ctx context.Context, name string) (*User, error) {
 	var u User
 	err := s.db.GetContext(ctx, &u,
-		`SELECT id, name, COALESCE(email,'') AS email, status, created_at FROM "user" WHERE name=?`, name)
+		`SELECT id, name, COALESCE(email,'') AS email, status, created_at FROM "user" WHERE name=$1`, name)
 	return &u, err
 }
 
@@ -60,7 +60,7 @@ func (s *Store) GetUserByName(ctx context.Context, name string) (*User, error) {
 func (s *Store) SpacesOf(ctx context.Context, userID string) ([]Member, error) {
 	var list []Member
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT user_id, project_space_id, role FROM membership WHERE user_id=?`, userID)
+		`SELECT user_id, project_space_id, role FROM membership WHERE user_id=$1`, userID)
 	return list, err
 }
 
@@ -73,14 +73,14 @@ func (s *Store) SetPasswordByName(ctx context.Context, name, password string) er
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE "user" SET password_hash=? WHERE name=?`, string(hash), name)
+	_, err = s.db.ExecContext(ctx, `UPDATE "user" SET password_hash=$1 WHERE name=$2`, string(hash), name)
 	return err
 }
 
 // EnsurePassword 若用户无密码则设默认（启动 seed admin 用；已有密码不覆盖，用户不存在跳过）。
 func (s *Store) EnsurePassword(ctx context.Context, name, password string) error {
 	var hash string
-	if err := s.db.GetContext(ctx, &hash, `SELECT COALESCE(password_hash,'') FROM "user" WHERE name=?`, name); err != nil {
+	if err := s.db.GetContext(ctx, &hash, `SELECT COALESCE(password_hash,'') FROM "user" WHERE name=$1`, name); err != nil {
 		return nil // 用户不存在（no rows）→ skip
 	}
 	if hash != "" {
@@ -96,7 +96,7 @@ func (s *Store) Login(ctx context.Context, name, password string) (string, *User
 		return "", nil, ErrInvalidCredential
 	}
 	var hash string
-	if err := s.db.GetContext(ctx, &hash, `SELECT COALESCE(password_hash,'') FROM "user" WHERE id=?`, u.ID); err != nil || hash == "" {
+	if err := s.db.GetContext(ctx, &hash, `SELECT COALESCE(password_hash,'') FROM "user" WHERE id=$1`, u.ID); err != nil || hash == "" {
 		return "", nil, ErrInvalidCredential
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
@@ -105,7 +105,7 @@ func (s *Store) Login(ctx context.Context, name, password string) (string, *User
 	token := "tok_" + uuid.NewString()[:24]
 	expires := time.Now().Add(7 * 24 * time.Hour)
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ($1, $2, $3, $4)`,
 		token, u.ID, u.Name, expires); err != nil {
 		return "", nil, err
 	}
@@ -118,7 +118,7 @@ func (s *Store) ValidToken(ctx context.Context, token string) (string, bool) {
 		return "", false
 	}
 	var name string
-	if err := s.db.GetContext(ctx, &name, `SELECT user_name FROM auth_session WHERE token=? AND expires_at > CURRENT_TIMESTAMP`, token); err != nil || name == "" {
+	if err := s.db.GetContext(ctx, &name, `SELECT user_name FROM auth_session WHERE token=$1 AND expires_at > CURRENT_TIMESTAMP`, token); err != nil || name == "" {
 		return "", false
 	}
 	return name, true
@@ -126,6 +126,6 @@ func (s *Store) ValidToken(ctx context.Context, token string) (string, bool) {
 
 // Logout 删除 token（登出）。
 func (s *Store) Logout(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_session WHERE token=?`, token)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM auth_session WHERE token=$1`, token)
 	return err
 }

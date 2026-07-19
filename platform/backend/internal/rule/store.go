@@ -30,7 +30,7 @@ func (s *Store) ListEnabled(ctx context.Context, scope string) ([]Rule, error) {
 	var list []Rule
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, name, category, type, condition, condition_field, action, scope, enabled, description, created_at, updated_at
-		 FROM rule WHERE enabled=1 AND (scope='all' OR scope=?)`, scope)
+		 FROM rule WHERE enabled AND (scope='all' OR scope=$1)`, scope)
 	return list, err
 }
 
@@ -39,7 +39,7 @@ func (s *Store) Create(ctx context.Context, r *Rule) error {
 	r.ID = "rule_" + uuid.NewString()[:21]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO rule (id, name, category, type, condition, condition_field, action, scope, enabled, description)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		r.ID, r.Name, r.Category, r.Type, r.Condition, r.ConditionField, r.Action, r.Scope, r.Enabled, r.Description)
 	return err
 }
@@ -47,8 +47,8 @@ func (s *Store) Create(ctx context.Context, r *Rule) error {
 // Update 更新规则。
 func (s *Store) Update(ctx context.Context, r *Rule) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE rule SET name=?, category=?, type=?, condition=?, condition_field=?, action=?, scope=?, enabled=?, description=?, updated_at=CURRENT_TIMESTAMP
-		 WHERE id=?`,
+		`UPDATE rule SET name=$1, category=$2, type=$3, condition=$4, condition_field=$5, action=$6, scope=$7, enabled=$8, description=$9, updated_at=CURRENT_TIMESTAMP
+		 WHERE id=$10`,
 		r.Name, r.Category, r.Type, r.Condition, r.ConditionField, r.Action, r.Scope, r.Enabled, r.Description, r.ID)
 	if err != nil {
 		return err
@@ -62,13 +62,13 @@ func (s *Store) Update(ctx context.Context, r *Rule) error {
 
 // SetEnabled 启用/禁用。
 func (s *Store) SetEnabled(ctx context.Context, id string, enabled bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE rule SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, enabled, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE rule SET enabled=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`, enabled, id)
 	return err
 }
 
 // Delete 删除。
 func (s *Store) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM rule WHERE id=?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM rule WHERE id=$1`, id)
 	return err
 }
 
@@ -96,7 +96,7 @@ func (s *Store) SeedDemoRules(ctx context.Context) error {
 		r.ID = "rule_" + uuid.NewString()[:21]
 		if _, err := s.db.ExecContext(ctx,
 			`INSERT INTO rule (id,name,category,type,condition,condition_field,action,scope,enabled,description)
-			 VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 			r.ID, r.Name, r.Category, r.Type, r.Condition, r.ConditionField, r.Action, r.Scope, r.Enabled, r.Description); err != nil {
 			return err
 		}

@@ -37,7 +37,7 @@ func (s *Store) CreateSkill(ctx context.Context, sk *Skill) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO capability_skill (id, project_space_id, code, name, description, category, prompt_template, version, status, risk_level, is_public, data_access_scope)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		sk.ID, sk.ProjectSpaceID, sk.Code, sk.Name, sk.Description, sk.Category,
 		sk.PromptTemplate, sk.Version, sk.Status, sk.RiskLevel, sk.IsPublic, sk.DataAccessScope)
 	return err
@@ -71,22 +71,22 @@ func (s *Store) ListSkills(ctx context.Context, psID, status string, publicOnly 
 // GetSkill 取单条（任一空间）。
 func (s *Store) GetSkill(ctx context.Context, id string) (*Skill, error) {
 	var sk Skill
-	err := s.db.GetContext(ctx, &sk, `SELECT `+skillCols()+` FROM capability_skill WHERE id=?`, id)
+	err := s.db.GetContext(ctx, &sk, `SELECT `+skillCols()+` FROM capability_skill WHERE id=$1`, id)
 	return &sk, err
 }
 
 // GetSkillByCode 按 code 取（invoke 路由用）。
 func (s *Store) GetSkillByCode(ctx context.Context, code string) (*Skill, error) {
 	var sk Skill
-	err := s.db.GetContext(ctx, &sk, `SELECT `+skillCols()+` FROM capability_skill WHERE code=? AND status='active'`, code)
+	err := s.db.GetContext(ctx, &sk, `SELECT `+skillCols()+` FROM capability_skill WHERE code=$1 AND status='active'`, code)
 	return &sk, err
 }
 
 // UpdateSkill 更新技能。
 func (s *Store) UpdateSkill(ctx context.Context, sk *Skill) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE capability_skill SET code=?, name=?, description=?, category=?, prompt_template=?, version=?, risk_level=?, is_public=?, data_access_scope=?, updated_at=CURRENT_TIMESTAMP
-		 WHERE id=?`,
+		`UPDATE capability_skill SET code=$1, name=$2, description=$3, category=$4, prompt_template=$5, version=$6, risk_level=$7, is_public=$8, data_access_scope=$9, updated_at=CURRENT_TIMESTAMP
+		 WHERE id=$10`,
 		sk.Code, sk.Name, sk.Description, sk.Category, sk.PromptTemplate, sk.Version, sk.RiskLevel, sk.IsPublic, sk.DataAccessScope, sk.ID)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func (s *Store) UpdateSkill(ctx context.Context, sk *Skill) error {
 // SetSkillStatus 切换技能生命周期状态（submit→pending_review / approve→active / offline）。
 func (s *Store) SetSkillStatus(ctx context.Context, id, status string) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE capability_skill SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, status, id)
+		`UPDATE capability_skill SET status=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`, status, id)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (s *Store) SetSkillStatus(ctx context.Context, id, status string) error {
 
 // DeleteSkill 删除技能。
 func (s *Store) DeleteSkill(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM capability_skill WHERE id=?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM capability_skill WHERE id=$1`, id)
 	return err
 }
 
@@ -146,7 +146,7 @@ func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) (plain string, err 
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO capability_api_key (id, project_space_id, app_name, key_hash, key_prefix, allowed_skills, scope, status, expires_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		k.ID, k.ProjectSpaceID, k.AppName, k.KeyHash, k.KeyPrefix, k.AllowedSkills, k.Scope, k.Status, k.ExpiresAt)
 	return plain, err
 }
@@ -156,7 +156,7 @@ func (s *Store) ListAPIKeys(ctx context.Context, psID string) ([]APIKey, error) 
 	var list []APIKey
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, app_name, key_prefix, allowed_skills, scope, status, expires_at, created_at
-		 FROM capability_api_key WHERE project_space_id=? ORDER BY created_at DESC`, psID)
+		 FROM capability_api_key WHERE project_space_id=$1 ORDER BY created_at DESC`, psID)
 	return list, err
 }
 
@@ -167,7 +167,7 @@ func (s *Store) LookupAPIKey(ctx context.Context, plain string) (*APIKey, error)
 	var k APIKey
 	err := s.db.GetContext(ctx, &k,
 		`SELECT id, project_space_id, app_name, key_hash, key_prefix, allowed_skills, scope, status, expires_at, created_at
-		 FROM capability_api_key WHERE key_hash=? AND status='active'`, hash)
+		 FROM capability_api_key WHERE key_hash=$1 AND status='active'`, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (s *Store) LookupAPIKey(ctx context.Context, plain string) (*APIKey, error)
 
 // RevokeAPIKey 吊销。
 func (s *Store) RevokeAPIKey(ctx context.Context, psID, id string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE capability_api_key SET status='revoked' WHERE id=? AND project_space_id=?`, id, psID)
+	res, err := s.db.ExecContext(ctx, `UPDATE capability_api_key SET status='revoked' WHERE id=$1 AND project_space_id=$2`, id, psID)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (s *Store) RecordUsage(ctx context.Context, u *CapabilityUsage) error {
 	u.ID = "usg_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO capability_usage (id, project_space_id, api_key_id, caller_app, skill_id, input_tokens, output_tokens, success, latency_ms, render_hint, trace_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		u.ID, u.ProjectSpaceID, u.APIKeyID, u.CallerApp, u.SkillID, u.InputTokens, u.OutputTokens, u.Success, u.LatencyMS, u.RenderHint, u.TraceID)
 	return err
 }
@@ -203,8 +203,8 @@ func (s *Store) UsageBySkill(ctx context.Context, psID string) ([]SkillUsageStat
 	var list []SkillUsageStat
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT skill_id, COUNT(*) calls, COALESCE(SUM(input_tokens),0) input_tokens, COALESCE(SUM(output_tokens),0) output_tokens,
-		        SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) success_count
-		 FROM capability_usage WHERE project_space_id=? GROUP BY skill_id ORDER BY calls DESC`, psID)
+		        SUM(CASE WHEN success THEN 1 ELSE 0 END) success_count
+		 FROM capability_usage WHERE project_space_id=$1 GROUP BY skill_id ORDER BY calls DESC`, psID)
 	return list, err
 }
 
@@ -213,7 +213,7 @@ func (s *Store) UsageList(ctx context.Context, psID string) ([]CapabilityUsage, 
 	var list []CapabilityUsage
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, api_key_id, caller_app, skill_id, input_tokens, output_tokens, success, latency_ms, render_hint, trace_id, created_at
-		 FROM capability_usage WHERE project_space_id=? ORDER BY created_at DESC LIMIT 200`, psID)
+		 FROM capability_usage WHERE project_space_id=$1 ORDER BY created_at DESC LIMIT 200`, psID)
 	return list, err
 }
 
@@ -224,7 +224,7 @@ func (s *Store) ListDomainAgents(ctx context.Context, psID string) ([]DomainAgen
 	var list []DomainAgent
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, code, name, domain, composed_skills, status, created_at, updated_at
-		 FROM capability_domain_agent WHERE project_space_id=? ORDER BY created_at DESC`, psID)
+		 FROM capability_domain_agent WHERE project_space_id=$1 ORDER BY created_at DESC`, psID)
 	return list, err
 }
 
@@ -236,13 +236,13 @@ func (s *Store) CreateDomainAgent(ctx context.Context, d *DomainAgent) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO capability_domain_agent (id, project_space_id, code, name, domain, composed_skills, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		d.ID, d.ProjectSpaceID, d.Code, d.Name, d.Domain, d.ComposedSkills, d.Status)
 	return err
 }
 
 // DeleteDomainAgent 删除。
 func (s *Store) DeleteDomainAgent(ctx context.Context, psID, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM capability_domain_agent WHERE id=? AND project_space_id=?`, id, psID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM capability_domain_agent WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return err
 }

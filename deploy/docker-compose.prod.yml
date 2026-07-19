@@ -1,5 +1,18 @@
-# 智源 ANP 生产编排（CentOS + Docker，MVP 用 SQLite 容器卷；全 block 格式避 flow colon）
+# 智源 ANP 生产编排（CentOS + Docker，PostgreSQL+pgvector；全 block 格式避 flow colon）
+# 切 PG：postgres 服务提供库，backend 用 DATABASE_URL 连；POSTGRES_PASSWORD 在 .env.prod。
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: anp
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: anp
+    volumes:
+      - ../data/pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    restart: unless-stopped
+
   agent-runtime:
     build:
       context: ..
@@ -15,22 +28,23 @@ services:
       dockerfile: deploy/Dockerfile.backend
     env_file: .env.prod
     environment:
-      DATABASE_URL: "sqlite:///data/anp.db"
+      DATABASE_URL: "postgres://anp:${DB_PASSWORD}@postgres:5432/anp?sslmode=disable"
       AGENT_RUNTIME_URL: "http://agent-runtime:8001"
       BACKEND_HTTP_ADDR: ":8080"
       OPENCODE_CONFIG: "/app/opencode.json"
     volumes:
       - ../data:/data
       - ../platform/opencode.json:/app/opencode.json
-      - /var/run/docker.sock:/var/run/docker.sock   # 应用部署引擎：后端控制宿主 Docker
-      - ../data/repos:/data/repos                   # 产出应用源码（docker build 上下文）
-      - ../data/opencode:/root/.local/share/opencode  # opencode 会话/凭据持久化(跨 backend 重建不丢)
+      - /var/run/docker.sock:/var/run/docker.sock # 应用部署引擎：后端控制宿主 Docker
+      - ../data/repos:/data/repos # 产出应用源码（docker build 上下文）
+      - ../data/opencode:/root/.local/share/opencode # opencode 会话/凭据持久化(跨 backend 重建不丢)
     depends_on:
       - agent-runtime
+      - postgres
     expose:
       - "8080"
     ports:
-      - "9400-9450:9400-9450"   # opencode 交互编码工作台（每应用一个 serve 实例）
+      - "9400-9450:9400-9450" # opencode 交互编码工作台（每应用一个 serve 实例）
     restart: unless-stopped
 
   frontend:

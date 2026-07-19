@@ -28,7 +28,7 @@ func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 func (s *Store) AddMember(ctx context.Context, m *Member) error {
 	id := "mbr_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO membership (id, project_space_id, user_id, role) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO membership (id, project_space_id, user_id, role) VALUES ($1, $2, $3, $4)`,
 		id, m.ProjectSpaceID, m.UserID, m.Role)
 	return err
 }
@@ -37,13 +37,13 @@ func (s *Store) AddMember(ctx context.Context, m *Member) error {
 func (s *Store) ListMembers(ctx context.Context, projectSpaceID string) ([]Member, error) {
 	var list []Member
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT user_id, project_space_id, role FROM membership WHERE project_space_id = ?`, projectSpaceID)
+		`SELECT user_id, project_space_id, role FROM membership WHERE project_space_id = $1`, projectSpaceID)
 	return list, err
 }
 
 // Roles 查用户在某项目空间下的角色（projectSpaceID 为空则查全部空间）。
 func (s *Store) Roles(ctx context.Context, userID, projectSpaceID string) ([]string, error) {
-	q := `SELECT role FROM membership WHERE user_id = ?`
+	q := `SELECT role FROM membership WHERE user_id = $1`
 	args := []interface{}{userID}
 	if projectSpaceID != "" {
 		q += ` AND project_space_id = ?`

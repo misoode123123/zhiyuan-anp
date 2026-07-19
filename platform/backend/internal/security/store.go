@@ -58,7 +58,7 @@ func (s *Store) RunScan(ctx context.Context, psID, content, scanType string) (*S
 
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO security_scan_result (id, project_space_id, scan_type, risk_level, total_findings, critical_count, high_count, medium_count, low_count, content_preview)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		res.ID, res.ProjectSpaceID, res.ScanType, res.RiskLevel, res.TotalFindings,
 		res.CriticalCount, res.HighCount, res.MediumCount, res.LowCount, res.ContentPreview); err != nil {
 		return nil, nil, err
@@ -72,7 +72,7 @@ func (s *Store) RunScan(ctx context.Context, psID, content, scanType string) (*S
 		f.Status = "open"
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO security_finding (id, project_space_id, scan_result_id, category, rule_id, severity, title, description, line_number, code_snippet, remediation, confidence, status)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 			f.ID, f.ProjectSpaceID, f.ScanResultID, f.Category, f.RuleID, f.Severity,
 			f.Title, f.Description, f.LineNumber, f.CodeSnippet, f.Remediation, f.Confidence, f.Status); err != nil {
 			return nil, nil, err
@@ -87,7 +87,7 @@ func (s *Store) RunScan(ctx context.Context, psID, content, scanType string) (*S
 // ListFindings 发现列表（severity/status 可选）。
 func (s *Store) ListFindings(ctx context.Context, psID, severity, status string) ([]Finding, error) {
 	q := `SELECT id, project_space_id, scan_result_id, category, rule_id, severity, title, description, line_number, code_snippet, remediation, confidence, status, created_at, suppressed_at
-	      FROM security_finding WHERE project_space_id = ?`
+	      FROM security_finding WHERE project_space_id = $1`
 	args := []interface{}{psID}
 	if severity != "" {
 		q += ` AND severity = ?`
@@ -109,7 +109,7 @@ func (s *Store) ListFindings(ctx context.Context, psID, severity, status string)
 func (s *Store) SuppressFinding(ctx context.Context, psID, id string) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE security_finding SET status='suppressed', suppressed_at=CURRENT_TIMESTAMP
-		 WHERE id=? AND project_space_id=?`, id, psID)
+		 WHERE id=$1 AND project_space_id=$2`, id, psID)
 	if err != nil {
 		return err
 	}
@@ -125,12 +125,12 @@ func (s *Store) SuppressFinding(ctx context.Context, psID, id string) error {
 func (s *Store) Gate(ctx context.Context, psID string) (Gate, error) {
 	var g Gate
 	err := s.db.GetContext(ctx, &g.CriticalOpen,
-		`SELECT COUNT(*) FROM security_finding WHERE project_space_id=? AND status='open' AND severity='critical'`, psID)
+		`SELECT COUNT(*) FROM security_finding WHERE project_space_id=$1 AND status='open' AND severity='critical'`, psID)
 	if err != nil {
 		return g, err
 	}
 	if err := s.db.GetContext(ctx, &g.HighOpen,
-		`SELECT COUNT(*) FROM security_finding WHERE project_space_id=? AND status='open' AND severity='high'`, psID); err != nil {
+		`SELECT COUNT(*) FROM security_finding WHERE project_space_id=$1 AND status='open' AND severity='high'`, psID); err != nil {
 		return g, err
 	}
 	switch {
@@ -158,7 +158,7 @@ func dcCols() string {
 func (s *Store) ListDC(ctx context.Context, psID string) ([]DataClassification, error) {
 	var list []DataClassification
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+dcCols()+` FROM security_data_classification WHERE project_space_id=? ORDER BY created_at DESC`, psID)
+		`SELECT `+dcCols()+` FROM security_data_classification WHERE project_space_id=$1 ORDER BY created_at DESC`, psID)
 	return list, err
 }
 
@@ -170,14 +170,14 @@ func (s *Store) CreateDC(ctx context.Context, dc *DataClassification) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO security_data_classification (id, project_space_id, field_name, table_ref, sensitivity_level, data_type, masking_strategy, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		dc.ID, dc.ProjectSpaceID, dc.FieldName, dc.TableRef, dc.SensitivityLevel, dc.DataType, dc.MaskingStrategy, dc.Status)
 	return err
 }
 
 // DeleteDC 删除数据分级。
 func (s *Store) DeleteDC(ctx context.Context, psID, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM security_data_classification WHERE id=? AND project_space_id=?`, id, psID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM security_data_classification WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return err
 }
 
@@ -188,7 +188,7 @@ func (s *Store) AppendAudit(ctx context.Context, a *AuditLog) error {
 	a.ID = "aud_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO security_audit (id, project_space_id, actor_type, actor_id, action, resource_type, detail, policy_decision)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		a.ID, a.ProjectSpaceID, a.ActorType, a.ActorID, a.Action, a.ResourceType, a.Detail, a.PolicyDecision)
 	return err
 }
@@ -198,7 +198,7 @@ func (s *Store) ListAudit(ctx context.Context, psID string) ([]AuditLog, error) 
 	var list []AuditLog
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, actor_type, actor_id, action, resource_type, detail, policy_decision, created_at
-		 FROM security_audit WHERE project_space_id=? ORDER BY created_at DESC LIMIT 200`, psID)
+		 FROM security_audit WHERE project_space_id=$1 ORDER BY created_at DESC LIMIT 200`, psID)
 	return list, err
 }
 

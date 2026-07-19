@@ -35,7 +35,7 @@ func (s *Store) CreateAlert(ctx context.Context, a *Alert) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO ops_alert (id, project_space_id, source, severity, status, fingerprint, title, description, fired_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
 		a.ID, a.ProjectSpaceID, a.Source, a.Severity, a.Status, a.Fingerprint, a.Title, a.Description)
 	return err
 }
@@ -43,7 +43,7 @@ func (s *Store) CreateAlert(ctx context.Context, a *Alert) error {
 // ListAlerts 告警列表（severity/status 可选过滤）。
 func (s *Store) ListAlerts(ctx context.Context, psID, severity, status string) ([]Alert, error) {
 	q := `SELECT id, project_space_id, source, severity, status, fingerprint, title, description, fired_at, resolved_at, created_at
-	      FROM ops_alert WHERE project_space_id = ?`
+	      FROM ops_alert WHERE project_space_id = $1`
 	args := []interface{}{psID}
 	if severity != "" {
 		q += ` AND severity = ?`
@@ -63,7 +63,7 @@ func (s *Store) ListAlerts(ctx context.Context, psID, severity, status string) (
 func (s *Store) ResolveAlert(ctx context.Context, psID, id string) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE ops_alert SET status='resolved', resolved_at=CURRENT_TIMESTAMP
-		 WHERE id=? AND project_space_id=?`, id, psID)
+		 WHERE id=$1 AND project_space_id=$2`, id, psID)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (s *Store) ResolveAlert(ctx context.Context, psID, id string) error {
 // HasFiringFingerprint 是否已存在同指纹的 firing 告警（巡检去重用）。
 func (s *Store) HasFiringFingerprint(ctx context.Context, fp string) (bool, error) {
 	var n int
-	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM ops_alert WHERE fingerprint=? AND status='firing'`, fp)
+	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM ops_alert WHERE fingerprint=$1 AND status='firing'`, fp)
 	return n > 0, err
 }
 
@@ -84,7 +84,7 @@ func (s *Store) HasFiringFingerprint(ctx context.Context, fp string) (bool, erro
 func (s *Store) CountOpenAlerts(ctx context.Context, psID string) (int, error) {
 	var n int
 	err := s.db.GetContext(ctx, &n,
-		`SELECT COUNT(*) FROM ops_alert WHERE project_space_id=? AND status='firing'`, psID)
+		`SELECT COUNT(*) FROM ops_alert WHERE project_space_id=$1 AND status='firing'`, psID)
 	return n, err
 }
 
@@ -102,7 +102,7 @@ func (s *Store) CreateSOP(ctx context.Context, sop *SOP) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO ops_sop (id, project_space_id, code, name, description, category, risk_level, steps, rollback, requires_approval, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		sop.ID, sop.ProjectSpaceID, sop.Code, sop.Name, sop.Description, sop.Category,
 		sop.RiskLevel, sop.Steps, sop.Rollback, sop.RequiresApproval, sop.Status)
 	return err
@@ -110,7 +110,7 @@ func (s *Store) CreateSOP(ctx context.Context, sop *SOP) error {
 
 // ListSOPs SOP 列表（status 可选）。
 func (s *Store) ListSOPs(ctx context.Context, psID, status string) ([]SOP, error) {
-	q := `SELECT ` + sopCols() + ` FROM ops_sop WHERE project_space_id = ?`
+	q := `SELECT ` + sopCols() + ` FROM ops_sop WHERE project_space_id = $1`
 	args := []interface{}{psID}
 	if status != "" {
 		q += ` AND status = ?`
@@ -125,15 +125,15 @@ func (s *Store) ListSOPs(ctx context.Context, psID, status string) ([]SOP, error
 // GetSOP 取单条。
 func (s *Store) GetSOP(ctx context.Context, psID, id string) (*SOP, error) {
 	var sop SOP
-	err := s.db.GetContext(ctx, &sop, `SELECT `+sopCols()+` FROM ops_sop WHERE id=? AND project_space_id=?`, id, psID)
+	err := s.db.GetContext(ctx, &sop, `SELECT `+sopCols()+` FROM ops_sop WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return &sop, err
 }
 
 // UpdateSOP 更新 SOP。
 func (s *Store) UpdateSOP(ctx context.Context, sop *SOP) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE ops_sop SET code=?, name=?, description=?, category=?, risk_level=?, steps=?, rollback=?, requires_approval=?, status=?, updated_at=CURRENT_TIMESTAMP
-		 WHERE id=? AND project_space_id=?`,
+		`UPDATE ops_sop SET code=$1, name=$2, description=$3, category=$4, risk_level=$5, steps=$6, rollback=$7, requires_approval=$8, status=$9, updated_at=CURRENT_TIMESTAMP
+		 WHERE id=$10 AND project_space_id=$11`,
 		sop.Code, sop.Name, sop.Description, sop.Category, sop.RiskLevel, sop.Steps, sop.Rollback, sop.RequiresApproval, sop.Status, sop.ID, sop.ProjectSpaceID)
 	if err != nil {
 		return err
@@ -146,21 +146,21 @@ func (s *Store) UpdateSOP(ctx context.Context, sop *SOP) error {
 
 // DeleteSOP 删除 SOP。
 func (s *Store) DeleteSOP(ctx context.Context, psID, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ops_sop WHERE id=? AND project_space_id=?`, id, psID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM ops_sop WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return err
 }
 
 // CountActiveSOPs 激活态 SOP 数。
 func (s *Store) CountActiveSOPs(ctx context.Context, psID string) (int, error) {
 	var n int
-	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM ops_sop WHERE project_space_id=? AND status='active'`, psID)
+	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM ops_sop WHERE project_space_id=$1 AND status='active'`, psID)
 	return n, err
 }
 
 // ---------------- 看板聚合 ----------------
 
 func (s *Store) countByStatus(ctx context.Context, table, psID string) (map[string]int, error) {
-	q := fmt.Sprintf(`SELECT status, COUNT(*) c FROM %s WHERE project_space_id=? GROUP BY status`, table)
+	q := fmt.Sprintf(`SELECT status, COUNT(*) c FROM %s WHERE project_space_id=$1 GROUP BY status`, table)
 	rows := []struct {
 		Status string `db:"status"`
 		C      int    `db:"c"`
@@ -192,7 +192,7 @@ func (s *Store) Stats(ctx context.Context, psID string) (Stats, error) {
 	}
 	st.Requirements, st.CodeTasks, st.Changes = reqs, tasks, changes
 	if err := s.db.GetContext(ctx, &st.Releases,
-		`SELECT COUNT(*) FROM release_record WHERE project_space_id=?`, psID); err != nil {
+		`SELECT COUNT(*) FROM release_record WHERE project_space_id=$1`, psID); err != nil {
 		return st, err
 	}
 	st.ActiveAlerts, err = s.CountOpenAlerts(ctx, psID)
@@ -211,7 +211,7 @@ func (s *Store) Usage(ctx context.Context, psID string) (UsageSummary, error) {
 		C int `db:"c"`
 	}
 	err := s.db.GetContext(ctx, &agg,
-		`SELECT COALESCE(SUM(total_tokens),0) t, COUNT(*) c FROM usage_record WHERE project_space_id=?`, psID)
+		`SELECT COALESCE(SUM(total_tokens),0) t, COUNT(*) c FROM usage_record WHERE project_space_id=$1`, psID)
 	if err != nil {
 		return u, err
 	}
@@ -221,13 +221,13 @@ func (s *Store) Usage(ctx context.Context, psID string) (UsageSummary, error) {
 
 // Activity 跨表活动流（最近 20 条）。
 func (s *Store) Activity(ctx context.Context, psID string) ([]ActivityItem, error) {
-	q := `SELECT created_at time, 'requirement' kind, status action, COALESCE(title,'无标题') title, id ref_id FROM requirement WHERE project_space_id=?
+	q := `SELECT created_at time, 'requirement' kind, status action, COALESCE(title,'无标题') title, id ref_id FROM requirement WHERE project_space_id=$1
 	      UNION ALL
-	      SELECT updated_at, 'code_task', status, COALESCE(SUBSTR(prompt,1,60),'编码任务'), id FROM code_task WHERE project_space_id=?
+	      SELECT updated_at, 'code_task', status, COALESCE(SUBSTR(prompt,1,60),'编码任务'), id FROM code_task WHERE project_space_id=$2
 	      UNION ALL
-	      SELECT created_at, 'change', status, COALESCE(SUBSTR(prompt,1,60),'变更'), id FROM change_request WHERE project_space_id=?
+	      SELECT created_at, 'change', status, COALESCE(SUBSTR(prompt,1,60),'变更'), id FROM change_request WHERE project_space_id=$3
 	      UNION ALL
-	      SELECT created_at, 'release', 'released', version, id FROM release_record WHERE project_space_id=?
+	      SELECT created_at, 'release', 'released', version, id FROM release_record WHERE project_space_id=$4
 	      ORDER BY time DESC LIMIT 20`
 	var list []ActivityItem
 	err := s.db.SelectContext(ctx, &list, q, psID, psID, psID, psID)

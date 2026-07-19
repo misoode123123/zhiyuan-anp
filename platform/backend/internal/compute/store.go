@@ -20,7 +20,7 @@ func (s *Store) Create(ctx context.Context, u *UsageRecord) error {
 	u.ID = "usg_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO usage_record (id, project_space_id, model, kind, prompt_tokens, completion_tokens, total_tokens)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		u.ID, u.ProjectSpaceID, u.Model, u.Kind, u.PromptTokens, u.CompletionTokens, u.TotalTokens)
 	return err
 }
@@ -30,7 +30,7 @@ func (s *Store) List(ctx context.Context, projectSpaceID string) ([]UsageRecord,
 	var list []UsageRecord
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, model, kind, prompt_tokens, completion_tokens, total_tokens, created_at
-		 FROM usage_record WHERE project_space_id = ? ORDER BY created_at DESC LIMIT 200`, projectSpaceID)
+		 FROM usage_record WHERE project_space_id = $1 ORDER BY created_at DESC LIMIT 200`, projectSpaceID)
 	return list, err
 }
 
@@ -42,7 +42,7 @@ func (s *Store) Stats(ctx context.Context, projectSpaceID string) (*Stats, error
 		C int `db:"c"`
 	}
 	if err := s.db.GetContext(ctx, &tot,
-		`SELECT COALESCE(SUM(total_tokens),0) AS t, COUNT(*) AS c FROM usage_record WHERE project_space_id = ?`,
+		`SELECT COALESCE(SUM(total_tokens),0) AS t, COUNT(*) AS c FROM usage_record WHERE project_space_id = $1`,
 		projectSpaceID); err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (s *Store) Stats(ctx context.Context, projectSpaceID string) (*Stats, error
 	var ms []ModelStat
 	if err := s.db.SelectContext(ctx, &ms,
 		`SELECT model, COALESCE(SUM(total_tokens),0) AS tokens, COUNT(*) AS calls
-		 FROM usage_record WHERE project_space_id = ? GROUP BY model`, projectSpaceID); err != nil {
+		 FROM usage_record WHERE project_space_id = $1 GROUP BY model`, projectSpaceID); err != nil {
 		return nil, err
 	}
 	st.ByModel = ms

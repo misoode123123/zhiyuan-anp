@@ -22,14 +22,14 @@ const msgCols = `id, conversation_id, role, content, media_kind, created_at`
 func (s *Store) CreateConv(ctx context.Context, c *Conversation) error {
 	c.ID = "conv_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO conversation (id, project_space_id, status) VALUES (?, ?, 'active')`, c.ID, c.ProjectSpaceID)
+		`INSERT INTO conversation (id, project_space_id, status) VALUES ($1, $2, 'active')`, c.ID, c.ProjectSpaceID)
 	return err
 }
 
 // GetConv 取会话。
 func (s *Store) GetConv(ctx context.Context, id string) (*Conversation, error) {
 	var c Conversation
-	err := s.db.GetContext(ctx, &c, `SELECT `+convCols+` FROM conversation WHERE id=?`, id)
+	err := s.db.GetContext(ctx, &c, `SELECT `+convCols+` FROM conversation WHERE id=$1`, id)
 	return &c, err
 }
 
@@ -37,14 +37,14 @@ func (s *Store) GetConv(ctx context.Context, id string) (*Conversation, error) {
 func (s *Store) ListConvByPS(ctx context.Context, psID string) ([]Conversation, error) {
 	var list []Conversation
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+convCols+` FROM conversation WHERE project_space_id=? ORDER BY created_at DESC`, psID)
+		`SELECT `+convCols+` FROM conversation WHERE project_space_id=$1 ORDER BY created_at DESC`, psID)
 	return list, err
 }
 
 // SubmitConv 标记已提交：回填 title + requirement_id。
 func (s *Store) SubmitConv(ctx context.Context, id, title, reqID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE conversation SET status='submitted', title=?, requirement_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		`UPDATE conversation SET status='submitted', title=$1, requirement_id=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
 		title, reqID, id)
 	return err
 }
@@ -53,7 +53,7 @@ func (s *Store) SubmitConv(ctx context.Context, id, title, reqID string) error {
 func (s *Store) AddMessage(ctx context.Context, m *Message) error {
 	m.ID = "msg_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO message (id, conversation_id, role, content, media_kind) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO message (id, conversation_id, role, content, media_kind) VALUES ($1, $2, $3, $4, $5)`,
 		m.ID, m.ConversationID, m.Role, m.Content, m.MediaKind)
 	return err
 }
@@ -62,6 +62,6 @@ func (s *Store) AddMessage(ctx context.Context, m *Message) error {
 func (s *Store) ListMessages(ctx context.Context, cid string) ([]Message, error) {
 	var list []Message
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+msgCols+` FROM message WHERE conversation_id=? ORDER BY created_at`, cid)
+		`SELECT `+msgCols+` FROM message WHERE conversation_id=$1 ORDER BY created_at`, cid)
 	return list, err
 }

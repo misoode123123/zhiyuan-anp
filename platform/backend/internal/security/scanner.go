@@ -43,7 +43,7 @@ var ruleSet = []Rule{
 	// ---- SAST-lite（RULE-SEC-003 SQL 拼接等）----
 	{ID: "RULE-SEC-003a", Category: "sast", Severity: "high", Confidence: 0.6,
 		Title: "疑似 SQL 字符串拼接", Description: "SQL 语句中出现变量拼接（注入风险）",
-		Pattern:  regexp.MustCompile(`(?i)["'](?:SELECT|INSERT|UPDATE|DELETE|DROP)\b.*["']\s*\+|\+\s*["'].*(?:WHERE|FROM|VALUES)`),
+		Pattern:  regexp.MustCompile(`($1i)["']($2:SELECT|INSERT|UPDATE|DELETE|DROP)\b.*["']\s*\+|\+\s*["'].*($3:WHERE|FROM|VALUES)`),
 		Remediation: "使用参数化查询，禁止拼接 SQL"},
 	{ID: "RULE-SEC-003b", Category: "sast", Severity: "medium", Confidence: 0.5,
 		Title: "eval/exec 执行动态输入", Description: "eval/exec 处理疑似外部输入（代码注入风险）",

@@ -66,7 +66,7 @@ func (s *Store) All() []ConfigItem {
 func (s *Store) Set(ctx context.Context, key, value, category, description string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO system_config (key, value, category, description)
-		 VALUES (?, ?, ?, ?)
+		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT(key) DO UPDATE SET
 		   value=excluded.value, category=excluded.category,
 		   description=excluded.description, updated_at=CURRENT_TIMESTAMP`,

@@ -18,7 +18,7 @@ func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 func (s *Store) Create(ctx context.Context, t *Task) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO code_task (id, project_space_id, kind, source_id, repo_dir, prompt, model, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 'running')`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'running')`,
 		t.ID, t.ProjectSpaceID, t.Kind, t.SourceID, t.RepoDir, t.Prompt, t.Model)
 	return err
 }
@@ -28,7 +28,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.db.GetContext(ctx, &t,
 		`SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, status, output, change_id, created_at, updated_at
-		 FROM code_task WHERE id = ?`, id)
+		 FROM code_task WHERE id = $1`, id)
 	return &t, err
 }
 
@@ -37,26 +37,26 @@ func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) (
 	var list []Task
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, status, output, change_id, created_at, updated_at
-		 FROM code_task WHERE project_space_id = ? ORDER BY created_at DESC LIMIT 100`, projectSpaceID)
+		 FROM code_task WHERE project_space_id = $1 ORDER BY created_at DESC LIMIT 100`, projectSpaceID)
 	return list, err
 }
 
 // MarkCompleted 标记完成 + 产出。
 func (s *Store) MarkCompleted(ctx context.Context, id, output string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE code_task SET status='completed', output=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, output, id)
+		`UPDATE code_task SET status='completed', output=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`, output, id)
 	return err
 }
 
 // MarkFailed 标记失败 + 错误信息。
 func (s *Store) MarkFailed(ctx context.Context, id, output string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE code_task SET status='failed', output=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, output, id)
+		`UPDATE code_task SET status='failed', output=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`, output, id)
 	return err
 }
 
 // SetChangeID 回填登记的变更 ID。
 func (s *Store) SetChangeID(ctx context.Context, id, changeID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE code_task SET change_id=? WHERE id=?`, changeID, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE code_task SET change_id=$1 WHERE id=$2`, changeID, id)
 	return err
 }

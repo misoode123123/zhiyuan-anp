@@ -20,22 +20,22 @@ const reqCols = `id, project_space_id, COALESCE(application_id,'') AS applicatio
 
 // UpdateTasks 更新需求的子任务清单(JSON)。
 func (r *Repository) UpdateTasks(ctx context.Context, id, tasks string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET tasks = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, tasks, id)
+	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET tasks = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, tasks, id)
 	return err
 }
 
 // Assign 认领需求(互斥):已被他人认赖则返回错误(含当前认领人)。
 func (r *Repository) Assign(ctx context.Context, id, user string) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE requirement SET assignee = ?, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-		 WHERE id = ? AND (assignee IS NULL OR assignee = '' OR assignee = ?)`,
+		`UPDATE requirement SET assignee = $1, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = $2 AND (assignee IS NULL OR assignee = '' OR assignee = $3)`,
 		user, id, user)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		var cur string
-		_ = r.db.GetContext(ctx, &cur, `SELECT COALESCE(assignee,'') FROM requirement WHERE id = ?`, id)
+		_ = r.db.GetContext(ctx, &cur, `SELECT COALESCE(assignee,'') FROM requirement WHERE id = $1`, id)
 		return fmt.Errorf("需求已被 %s 认领", cur)
 	}
 	return nil
@@ -43,14 +43,14 @@ func (r *Repository) Assign(ctx context.Context, id, user string) error {
 
 // Release 释放认领(合并/完成/手动)。
 func (r *Repository) Release(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET assignee = '', assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET assignee = '', assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, id)
 	return err
 }
 
 func (r *Repository) Create(ctx context.Context, req *Requirement) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO requirement (id, project_space_id, application_id, title, description, user_story, acceptance_criteria, status, priority, fixed_version)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		req.ID, req.ProjectSpaceID, req.ApplicationID, req.Title, req.Description, req.UserStory, req.AcceptanceCriteria, req.Status, req.Priority, req.FixedVersion)
 	return err
 }
@@ -58,7 +58,7 @@ func (r *Repository) Create(ctx context.Context, req *Requirement) error {
 func (r *Repository) List(ctx context.Context, projectSpaceID string) ([]Requirement, error) {
 	var list []Requirement
 	err := r.db.SelectContext(ctx, &list,
-		`SELECT `+reqCols+` FROM requirement WHERE project_space_id = ? ORDER BY created_at DESC`, projectSpaceID)
+		`SELECT `+reqCols+` FROM requirement WHERE project_space_id = $1 ORDER BY created_at DESC`, projectSpaceID)
 	return list, err
 }
 
@@ -66,24 +66,24 @@ func (r *Repository) List(ctx context.Context, projectSpaceID string) ([]Require
 func (r *Repository) ListByApp(ctx context.Context, appID string) ([]Requirement, error) {
 	var list []Requirement
 	err := r.db.SelectContext(ctx, &list,
-		`SELECT `+reqCols+` FROM requirement WHERE application_id = ? ORDER BY created_at DESC`, appID)
+		`SELECT `+reqCols+` FROM requirement WHERE application_id = $1 ORDER BY created_at DESC`, appID)
 	return list, err
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (*Requirement, error) {
 	var req Requirement
-	err := r.db.GetContext(ctx, &req, `SELECT `+reqCols+` FROM requirement WHERE id = ?`, id)
+	err := r.db.GetContext(ctx, &req, `SELECT `+reqCols+` FROM requirement WHERE id = $1`, id)
 	return &req, err
 }
 
 // UpdateStatus 更新需求状态（发布后→delivered，闭环需求生命周期）。
 func (r *Repository) UpdateStatus(ctx context.Context, id, status string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, status, id)
+	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, status, id)
 	return err
 }
 
 // SetApplication 把需求归属到某应用（发布自动部署后回填 application_id）。
 func (r *Repository) SetApplication(ctx context.Context, id, appID string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET application_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, appID, id)
+	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET application_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, appID, id)
 	return err
 }

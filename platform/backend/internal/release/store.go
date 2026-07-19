@@ -20,7 +20,7 @@ func (s *Store) Create(ctx context.Context, r *Release) error {
 	r.ID = "rel_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO release_record (id, project_space_id, change_id, version, status)
-		 VALUES (?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5)`,
 		r.ID, r.ProjectSpaceID, r.ChangeID, r.Version, r.Status)
 	return err
 }
@@ -30,13 +30,13 @@ func (s *Store) List(ctx context.Context, projectSpaceID string) ([]Release, err
 	var list []Release
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, project_space_id, change_id, version, status, created_at
-		 FROM release_record WHERE project_space_id = ? ORDER BY created_at DESC`, projectSpaceID)
+		 FROM release_record WHERE project_space_id = $1 ORDER BY created_at DESC`, projectSpaceID)
 	return list, err
 }
 
 // Count 项目空间的发布数（用于版本号自增）。
 func (s *Store) Count(ctx context.Context, projectSpaceID string) (int, error) {
 	var n int
-	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM release_record WHERE project_space_id = ?`, projectSpaceID)
+	err := s.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM release_record WHERE project_space_id = $1`, projectSpaceID)
 	return n, err
 }

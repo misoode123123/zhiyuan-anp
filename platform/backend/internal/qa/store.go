@@ -22,7 +22,7 @@ const tcCols = `id, project_space_id, COALESCE(requirement_id,'') AS requirement
 func (s *Store) Create(ctx context.Context, tc *TestCase) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO test_case (id, project_space_id, requirement_id, title, steps, expected, status, method, path, expected_status, expected_body)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		tc.ID, tc.ProjectSpaceID, tc.RequirementID, tc.Title, tc.Steps, tc.Expected, tc.Status,
 		tc.Method, tc.Path, tc.ExpectedStatus, tc.ExpectedBody)
 	return err
@@ -31,7 +31,7 @@ func (s *Store) Create(ctx context.Context, tc *TestCase) error {
 // Get 取单条。
 func (s *Store) Get(ctx context.Context, id string) (*TestCase, error) {
 	var tc TestCase
-	err := s.db.GetContext(ctx, &tc, `SELECT `+tcCols+` FROM test_case WHERE id = ?`, id)
+	err := s.db.GetContext(ctx, &tc, `SELECT `+tcCols+` FROM test_case WHERE id = $1`, id)
 	return &tc, err
 }
 
@@ -39,7 +39,7 @@ func (s *Store) Get(ctx context.Context, id string) (*TestCase, error) {
 func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) ([]TestCase, error) {
 	var list []TestCase
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+tcCols+` FROM test_case WHERE project_space_id = ? ORDER BY created_at DESC`, projectSpaceID)
+		`SELECT `+tcCols+` FROM test_case WHERE project_space_id = $1 ORDER BY created_at DESC`, projectSpaceID)
 	return list, err
 }
 
@@ -47,14 +47,14 @@ func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) (
 func (s *Store) ListByRequirement(ctx context.Context, requirementID string) ([]TestCase, error) {
 	var list []TestCase
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+tcCols+` FROM test_case WHERE requirement_id = ? ORDER BY created_at DESC`, requirementID)
+		`SELECT `+tcCols+` FROM test_case WHERE requirement_id = $1 ORDER BY created_at DESC`, requirementID)
 	return list, err
 }
 
 // UpdateRun 回写运行结果（状态 + 实际状态码/响应 + 运行时间）。
 func (s *Store) UpdateRun(ctx context.Context, tc *TestCase) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE test_case SET status = ?, actual_status = ?, actual_body = ?, run_at = ? WHERE id = ?`,
+		`UPDATE test_case SET status = $1, actual_status = $2, actual_body = $3, run_at = $4 WHERE id = $5`,
 		tc.Status, tc.ActualStatus, tc.ActualBody, tc.RunAt, tc.ID)
 	return err
 }
@@ -66,6 +66,6 @@ func nowTime() *time.Time { t := time.Now(); return &t }
 func (s *Store) PassedCountByRequirement(ctx context.Context, requirementID string) (int, error) {
 	var n int
 	err := s.db.GetContext(ctx, &n,
-		`SELECT COUNT(*) FROM test_case WHERE requirement_id = ? AND status = 'passed'`, requirementID)
+		`SELECT COUNT(*) FROM test_case WHERE requirement_id = $1 AND status = 'passed'`, requirementID)
 	return n, err
 }
