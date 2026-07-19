@@ -1,0 +1,20 @@
+# 依赖与构建产物
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+
+# 锁文件与数据
+pnpm-lock.yaml
+*.db
+*.sqlite*
+coverage.out
+
+# 临时
+tmp/
+.tmp/
+
+# 第三方 / 试点产出（AI 生成代码，不纳入格式化）
+pilots/

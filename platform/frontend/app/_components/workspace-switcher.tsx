@@ -72,10 +72,7 @@ export function WorkspaceSwitcher() {
             placeholder="英文标识（如：cs）"
             className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
           />
-          <button
-            onClick={create}
-            className="w-full rounded bg-blue-600 py-1 text-xs text-white"
-          >
+          <button onClick={create} className="w-full rounded bg-blue-600 py-1 text-xs text-white">
             创建
           </button>
         </div>

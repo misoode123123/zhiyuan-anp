@@ -32,7 +32,9 @@ export function UserSwitcher() {
         <div className="mb-1 text-xs text-neutral-500">已登录</div>
         <div className="flex items-center justify-between">
           <span className="truncate font-medium">👤 {user}</span>
-          <button onClick={logout} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">登出</button>
+          <button onClick={logout} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">
+            登出
+          </button>
         </div>
       </div>
     );
@@ -40,7 +42,12 @@ export function UserSwitcher() {
   return (
     <div>
       <div className="mb-1 text-xs text-neutral-500">未登录</div>
-      <Link href="/login" className="block rounded bg-blue-600 px-2 py-1 text-center text-xs text-white">🔑 登录</Link>
+      <Link
+        href="/login"
+        className="block rounded bg-blue-600 px-2 py-1 text-center text-xs text-white"
+      >
+        🔑 登录
+      </Link>
       <div className="mt-1 text-[11px] text-neutral-400">未登录以游客(X-User 模拟)访问</div>
     </div>
   );

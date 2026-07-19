@@ -53,13 +53,21 @@ export default function ComputePage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">⚡ 算力资源中心</h1>
-      <p className="mb-4 text-sm text-neutral-600">AI 用量 / Token / 成本看板（企业"只投入算力"的落点）。</p>
+      <p className="mb-4 text-sm text-neutral-600">
+        AI 用量 / Token / 成本看板（企业"只投入算力"的落点）。
+      </p>
 
       <div className="mb-4">
         <label className="text-xs text-neutral-500">项目空间</label>
-        <select value={psID} onChange={(e) => setPsID(e.target.value)} className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm">
+        <select
+          value={psID}
+          onChange={(e) => setPsID(e.target.value)}
+          className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+        >
           {spaces.map((s) => (
-            <option key={s.id} value={s.id}>{s.name} ({s.slug})</option>
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.slug})
+            </option>
           ))}
         </select>
       </div>
@@ -83,13 +91,20 @@ export default function ComputePage() {
               <div className="w-40 font-mono text-xs">{m.model}</div>
               <div className="flex-1">
                 <div className="h-4 rounded bg-neutral-100">
-                  <div className="h-4 rounded bg-blue-500" style={{ width: `${(m.tokens / maxTokens) * 100}%` }} />
+                  <div
+                    className="h-4 rounded bg-blue-500"
+                    style={{ width: `${(m.tokens / maxTokens) * 100}%` }}
+                  />
                 </div>
               </div>
-              <div className="w-32 text-right text-xs text-neutral-500">{m.tokens} tok / {m.calls} 次</div>
+              <div className="w-32 text-right text-xs text-neutral-500">
+                {m.tokens} tok / {m.calls} 次
+              </div>
             </div>
           ))}
-          {(stats?.by_model ?? []).length === 0 && <div className="text-sm text-neutral-400">暂无用量（生成需求/测试用例后产生）</div>}
+          {(stats?.by_model ?? []).length === 0 && (
+            <div className="text-sm text-neutral-400">暂无用量（生成需求/测试用例后产生）</div>
+          )}
         </div>
       </div>
 
@@ -97,10 +112,15 @@ export default function ComputePage() {
         <div className="mb-2 text-sm font-semibold">用量明细（最近）</div>
         <div className="space-y-1">
           {list.map((u) => (
-            <div key={u.id} className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-2 text-xs">
+            <div
+              key={u.id}
+              className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+            >
               <span className="font-mono text-neutral-500">{u.kind}</span>
               <span className="text-neutral-700">{u.model}</span>
-              <span className="text-neutral-400">prompt {u.prompt_tokens} / completion {u.completion_tokens}</span>
+              <span className="text-neutral-400">
+                prompt {u.prompt_tokens} / completion {u.completion_tokens}
+              </span>
               <span className="ml-auto font-medium">{u.total_tokens} tok</span>
             </div>
           ))}

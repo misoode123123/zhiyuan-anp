@@ -1,0 +1,27 @@
+# Python AI 运行时 lint / format / 类型配置（对齐《开发标准与规范》§2.3）。
+# ruff 同时做 lint 与 format（format 兼容 black 风格），pyright 做类型检查。
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W=pycodestyle, F=pyflakes, I=isort, UP=pyupgrade, B=bugbear, S=安全
+select = ["E", "W", "F", "I", "UP", "B", "S"]
+ignore = [
+  "E501",   # 行长由 formatter 管
+  "S101",   # assert 在测试/脚本中常用
+  "B008",   # FastAPI Depends() 默认参数是惯用法
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"agent_runtime/main.py" = ["S104"] # 服务需绑 0.0.0.0 供容器外部访问
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+include = ["agent_runtime"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"

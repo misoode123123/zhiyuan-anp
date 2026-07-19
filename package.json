@@ -5,13 +5,35 @@
   "description": "智源 ANP — 企业 AI 原生研发平台",
   "packageManager": "pnpm@10.31.0",
   "scripts": {
-    "dev": "pnpm --filter frontend dev",
-    "build": "pnpm --filter frontend build",
-    "lint": "pnpm -r --if-present run lint",
-    "test": "pnpm -r --if-present run test",
-    "frontend": "pnpm --filter frontend"
+    "dev": "bash scripts/dev.sh",
+    "build": "pnpm fe:build && pnpm be:build",
+    "lint": "pnpm be:vet && pnpm fe:lint",
+    "test": "pnpm be:test && pnpm fe:test",
+    "fmt": "pnpm be:fmt && pnpm fe:fmt && pnpm py:fmt",
+    "check": "pnpm be:build && pnpm be:vet && pnpm fe:build && pnpm lint",
+    "frontend": "pnpm --filter frontend",
+    "be:build": "cd platform/backend && go build ./...",
+    "be:test": "cd platform/backend && go test ./...",
+    "be:cover": "cd platform/backend && go test ./... -coverprofile=coverage.out -covermode=atomic",
+    "be:vet": "cd platform/backend && go vet ./...",
+    "be:lint": "cd platform/backend && golangci-lint run ./...",
+    "be:fmt": "cd platform/backend && gofmt -s -w .",
+    "fe:build": "pnpm --filter frontend build",
+    "fe:lint": "pnpm --filter frontend lint",
+    "fe:test": "pnpm --filter frontend test",
+    "fe:fmt": "pnpm --filter frontend format",
+    "py:lint": "cd platform/agent-runtime && ruff check .",
+    "py:fmt": "cd platform/agent-runtime && ruff format .",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.1.0",
+    "prettier": "^3.9.5"
   }
 }

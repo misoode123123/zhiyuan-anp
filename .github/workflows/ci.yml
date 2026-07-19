@@ -1,0 +1,93 @@
+# 智源 ANP · CI 门禁（对齐《开发标准与规范》§11 质量门禁）
+# 每个 PR / push 到 main 必跑：lint + typecheck + test + 安全扫描。
+# 全绿方可合入（分支保护规则后续在 GitHub 仓库设置里配置）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ============ Go 后端 ============
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - run: go mod download
+      - run: go build ./...
+      - run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: platform/backend
+      - name: go test
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: 上传覆盖率
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: platform/backend/coverage.out
+
+  # ============ 前端 ============
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.31.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: eslint
+        run: pnpm --filter frontend lint
+      - name: prettier check
+        run: pnpm --filter frontend exec prettier --check .
+      - name: tsc typecheck
+        run: pnpm --filter frontend exec tsc --noEmit
+      - name: build
+        run: pnpm --filter frontend build
+
+  # ============ Python AI 运行时 ============
+  python:
+    name: Agent Runtime (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform/agent-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install ruff
+      - name: ruff lint
+        run: ruff check .
+      - name: ruff format check
+        run: ruff format --check .
+
+  # ============ 安全扫描（密钥泄漏）============
+  security:
+    name: Security (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

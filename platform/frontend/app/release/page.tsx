@@ -69,23 +69,34 @@ export default function ReleasePage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">🚀 发布中心</h1>
       <FlowStepper current={3} />
-      <p className="mb-4 text-sm text-neutral-600">已审批（🚪G3 通过）的变更发布上线，版本号自增。</p>
+      <p className="mb-4 text-sm text-neutral-600">
+        已审批（🚪G3 通过）的变更发布上线，版本号自增。
+      </p>
 
       {gateOn ? (
         <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-          🧪 <b>测试门禁已开启</b>：发布前要求来源需求至少 1 条 <b>passed</b> 测试用例，否则将被拦截。先到「测试中心」生成并运行用例；或在「系统配置」关闭 <code>release_require_passed_test</code>。
+          🧪 <b>测试门禁已开启</b>：发布前要求来源需求至少 1 条 <b>passed</b>{" "}
+          测试用例，否则将被拦截。先到「测试中心」生成并运行用例；或在「系统配置」关闭{" "}
+          <code>release_require_passed_test</code>。
         </div>
       ) : (
         <div className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-500">
-          🧪 测试门禁关闭中（可在「系统配置」开启 <code>release_require_passed_test</code>，让发布要求 passed 用例）。
+          🧪 测试门禁关闭中（可在「系统配置」开启 <code>release_require_passed_test</code>
+          ，让发布要求 passed 用例）。
         </div>
       )}
 
       <div className="mb-4">
         <label className="text-xs text-neutral-500">项目空间</label>
-        <select value={psID} onChange={(e) => setPsID(e.target.value)} className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm">
+        <select
+          value={psID}
+          onChange={(e) => setPsID(e.target.value)}
+          className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+        >
           {spaces.map((s) => (
-            <option key={s.id} value={s.id}>{s.name} ({s.slug})</option>
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.slug})
+            </option>
           ))}
         </select>
       </div>
@@ -96,15 +107,25 @@ export default function ReleasePage() {
         <div className="mb-2 text-sm font-semibold">待发布（已审批变更）</div>
         <div className="space-y-1">
           {approved.map((c) => (
-            <div key={c.id} className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm">
+            <div
+              key={c.id}
+              className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm"
+            >
               <div>
                 <span className="font-mono text-xs text-neutral-500">{c.id}</span>
                 <span className="ml-2 text-neutral-700">{c.prompt}</span>
               </div>
-              <button onClick={() => release(c.id)} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white">发布</button>
+              <button
+                onClick={() => release(c.id)}
+                className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+              >
+                发布
+              </button>
             </div>
           ))}
-          {approved.length === 0 && <div className="text-sm text-neutral-400">暂无已审批变更（先在「变更审批」批准）</div>}
+          {approved.length === 0 && (
+            <div className="text-sm text-neutral-400">暂无已审批变更（先在「变更审批」批准）</div>
+          )}
         </div>
       </div>
 
@@ -112,8 +133,13 @@ export default function ReleasePage() {
         <div className="mb-2 text-sm font-semibold">发布历史（{releases.length}）</div>
         <div className="space-y-1">
           {releases.map((r) => (
-            <div key={r.id} className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-2 text-sm">
-              <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">{r.version}</span>
+            <div
+              key={r.id}
+              className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-2 text-sm"
+            >
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                {r.version}
+              </span>
               <span className="font-mono text-xs text-neutral-500">{r.change_id}</span>
               <span className="text-xs text-neutral-400">{r.status}</span>
             </div>

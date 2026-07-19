@@ -1,4 +1,5 @@
 """配置：从环境变量读取（加载同目录 .env）。"""
+
 import os
 from dataclasses import dataclass
 

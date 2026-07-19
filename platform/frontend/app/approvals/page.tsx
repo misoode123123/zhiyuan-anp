@@ -40,7 +40,10 @@ export default function ApprovalsPage() {
   async function decide(id: string, d: "approve" | "reject") {
     const res = await fetch(`${API_BASE_URL}/changes/${id}/${d}`, { method: "POST" });
     const r = await res.json();
-    setMsg((r.message ?? "") + (d === "approve" ? "  → 下一步：去「🚀 发布中心」发布上线" : "  → 需回滚或重做"));
+    setMsg(
+      (r.message ?? "") +
+        (d === "approve" ? "  → 下一步：去「🚀 发布中心」发布上线" : "  → 需回滚或重做")
+    );
     load();
   }
 
@@ -48,7 +51,9 @@ export default function ApprovalsPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">🚪 变更审批（G3 代码闸门）</h1>
       <FlowStepper current={2} />
-      <p className="mb-4 text-sm text-neutral-600">AI 编码产出登记为待审批变更，人工批准/拒绝后才算合入（关键节点人决策）。</p>
+      <p className="mb-4 text-sm text-neutral-600">
+        AI 编码产出登记为待审批变更，人工批准/拒绝后才算合入（关键节点人决策）。
+      </p>
 
       <div className="mb-3 flex gap-2">
         {["pending", "approved", "rejected", ""].map((s) => (
@@ -69,20 +74,38 @@ export default function ApprovalsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-neutral-500">{c.id}</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[c.status] ?? "bg-neutral-100"}`}>{c.status}</span>
-                <span className="text-xs text-neutral-400">{c.kind} · {c.model}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[c.status] ?? "bg-neutral-100"}`}
+                >
+                  {c.status}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  {c.kind} · {c.model}
+                </span>
               </div>
               {c.status === "pending" && (
                 <div className="flex gap-2">
-                  <button onClick={() => decide(c.id, "approve")} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white">批准</button>
-                  <button onClick={() => decide(c.id, "reject")} className="rounded bg-red-600 px-2 py-1 text-xs text-white">拒绝</button>
+                  <button
+                    onClick={() => decide(c.id, "approve")}
+                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+                  >
+                    批准
+                  </button>
+                  <button
+                    onClick={() => decide(c.id, "reject")}
+                    className="rounded bg-red-600 px-2 py-1 text-xs text-white"
+                  >
+                    拒绝
+                  </button>
                 </div>
               )}
             </div>
             <div className="mt-1 text-neutral-700">{c.prompt}</div>
             <div className="mt-1 text-xs text-neutral-400">{c.repo_dir}</div>
             {c.output && (
-              <pre className="mt-2 max-h-32 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">{c.output}</pre>
+              <pre className="mt-2 max-h-32 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
+                {c.output}
+              </pre>
             )}
           </div>
         ))}

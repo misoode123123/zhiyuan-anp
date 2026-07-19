@@ -1,0 +1,39 @@
+# golangci-lint 配置：对齐《开发标准与规范》§2.2 Go 规范。
+# 本地：golangci-lint run ./...（未安装可 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest）
+# CI：用 golangci-lint-action 自动下载二进制。
+run:
+  timeout: 5m
+  go: "1.22"
+  modules-download-mode: readonly
+
+linters:
+  disable-all: true
+  enable:
+    - govet # go vet
+    - staticcheck # 综合静态分析
+    - errcheck # 错误必须处理
+    - gosec # 安全扫描
+    - revive # 代码风格
+    - gofmt # 格式
+    - goimports # import 顺序
+    - ineffassign # 无效赋值
+    - unused # 未使用
+    - misspell # 拼写
+    - gocritic # 代码改进建议
+
+linters-settings:
+  goimports:
+    local-prefixes: zhiyuan-anp/platform/backend
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # 测试文件放宽安全/错误检查
+    - path: _test\.go
+      linters: [gosec, errcheck]
+    # cmd/server 装配处允许较长主函数
+    - path: cmd/server
+      linters: [gocritic]

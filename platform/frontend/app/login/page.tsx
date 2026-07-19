@@ -37,19 +37,39 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
-      <form onSubmit={submit} className="w-80 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+      <form
+        onSubmit={submit}
+        className="w-80 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+      >
         <h1 className="mb-1 text-xl font-bold">登录 智源 ANP</h1>
         <p className="mb-4 text-xs text-neutral-500">企业 AI 原生研发平台 · 真实账号登录</p>
         <label className="text-xs text-neutral-500">用户名</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm" />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+        />
         <label className="text-xs text-neutral-500">密码</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm" placeholder="初始 admin / admin123" />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          placeholder="初始 admin / admin123"
+        />
         {err && <div className="mb-2 text-sm text-red-500">{err}</div>}
-        <button disabled={loading} className="w-full rounded bg-blue-600 py-2 text-sm text-white disabled:opacity-50">
+        <button
+          disabled={loading}
+          className="w-full rounded bg-blue-600 py-2 text-sm text-white disabled:opacity-50"
+        >
           {loading ? "登录中…" : "登录"}
         </button>
         <div className="mt-3 text-center text-xs text-neutral-400">
-          <a href="/" className="hover:underline">跳过，以游客继续（X-User 模拟）</a>
+          {/* 游客模式需硬刷新清空登录态，故用 <a> 而非 <Link> */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/" className="hover:underline">
+            跳过，以游客继续（X-User 模拟）
+          </a>
         </div>
       </form>
     </div>

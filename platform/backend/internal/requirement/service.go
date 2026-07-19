@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -124,7 +125,7 @@ func (s *Service) Breakdown(ctx context.Context, reqID string) (string, error) {
 		return "", err
 	}
 	if out.Error != "" {
-		return "", fmt.Errorf(out.Error)
+		return "", errors.New(out.Error)
 	}
 	tasks := strings.TrimSpace(extractJSON(out.Content))
 	if !strings.HasPrefix(tasks, "[") {

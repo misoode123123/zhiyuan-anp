@@ -45,7 +45,9 @@ export default function WorkspaceFrame() {
   const [taskMsg, setTaskMsg] = useState("");
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState("");
-  const [testResults, setTestResults] = useState<{ method?: string; path?: string; expected_status?: number; actual_status?: number }[] | null>(null);
+  const [testResults, setTestResults] = useState<
+    { method?: string; path?: string; expected_status?: number; actual_status?: number }[] | null
+  >(null);
   const [subtasks, setSubtasks] = useState<{ text: string; done: boolean }[]>([]);
   const [breaking, setBreaking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -54,23 +56,40 @@ export default function WorkspaceFrame() {
 
   // 部署状态轮询句柄(卸载时清理)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    []
+  );
 
   function toggleDrawer() {
     setDrawerOpen((v) => {
       const nv = !v;
-      try { window.localStorage.setItem("anp.workspace.drawer", nv ? "1" : "0"); } catch {}
+      try {
+        window.localStorage.setItem("anp.workspace.drawer", nv ? "1" : "0");
+      } catch {}
       return nv;
     });
   }
 
   // 拉项目上下文 + 应用状态(抽屉与部署轮询共用);返回完整 detail 供轮询判状态
-  const fetchDetail = useCallback(async (): Promise<{ application?: { instances?: { env: string; status: string; url: string }[]; last_error?: string } } | null> => {
+  const fetchDetail = useCallback(async (): Promise<{
+    application?: {
+      instances?: { env: string; status: string; url: string }[];
+      last_error?: string;
+    };
+  } | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
       const r = await res.json();
       if (r.code === 0 && r.data) {
-        setDetail({ application: r.data.application, requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
+        setDetail({
+          application: r.data.application,
+          requirements: r.data.requirements,
+          changes: r.data.changes,
+          releases: r.data.releases,
+        });
         setDetailErr("");
         return r.data;
       }
@@ -91,14 +110,23 @@ export default function WorkspaceFrame() {
       .then((r) => {
         if (aborted) return;
         if (r.code === 0 && r.data) {
-          setDetail({ application: r.data.application, requirements: r.data.requirements, changes: r.data.changes, releases: r.data.releases });
+          setDetail({
+            application: r.data.application,
+            requirements: r.data.requirements,
+            changes: r.data.changes,
+            releases: r.data.releases,
+          });
           setDetailErr("");
         } else {
           setDetailErr(r.message || "加载失败");
         }
       })
-      .catch((e) => { if (!aborted) setDetailErr(String(e)); });
-    return () => { aborted = true; };
+      .catch((e) => {
+        if (!aborted) setDetailErr(String(e));
+      });
+    return () => {
+      aborted = true;
+    };
   }, [missingParams, psID, appID]);
 
   // 拉起 opencode 工作台
@@ -122,12 +150,17 @@ export default function WorkspaceFrame() {
         setLoading(false);
       })
       .catch((e) => {
-        if (!aborted) { setErr(String(e)); setLoading(false); }
+        if (!aborted) {
+          setErr(String(e));
+          setLoading(false);
+        }
       })
       .finally(() => {
         if (!aborted) setLoading(false);
       });
-    return () => { aborted = true; };
+    return () => {
+      aborted = true;
+    };
   }, [appID, psID, tool, reloadKey, missingParams]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
@@ -175,11 +208,14 @@ export default function WorkspaceFrame() {
   async function registerChange() {
     setRegistering(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ req_id: selectedReq }),
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ req_id: selectedReq }),
+        }
+      );
       const r = await res.json();
       if (r.code !== 0) {
         alert(r.message || "登记失败");
@@ -211,7 +247,10 @@ export default function WorkspaceFrame() {
   async function dispatchReq(taskIdx?: number) {
     if (!selectedReq) return;
     const req = detail?.requirements?.find((q) => q.id === selectedReq);
-    if (!req) { setTaskMsg("需求不存在"); return; }
+    if (!req) {
+      setTaskMsg("需求不存在");
+      return;
+    }
     // 按子任务逐个:指定 taskIdx 或下一个未完成;没拆解则整个需求
     const next = taskIdx !== undefined ? subtasks[taskIdx] : subtasks.find((t) => !t.done);
     const prompt = next
@@ -220,15 +259,24 @@ export default function WorkspaceFrame() {
     setDispatching(true);
     setTaskMsg(next ? `发送子任务给 opencode:${next.text}` : "把需求发给 opencode…");
     try {
-      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/inject-requirement`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      }).then((rr) => rr.json());
-      if (r.code !== 0) { setTaskMsg(r.message || "失败"); setDispatching(false); return; }
-      setTaskMsg(next
-        ? `✅ 已发送子任务: ${next.text}\n做完后在左侧 checklist 打勾,再点「🤖AI编码」做下一个`
-        : "✅ 需求已发给 opencode → 在右侧工作台看 AI 实时编码,可随时介入/纠偏");
+      const r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/inject-requirement`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        }
+      ).then((rr) => rr.json());
+      if (r.code !== 0) {
+        setTaskMsg(r.message || "失败");
+        setDispatching(false);
+        return;
+      }
+      setTaskMsg(
+        next
+          ? `✅ 已发送子任务: ${next.text}\n做完后在左侧 checklist 打勾,再点「🤖AI编码」做下一个`
+          : "✅ 需求已发给 opencode → 在右侧工作台看 AI 实时编码,可随时介入/纠偏"
+      );
     } catch (e) {
       setTaskMsg(String(e));
     }
@@ -237,17 +285,39 @@ export default function WorkspaceFrame() {
 
   // 自动测试:当前需求 → AI 按验收标准生成用例 + 批量对着应用 URL 验收,显示通过/失败。
   async function runAutoTest() {
-    if (!selectedReq) { alert("先在左侧选一个需求"); return; }
+    if (!selectedReq) {
+      alert("先在左侧选一个需求");
+      return;
+    }
     setTesting(true);
     setTestMsg("生成测试用例…");
     setTestResults(null);
     try {
-      let r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/generate-tests`, { method: "POST" }).then((rr) => rr.json());
-      if (r.code !== 0) { setTestMsg(r.message || "生成用例失败"); setTesting(false); return; }
+      let r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/generate-tests`,
+        { method: "POST" }
+      ).then((rr) => rr.json());
+      if (r.code !== 0) {
+        setTestMsg(r.message || "生成用例失败");
+        setTesting(false);
+        return;
+      }
       setTestMsg("运行自动验收…(需先构建部署 test)");
-      r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/run-tests`, { method: "POST" }).then((rr) => rr.json());
-      if (r.code !== 0) { setTestMsg(r.message || "运行失败"); setTesting(false); return; }
-      const list: { method?: string; path?: string; expected_status?: number; actual_status?: number }[] = r.data ?? [];
+      r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/run-tests`,
+        { method: "POST" }
+      ).then((rr) => rr.json());
+      if (r.code !== 0) {
+        setTestMsg(r.message || "运行失败");
+        setTesting(false);
+        return;
+      }
+      const list: {
+        method?: string;
+        path?: string;
+        expected_status?: number;
+        actual_status?: number;
+      }[] = r.data ?? [];
       setTestResults(list);
       const passed = list.filter((x) => x.actual_status === x.expected_status).length;
       setTestMsg(`测试完成:${passed}/${list.length} 通过`);
@@ -262,10 +332,23 @@ export default function WorkspaceFrame() {
     if (!selectedReq) return;
     setBreaking(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/breakdown`, { method: "POST" }).then((rr) => rr.json());
-      if (r.code !== 0) { alert(r.message || "拆解失败"); setBreaking(false); return; }
-      try { setSubtasks(JSON.parse(r.data?.tasks || "[]")); } catch { setSubtasks([]); }
-    } catch (e) { alert(String(e)); }
+      const r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/requirements/${selectedReq}/breakdown`,
+        { method: "POST" }
+      ).then((rr) => rr.json());
+      if (r.code !== 0) {
+        alert(r.message || "拆解失败");
+        setBreaking(false);
+        return;
+      }
+      try {
+        setSubtasks(JSON.parse(r.data?.tasks || "[]"));
+      } catch {
+        setSubtasks([]);
+      }
+    } catch (e) {
+      alert(String(e));
+    }
     setBreaking(false);
   }
 
@@ -273,25 +356,41 @@ export default function WorkspaceFrame() {
   async function mergeReq() {
     setMerging(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, { method: "POST" }).then((rr) => rr.json());
-      if (r.code !== 0) { alert(r.message || "合并失败"); setMerging(false); return; }
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, {
+        method: "POST",
+      }).then((rr) => rr.json());
+      if (r.code !== 0) {
+        alert(r.message || "合并失败");
+        setMerging(false);
+        return;
+      }
       alert("✅ 已合并到主线 main,可点「🚀上线」");
-    } catch (e) { alert(String(e)); }
+    } catch (e) {
+      alert(String(e));
+    }
     setMerging(false);
   }
 
   // 提交核对门禁:AI 核对代码 vs 需求验收标准,不匹配拦(列差异),匹配放行。
   async function submitReq() {
-    if (!selectedReq) { alert("先选需求"); return; }
+    if (!selectedReq) {
+      alert("先选需求");
+      return;
+    }
     const req = detail?.requirements?.find((q) => q.id === selectedReq);
-    if (!req) { return; }
+    if (!req) {
+      return;
+    }
     setSubmitting(true);
     setSubmitMsg("AI 核对代码 vs 需求验收标准…");
     try {
       const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: req.title, acceptance_criteria: req.acceptance_criteria || "" }),
+        body: JSON.stringify({
+          title: req.title,
+          acceptance_criteria: req.acceptance_criteria || "",
+        }),
       }).then((rr) => rr.json());
       if (r.code !== 0) {
         setSubmitMsg("❌ 核对未通过,请按差异修正:\n" + (r.message || ""));
@@ -319,92 +418,134 @@ export default function WorkspaceFrame() {
         onDeploy={deploy}
         onRegister={registerChange}
         registering={registering}
-        onOpenWindow={() => { if (url) window.open(url, "_blank"); }}
-        onReconnect={() => { setUrl(""); setReloadKey((k) => k + 1); }}
+        onOpenWindow={() => {
+          if (url) window.open(url, "_blank");
+        }}
+        onReconnect={() => {
+          setUrl("");
+          setReloadKey((k) => k + 1);
+        }}
         drawerOpen={drawerOpen}
         onToggleDrawer={toggleDrawer}
       />
-      {selectedReq && (() => {
-        const req = detail?.requirements?.find((q) => q.id === selectedReq);
-        if (!req) return null;
-        return (
-          <div className="border-b border-blue-200 bg-blue-50 px-3 py-1 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium text-blue-700">🎯 当前需求:{req.title}</span>
-              <button
-                onClick={() => dispatchReq()}
-                disabled={dispatching}
-                className="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-white"
-                title="AI 按此需求规格自动编码,完成后你可协助修正"
-              >
-                {dispatching ? "编码中…" : "🤖 AI 编码此需求"}
-              </button>
-              <button
-                onClick={runAutoTest}
-                disabled={testing}
-                className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-emerald-700"
-                title="AI 按需求验收标准生成用例 + 对着应用 URL 自动验收"
-              >
-                {testing ? "测试中…" : "🧪 自动测试"}
-              </button>
-              <button
-                onClick={breakdownReq}
-                disabled={breaking}
-                className="shrink-0 rounded bg-purple-100 px-2 py-0.5 text-purple-700"
-                title="AI 把需求拆成子任务清单,逐项打勾推进"
-              >
-                {breaking ? "拆解中…" : "📋 拆解子任务"}
-              </button>
-              <button
-                onClick={submitReq}
-                disabled={submitting}
-                className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-white"
-                title="提交前 AI 核对代码是否实现需求验收标准,不匹配会被拦"
-              >
-                {submitting ? "核对中…" : "🔒 提交核对"}
-              </button>
-              <button
-                onClick={mergeReq}
-                disabled={merging}
-                className="shrink-0 rounded bg-emerald-700 px-2 py-0.5 text-white"
-                title="合并 dev-<你> 到主线 main(worktree 模式上线前必做)"
-              >
-                {merging ? "合并中…" : "🔀 合并主线"}
-              </button>
-              <button onClick={() => { setSelectedReq(""); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubtasks([]); setSubmitMsg(""); }} className="shrink-0 text-neutral-400">✕</button>
+      {selectedReq &&
+        (() => {
+          const req = detail?.requirements?.find((q) => q.id === selectedReq);
+          if (!req) return null;
+          return (
+            <div className="border-b border-blue-200 bg-blue-50 px-3 py-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-medium text-blue-700">🎯 当前需求:{req.title}</span>
+                <button
+                  onClick={() => dispatchReq()}
+                  disabled={dispatching}
+                  className="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-white"
+                  title="AI 按此需求规格自动编码,完成后你可协助修正"
+                >
+                  {dispatching ? "编码中…" : "🤖 AI 编码此需求"}
+                </button>
+                <button
+                  onClick={runAutoTest}
+                  disabled={testing}
+                  className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-emerald-700"
+                  title="AI 按需求验收标准生成用例 + 对着应用 URL 自动验收"
+                >
+                  {testing ? "测试中…" : "🧪 自动测试"}
+                </button>
+                <button
+                  onClick={breakdownReq}
+                  disabled={breaking}
+                  className="shrink-0 rounded bg-purple-100 px-2 py-0.5 text-purple-700"
+                  title="AI 把需求拆成子任务清单,逐项打勾推进"
+                >
+                  {breaking ? "拆解中…" : "📋 拆解子任务"}
+                </button>
+                <button
+                  onClick={submitReq}
+                  disabled={submitting}
+                  className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-white"
+                  title="提交前 AI 核对代码是否实现需求验收标准,不匹配会被拦"
+                >
+                  {submitting ? "核对中…" : "🔒 提交核对"}
+                </button>
+                <button
+                  onClick={mergeReq}
+                  disabled={merging}
+                  className="shrink-0 rounded bg-emerald-700 px-2 py-0.5 text-white"
+                  title="合并 dev-<你> 到主线 main(worktree 模式上线前必做)"
+                >
+                  {merging ? "合并中…" : "🔀 合并主线"}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedReq("");
+                    setTaskMsg("");
+                    setTestMsg("");
+                    setTestResults(null);
+                    setSubtasks([]);
+                    setSubmitMsg("");
+                  }}
+                  className="shrink-0 text-neutral-400"
+                >
+                  ✕
+                </button>
+              </div>
+              {taskMsg && <div className="mt-0.5 whitespace-pre-wrap text-blue-600">{taskMsg}</div>}
+              {submitMsg && (
+                <div className="mt-0.5 whitespace-pre-wrap text-amber-700">{submitMsg}</div>
+              )}
+              {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
+              {testResults && testResults.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {testResults.map((tc, i) => (
+                    <div
+                      key={i}
+                      className={
+                        tc.actual_status === tc.expected_status
+                          ? "text-emerald-700"
+                          : "text-red-600"
+                      }
+                    >
+                      {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path}{" "}
+                      → {tc.actual_status || "(未跑)"}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {subtasks.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {subtasks.map((t, i) => (
+                    <div key={i} className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={t.done}
+                        onChange={() =>
+                          setSubtasks((prev) =>
+                            prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x))
+                          )
+                        }
+                      />
+                      <span
+                        className={`flex-1 ${t.done ? "line-through text-neutral-400" : "text-neutral-700"}`}
+                      >
+                        {t.text}
+                      </span>
+                      {!t.done && (
+                        <button
+                          onClick={() => dispatchReq(i)}
+                          className="shrink-0 text-blue-600"
+                          title="让 AI 做这一步"
+                        >
+                          ▶
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {taskMsg && <div className="mt-0.5 whitespace-pre-wrap text-blue-600">{taskMsg}</div>}
-            {submitMsg && <div className="mt-0.5 whitespace-pre-wrap text-amber-700">{submitMsg}</div>}
-            {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
-            {testResults && testResults.length > 0 && (
-              <div className="mt-1 space-y-0.5">
-                {testResults.map((tc, i) => (
-                  <div key={i} className={tc.actual_status === tc.expected_status ? "text-emerald-700" : "text-red-600"}>
-                    {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path} → {tc.actual_status || "(未跑)"}
-                  </div>
-                ))}
-              </div>
-            )}
-            {subtasks.length > 0 && (
-              <div className="mt-1 space-y-0.5">
-                {subtasks.map((t, i) => (
-                  <div key={i} className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={t.done}
-                      onChange={() => setSubtasks((prev) => prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
-                    />
-                    <span className={`flex-1 ${t.done ? "line-through text-neutral-400" : "text-neutral-700"}`}>{t.text}</span>
-                    {!t.done && (
-                      <button onClick={() => dispatchReq(i)} className="shrink-0 text-blue-600" title="让 AI 做这一步">▶</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+          );
+        })()}
       <div className="flex min-h-0 flex-1">
         {drawerOpen && !missingParams && (
           <ContextDrawer
@@ -420,18 +561,39 @@ export default function WorkspaceFrame() {
             onStartReq={async (id) => {
               // 认领(互斥):被他人认领会 409 拒绝
               try {
-                const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`, { method: "POST" }).then((rr) => rr.json());
-                if (r.code !== 0) { alert(r.message || "认领失败"); return; }
-              } catch (e) { alert(String(e)); return; }
-              setSelectedReq(id); setTaskMsg(""); setTestMsg(""); setTestResults(null); setSubmitMsg("");
-              try { setSubtasks(JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]")); } catch { setSubtasks([]); }
+                const r = await fetch(
+                  `${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`,
+                  { method: "POST" }
+                ).then((rr) => rr.json());
+                if (r.code !== 0) {
+                  alert(r.message || "认领失败");
+                  return;
+                }
+              } catch (e) {
+                alert(String(e));
+                return;
+              }
+              setSelectedReq(id);
+              setTaskMsg("");
+              setTestMsg("");
+              setTestResults(null);
+              setSubmitMsg("");
+              try {
+                setSubtasks(
+                  JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]")
+                );
+              } catch {
+                setSubtasks([]);
+              }
               fetchDetail();
             }}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
           {loading && !missingParams && (
-            <div className="p-4 text-sm text-neutral-500">启动 opencode 工作台…（首次约 3-5 秒）</div>
+            <div className="p-4 text-sm text-neutral-500">
+              启动 opencode 工作台…（首次约 3-5 秒）
+            </div>
           )}
           {showErr && !url && <div className="p-4 text-sm text-red-600">{showErr}</div>}
           {url && <iframe src={url} className="min-h-0 flex-1" title="opencode 编码工作台" />}

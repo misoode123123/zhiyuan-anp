@@ -8,15 +8,29 @@ import { devStep } from "@/lib/devstep";
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
 type Instance = {
-  env: string; status: string; url: string; version: number;
-  host_port: number; image: string; updated_at: string;
+  env: string;
+  status: string;
+  url: string;
+  version: number;
+  host_port: number;
+  image: string;
+  updated_at: string;
 };
 type EnvVar = { id: string; key: string; value: string; is_secret: boolean };
 type AppStats = { health?: string; cpu?: string; mem?: string; deployed?: boolean };
 type App = {
-  id: string; name: string; repo_dir: string; internal_port: number;
-  image: string; container_name: string; host_port: number; url: string;
-  version: number; status: string; last_error: string; build_log: string;
+  id: string;
+  name: string;
+  repo_dir: string;
+  internal_port: number;
+  image: string;
+  container_name: string;
+  host_port: number;
+  url: string;
+  version: number;
+  status: string;
+  last_error: string;
+  build_log: string;
   updated_at: string;
   instances?: Instance[]; // 各环境部署实例（test/prod）
 };
@@ -25,7 +39,13 @@ type Detail = {
   application: App;
   requirements: Req[];
   changes: { id: string; status: string; kind: string; source_id: string; created_at: string }[];
-  releases: { id: string; version: string; status: string; change_id: string; created_at: string }[];
+  releases: {
+    id: string;
+    version: string;
+    status: string;
+    change_id: string;
+    created_at: string;
+  }[];
   commits: { sha: string; message: string; date: string }[];
 };
 
@@ -46,21 +66,48 @@ function DevWizard({ app }: { app: App }) {
   const step = (key: "code" | "test" | "prod", label: string) => {
     const st = s[key];
     const isCur = s.current === key;
-    const cls = st === "done" ? "text-emerald-600" : isCur ? "font-semibold text-blue-600" : "text-neutral-400";
+    const cls =
+      st === "done"
+        ? "text-emerald-600"
+        : isCur
+          ? "font-semibold text-blue-600"
+          : "text-neutral-400";
     const mark = st === "done" ? "✅" : isCur ? "●" : "○";
-    return <span className={cls}>{label} {mark}</span>;
+    return (
+      <span className={cls}>
+        {label} {mark}
+      </span>
+    );
   };
   return (
     <div className="mb-2 rounded-md bg-blue-50/60 p-2 text-xs">
       <div className="flex items-center gap-2">
-        {step("code", "✏ 编码")}<span className="text-neutral-300">→</span>
-        {step("test", "🧪 测试")}<span className="text-neutral-300">→</span>
+        {step("code", "✏ 编码")}
+        <span className="text-neutral-300">→</span>
+        {step("test", "🧪 测试")}
+        <span className="text-neutral-300">→</span>
         {step("prod", "🚀 上线")}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 text-neutral-500">
-        <span>仓库 <code>{app.repo_dir}</code></span>
-        {testIns && <span>test <span className={testIns.status === "running" ? "text-emerald-600" : ""}>:{testIns.host_port} {testIns.status}</span></span>}
-        {prodIns && <span>prod <span className={prodIns.status === "running" ? "text-emerald-600" : ""}>:{prodIns.host_port} {prodIns.status}</span></span>}
+        <span>
+          仓库 <code>{app.repo_dir}</code>
+        </span>
+        {testIns && (
+          <span>
+            test{" "}
+            <span className={testIns.status === "running" ? "text-emerald-600" : ""}>
+              :{testIns.host_port} {testIns.status}
+            </span>
+          </span>
+        )}
+        {prodIns && (
+          <span>
+            prod{" "}
+            <span className={prodIns.status === "running" ? "text-emerald-600" : ""}>
+              :{prodIns.host_port} {prodIns.status}
+            </span>
+          </span>
+        )}
       </div>
       <div className="mt-1 text-blue-700">👉 {s.hint}</div>
     </div>
@@ -83,7 +130,9 @@ export default function ApplicationsPage() {
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
   const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
   const [appStats, setAppStats] = useState<Record<string, AppStats>>({});
-  const [appChanges, setAppChanges] = useState<Record<string, { id: string; status: string; output?: string; created_at?: string }[]>>({});
+  const [appChanges, setAppChanges] = useState<
+    Record<string, { id: string; status: string; output?: string; created_at?: string }[]>
+  >({});
   const router = useRouter();
 
   useEffect(() => {
@@ -98,7 +147,9 @@ export default function ApplicationsPage() {
 
   const load = (id: string) => {
     if (!id) return;
-    fetch(`${API_BASE_URL}/project-spaces/${id}/apps`).then((r) => r.json()).then((r: Envelope<App[]>) => setApps(r.data ?? []));
+    fetch(`${API_BASE_URL}/project-spaces/${id}/apps`)
+      .then((r) => r.json())
+      .then((r: Envelope<App[]>) => setApps(r.data ?? []));
   };
   useEffect(() => {
     load(psID);
@@ -112,7 +163,15 @@ export default function ApplicationsPage() {
       const r = await res.json();
       if (r.code === 0) {
         const d = r.data;
-        setAppStats((p) => ({ ...p, [id]: { health: d.health, cpu: d.stats?.cpu_perc, mem: d.stats?.mem_usage, deployed: d.deployed } }));
+        setAppStats((p) => ({
+          ...p,
+          [id]: {
+            health: d.health,
+            cpu: d.stats?.cpu_perc,
+            mem: d.stats?.mem_usage,
+            deployed: d.deployed,
+          },
+        }));
       }
     } catch {}
   }
@@ -127,9 +186,10 @@ export default function ApplicationsPage() {
   }
   // 轮询已上线(prod running)应用的资源/健康（运维可观测）
   useEffect(() => {
-    const poll = () => apps.forEach((a) => {
-      if (a.instances?.some((i) => i.env === "prod" && i.status === "running")) loadStats(a.id);
-    });
+    const poll = () =>
+      apps.forEach((a) => {
+        if (a.instances?.some((i) => i.env === "prod" && i.status === "running")) loadStats(a.id);
+      });
     poll();
     apps.forEach((a) => loadChanges(a.id));
     const t = setInterval(poll, 30000);
@@ -139,18 +199,24 @@ export default function ApplicationsPage() {
   async function register() {
     if (!form.name.trim()) return;
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
     const r = await res.json();
-    if (r.code !== 0) { alert(r.message); return; }
+    if (r.code !== 0) {
+      alert(r.message);
+      return;
+    }
     setForm({ name: "", internal_port: form.internal_port });
     load(psID);
   }
   async function act(id: string, action: "deploy" | "stop" | "start", env?: string) {
     const body = action === "deploy" && env ? { env } : {};
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
@@ -159,10 +225,18 @@ export default function ApplicationsPage() {
   async function promote(id: string) {
     const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
     if (chgs.length > 0) {
-      const summaries = chgs.map((c) => "• " + (((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60))).join("\n");
-      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`)) return;
+      const summaries = chgs
+        .map(
+          (c) =>
+            "• " + ((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60)
+        )
+        .join("\n");
+      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`))
+        return;
     }
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, { method: "POST" });
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, {
+      method: "POST",
+    });
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
     load(psID);
@@ -178,20 +252,28 @@ export default function ApplicationsPage() {
     setAppEnvs(r.data ?? []);
   }
   async function showEnv(id: string) {
-    if (envFor === id) { setEnvFor(""); return; }
+    if (envFor === id) {
+      setEnvFor("");
+      return;
+    }
     setEnvFor(id);
     await reloadEnv(id);
   }
   async function saveEnv(id: string) {
     if (!envForm.key.trim()) return;
     await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(envForm),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(envForm),
     });
     setEnvForm({ key: "", value: "", is_secret: false });
     reloadEnv(id);
   }
   async function removeEnv(id: string, key: string) {
-    await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
+    await fetch(
+      `${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`,
+      { method: "DELETE" }
+    );
     reloadEnv(id);
   }
   async function remove(id: string) {
@@ -206,14 +288,21 @@ export default function ApplicationsPage() {
     setLogs(r.data?.logs ?? "(无)");
   }
   async function showReqs(id: string) {
-    if (reqsFor === id) { setReqsFor(""); return; }
+    if (reqsFor === id) {
+      setReqsFor("");
+      return;
+    }
     setReqsFor(id);
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/requirements`);
     const r = await res.json();
     setAppReqs(r.data ?? []);
   }
   async function showDetail(id: string) {
-    if (detailFor === id) { setDetailFor(""); setDetail(null); return; }
+    if (detailFor === id) {
+      setDetailFor("");
+      setDetail(null);
+      return;
+    }
     setDetailFor(id);
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/detail`);
     const r = await res.json();
@@ -221,7 +310,8 @@ export default function ApplicationsPage() {
   }
   async function deployCommit(appID: string, sha: string) {
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy-commit`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sha }),
     });
     const r = await res.json();
@@ -233,27 +323,50 @@ export default function ApplicationsPage() {
     <div>
       <div className="mb-4 flex items-center gap-3">
         <h1 className="text-xl font-bold">📦 应用部署</h1>
-        <select value={psID} onChange={(e) => setPsID(e.target.value)} className="rounded-md border border-neutral-300 px-2 py-1 text-sm">
-          {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.slug})</option>))}
+        <select
+          value={psID}
+          onChange={(e) => setPsID(e.target.value)}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+        >
+          {spaces.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.slug})
+            </option>
+          ))}
         </select>
       </div>
       <p className="mb-4 text-sm text-neutral-600">
-        把研发产出的应用（含 Dockerfile 的源码目录）自动 <b>docker build → docker run → 分配端口 → 暴露 URL</b>。
-        repo_dir 填 <b>docker 守护进程可见的路径</b>（生产 .28 上形如 <code>/data/repos/myapp</code>）。
+        把研发产出的应用（含 Dockerfile 的源码目录）自动{" "}
+        <b>docker build → docker run → 分配端口 → 暴露 URL</b>。 repo_dir 填{" "}
+        <b>docker 守护进程可见的路径</b>（生产 .28 上形如 <code>/data/repos/myapp</code>）。
       </p>
 
       {/* 注册 */}
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
         <div>
           <label className="block text-xs text-neutral-500">应用名</label>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如 hello-go" className="rounded border border-neutral-300 px-2 py-1" />
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="如 hello-go"
+            className="rounded border border-neutral-300 px-2 py-1"
+          />
         </div>
         <div>
           <label className="block text-xs text-neutral-500">容器内端口（可选）</label>
-          <input type="number" value={form.internal_port} onChange={(e) => setForm({ ...form, internal_port: Number(e.target.value) })} className="w-24 rounded border border-neutral-300 px-2 py-1" />
+          <input
+            type="number"
+            value={form.internal_port}
+            onChange={(e) => setForm({ ...form, internal_port: Number(e.target.value) })}
+            className="w-24 rounded border border-neutral-300 px-2 py-1"
+          />
         </div>
-        <button onClick={register} className="rounded bg-blue-600 px-3 py-1.5 text-white">创建应用</button>
-        <span className="text-xs text-neutral-400">仓库自动托管到 /data/repos/&lt;应用名&gt;（git），opencode 编码即提交到此</span>
+        <button onClick={register} className="rounded bg-blue-600 px-3 py-1.5 text-white">
+          创建应用
+        </button>
+        <span className="text-xs text-neutral-400">
+          仓库自动托管到 /data/repos/&lt;应用名&gt;（git），opencode 编码即提交到此
+        </span>
       </div>
 
       {/* 应用列表 */}
@@ -263,24 +376,92 @@ export default function ApplicationsPage() {
             <DevWizard app={a} />
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono font-medium">{a.name}</span>
-              <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}>{a.status}</span>
-              {a.image && <span className="text-xs text-neutral-400">v{a.version} · {a.image}</span>}
+              <span
+                className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}
+              >
+                {a.status}
+              </span>
+              {a.image && (
+                <span className="text-xs text-neutral-400">
+                  v{a.version} · {a.image}
+                </span>
+              )}
               <div className="ml-auto flex gap-1">
-                <button onClick={() => act(a.id, "deploy")} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">构建部署(test)</button>
-                <button onClick={() => promote(a.id)} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">🚀 上线(prod)</button>
-                <select value={wsTool} onChange={(e) => setWsTool(e.target.value)} className="rounded border border-neutral-300 px-1 py-0.5 text-xs" title="选择交互编码工具">
+                <button
+                  onClick={() => act(a.id, "deploy")}
+                  className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700"
+                >
+                  构建部署(test)
+                </button>
+                <button
+                  onClick={() => promote(a.id)}
+                  className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
+                >
+                  🚀 上线(prod)
+                </button>
+                <select
+                  value={wsTool}
+                  onChange={(e) => setWsTool(e.target.value)}
+                  className="rounded border border-neutral-300 px-1 py-0.5 text-xs"
+                  title="选择交互编码工具"
+                >
                   <option value="opencode">opencode</option>
                   <option value="claude">claude*</option>
                   <option value="codex">codex*</option>
                 </select>
-                <button onClick={() => openWorkspace(a.id, wsTool)} className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700" title="打开该工具的官方交互编码界面（*为预留）">🧑‍💻 编码</button>
-                <button onClick={() => showEnv(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">⚙️变量</button>
-                {a.status === "running" && <button onClick={() => act(a.id, "stop")} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">停止</button>}
-                {a.status === "stopped" && <button onClick={() => act(a.id, "start")} className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">启动</button>}
-                <button onClick={() => showReqs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">需求</button>
-                <button onClick={() => showDetail(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">详情</button>
-                <button onClick={() => showLogs(a.id)} className="rounded bg-neutral-100 px-2 py-0.5 text-xs">日志</button>
-                <button onClick={() => remove(a.id)} className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">删除</button>
+                <button
+                  onClick={() => openWorkspace(a.id, wsTool)}
+                  className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700"
+                  title="打开该工具的官方交互编码界面（*为预留）"
+                >
+                  🧑‍💻 编码
+                </button>
+                <button
+                  onClick={() => showEnv(a.id)}
+                  className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                >
+                  ⚙️变量
+                </button>
+                {a.status === "running" && (
+                  <button
+                    onClick={() => act(a.id, "stop")}
+                    className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                  >
+                    停止
+                  </button>
+                )}
+                {a.status === "stopped" && (
+                  <button
+                    onClick={() => act(a.id, "start")}
+                    className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
+                  >
+                    启动
+                  </button>
+                )}
+                <button
+                  onClick={() => showReqs(a.id)}
+                  className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                >
+                  需求
+                </button>
+                <button
+                  onClick={() => showDetail(a.id)}
+                  className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                >
+                  详情
+                </button>
+                <button
+                  onClick={() => showLogs(a.id)}
+                  className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                >
+                  日志
+                </button>
+                <button
+                  onClick={() => remove(a.id)}
+                  className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700"
+                >
+                  删除
+                </button>
               </div>
             </div>
             <div className="mt-1 text-xs text-neutral-500">
@@ -289,7 +470,8 @@ export default function ApplicationsPage() {
             </div>
             {a.updated_at && (
               <div className="text-xs text-neutral-400">
-                {a.status === "running" ? "部署于" : "更新于"}：{new Date(a.updated_at).toLocaleString("zh-CN", { hour12: false })}
+                {a.status === "running" ? "部署于" : "更新于"}：
+                {new Date(a.updated_at).toLocaleString("zh-CN", { hour12: false })}
               </div>
             )}
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -299,114 +481,247 @@ export default function ApplicationsPage() {
                 return (
                   <div key={env} className="rounded bg-neutral-50 p-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded px-1.5 py-0.5 font-medium ${env === "prod" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>{label}</span>
-                      {ins && <span className={`rounded px-1.5 py-0.5 ${STATUS_COLOR[ins.status] ?? "bg-neutral-100"}`}>{ins.status}</span>}
-                      {ins && ins.version > 0 && <span className="text-neutral-400">v{ins.version}</span>}
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-medium ${env === "prod" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
+                      >
+                        {label}
+                      </span>
+                      {ins && (
+                        <span
+                          className={`rounded px-1.5 py-0.5 ${STATUS_COLOR[ins.status] ?? "bg-neutral-100"}`}
+                        >
+                          {ins.status}
+                        </span>
+                      )}
+                      {ins && ins.version > 0 && (
+                        <span className="text-neutral-400">v{ins.version}</span>
+                      )}
                     </div>
                     {ins?.url ? (
-                      <a href={ins.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-blue-600 hover:underline">{ins.url}</a>
+                      <a
+                        href={ins.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block truncate text-blue-600 hover:underline"
+                      >
+                        {ins.url}
+                      </a>
                     ) : (
-                      <div className="mt-1 text-neutral-400">{env === "prod" ? "未上线（点「上线」部署）" : "未部署（发布或「构建部署」）"}</div>
+                      <div className="mt-1 text-neutral-400">
+                        {env === "prod"
+                          ? "未上线（点「上线」部署）"
+                          : "未部署（发布或「构建部署」）"}
+                      </div>
                     )}
                     {env === "prod" && appStats[a.id]?.deployed && (
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
                         <span className="text-neutral-400">健康</span>
-                        <span className={(appStats[a.id].health === "up" ? "text-emerald-600" : "text-red-600") + " font-medium"}>{appStats[a.id].health}</span>
-                        {appStats[a.id].cpu && <span className="text-neutral-400">CPU {appStats[a.id].cpu} · 内存 {appStats[a.id].mem}</span>}
+                        <span
+                          className={
+                            (appStats[a.id].health === "up" ? "text-emerald-600" : "text-red-600") +
+                            " font-medium"
+                          }
+                        >
+                          {appStats[a.id].health}
+                        </span>
+                        {appStats[a.id].cpu && (
+                          <span className="text-neutral-400">
+                            CPU {appStats[a.id].cpu} · 内存 {appStats[a.id].mem}
+                          </span>
+                        )}
                       </div>
                     )}
-                    {env === "prod" && (appChanges[a.id] || []).filter((c) => c.status === "approved").length > 0 && (
-                      <div className="mt-1 rounded bg-amber-50 p-1 text-[11px]">
-                        <div className="font-medium text-amber-700">📋 待上线变更({(appChanges[a.id] || []).filter((c) => c.status === "approved").length})：</div>
-                        {(appChanges[a.id] || []).filter((c) => c.status === "approved").map((c) => (
-                          <div key={c.id} className="truncate text-amber-600">{((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 50)}</div>
-                        ))}
-                      </div>
-                    )}
+                    {env === "prod" &&
+                      (appChanges[a.id] || []).filter((c) => c.status === "approved").length >
+                        0 && (
+                        <div className="mt-1 rounded bg-amber-50 p-1 text-[11px]">
+                          <div className="font-medium text-amber-700">
+                            📋 待上线变更(
+                            {(appChanges[a.id] || []).filter((c) => c.status === "approved").length}
+                            )：
+                          </div>
+                          {(appChanges[a.id] || [])
+                            .filter((c) => c.status === "approved")
+                            .map((c) => (
+                              <div key={c.id} className="truncate text-amber-600">
+                                {(
+                                  (c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)
+                                ).slice(0, 50)}
+                              </div>
+                            ))}
+                        </div>
+                      )}
                   </div>
                 );
               })}
             </div>
-            {a.last_error && <div className="mt-1 rounded bg-red-50 p-1 text-xs text-red-700">{a.last_error}</div>}
+            {a.last_error && (
+              <div className="mt-1 rounded bg-red-50 p-1 text-xs text-red-700">{a.last_error}</div>
+            )}
             {logsFor === a.id && (
-              <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">{logs}</pre>
+              <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
+                {logs}
+              </pre>
             )}
             {reqsFor === a.id && (
               <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
                 <div className="mb-1 text-neutral-500">归属此应用的需求（{appReqs.length}）</div>
                 {appReqs.map((q) => (
                   <div key={q.id} className="flex items-center gap-2 py-0.5">
-                    <span className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500"}`}>{q.status}</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500"}`}
+                    >
+                      {q.status}
+                    </span>
                     <span className="truncate">{q.title}</span>
                   </div>
                 ))}
-                {appReqs.length === 0 && <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>}
+                {appReqs.length === 0 && (
+                  <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>
+                )}
               </div>
             )}
             {envFor === a.id && (
               <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
-                <div className="mb-1 text-neutral-500">运行时环境变量（部署时 -e 注入容器；🔒=密钥已隐藏明文）</div>
+                <div className="mb-1 text-neutral-500">
+                  运行时环境变量（部署时 -e 注入容器；🔒=密钥已隐藏明文）
+                </div>
                 <div className="space-y-1">
                   {appEnvs.map((e) => (
                     <div key={e.id} className="flex items-center gap-2">
                       <code className="text-neutral-700">{e.key}</code>
                       <span className="text-neutral-400">=</span>
-                      <span className={e.is_secret ? "text-amber-600" : "text-neutral-600"}>{e.is_secret ? "🔒 已隐藏" : (e.value || "(空)")}</span>
-                      <button onClick={() => removeEnv(a.id, e.key)} className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-red-700">删</button>
+                      <span className={e.is_secret ? "text-amber-600" : "text-neutral-600"}>
+                        {e.is_secret ? "🔒 已隐藏" : e.value || "(空)"}
+                      </span>
+                      <button
+                        onClick={() => removeEnv(a.id, e.key)}
+                        className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-red-700"
+                      >
+                        删
+                      </button>
                     </div>
                   ))}
                   {appEnvs.length === 0 && <div className="text-neutral-400">暂无</div>}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-neutral-200 pt-2">
-                  <input value={envForm.key} onChange={(ev) => setEnvForm({ ...envForm, key: ev.target.value })} placeholder="KEY" className="w-28 rounded border border-neutral-300 px-1 py-0.5" />
-                  <input value={envForm.value} onChange={(ev) => setEnvForm({ ...envForm, value: ev.target.value })} placeholder="value" type={envForm.is_secret ? "password" : "text"} className="flex-1 rounded border border-neutral-300 px-1 py-0.5" />
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={envForm.is_secret} onChange={(ev) => setEnvForm({ ...envForm, is_secret: ev.target.checked })} />密钥</label>
-                  <button onClick={() => saveEnv(a.id)} className="rounded bg-blue-600 px-2 py-0.5 text-white">保存</button>
+                  <input
+                    value={envForm.key}
+                    onChange={(ev) => setEnvForm({ ...envForm, key: ev.target.value })}
+                    placeholder="KEY"
+                    className="w-28 rounded border border-neutral-300 px-1 py-0.5"
+                  />
+                  <input
+                    value={envForm.value}
+                    onChange={(ev) => setEnvForm({ ...envForm, value: ev.target.value })}
+                    placeholder="value"
+                    type={envForm.is_secret ? "password" : "text"}
+                    className="flex-1 rounded border border-neutral-300 px-1 py-0.5"
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={envForm.is_secret}
+                      onChange={(ev) => setEnvForm({ ...envForm, is_secret: ev.target.checked })}
+                    />
+                    密钥
+                  </label>
+                  <button
+                    onClick={() => saveEnv(a.id)}
+                    className="rounded bg-blue-600 px-2 py-0.5 text-white"
+                  >
+                    保存
+                  </button>
                 </div>
               </div>
             )}
             {detailFor === a.id && detail && (
               <>
-              <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-neutral-50 p-2 text-xs md:grid-cols-3">
-                <div>
-                  <div className="mb-1 font-medium text-neutral-500">需求（{detail.requirements.length}）</div>
-                  {detail.requirements.map((q) => (<div key={q.id} className="truncate"><span className={q.status === "delivered" ? "text-emerald-600" : "text-neutral-500"}>●</span> {q.title}</div>))}
-                  {detail.requirements.length === 0 && <div className="text-neutral-400">无</div>}
-                </div>
-                <div>
-                  <div className="mb-1 font-medium text-neutral-500">变更（{detail.changes.length}）</div>
-                  {detail.changes.map((c) => (<div key={c.id}><span className={c.status === "approved" ? "text-emerald-600" : "text-amber-600"}>●</span> {c.kind} · {c.status}</div>))}
-                  {detail.changes.length === 0 && <div className="text-neutral-400">无</div>}
-                </div>
-                <div>
-                  <div className="mb-1 font-medium text-neutral-500">发布（{detail.releases.length}）</div>
-                  {detail.releases.map((r) => (<div key={r.id}><span className="text-blue-600">●</span> {r.version} · {r.status}</div>))}
-                  {detail.releases.length === 0 && <div className="text-neutral-400">无</div>}
-                </div>
-              </div>
-              {detail.commits.length > 0 && (
-                <div className="mt-2 border-t border-neutral-200 pt-2">
-                  <div className="mb-1 font-medium text-neutral-500">版本历史（{detail.commits.length}，可部署/回滚任意版本）</div>
-                  <div className="space-y-1">
-                    {detail.commits.map((c) => (
-                      <div key={c.sha} className="flex items-center gap-2">
-                        <code className="text-xs text-neutral-400">{c.sha.slice(0, 7)}</code>
-                        <span className="truncate text-neutral-700">{c.message}</span>
-                        <button onClick={() => deployCommit(a.id, c.sha)} className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">部署此版本</button>
+                <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-neutral-50 p-2 text-xs md:grid-cols-3">
+                  <div>
+                    <div className="mb-1 font-medium text-neutral-500">
+                      需求（{detail.requirements.length}）
+                    </div>
+                    {detail.requirements.map((q) => (
+                      <div key={q.id} className="truncate">
+                        <span
+                          className={
+                            q.status === "delivered" ? "text-emerald-600" : "text-neutral-500"
+                          }
+                        >
+                          ●
+                        </span>{" "}
+                        {q.title}
                       </div>
                     ))}
+                    {detail.requirements.length === 0 && <div className="text-neutral-400">无</div>}
+                  </div>
+                  <div>
+                    <div className="mb-1 font-medium text-neutral-500">
+                      变更（{detail.changes.length}）
+                    </div>
+                    {detail.changes.map((c) => (
+                      <div key={c.id}>
+                        <span
+                          className={
+                            c.status === "approved" ? "text-emerald-600" : "text-amber-600"
+                          }
+                        >
+                          ●
+                        </span>{" "}
+                        {c.kind} · {c.status}
+                      </div>
+                    ))}
+                    {detail.changes.length === 0 && <div className="text-neutral-400">无</div>}
+                  </div>
+                  <div>
+                    <div className="mb-1 font-medium text-neutral-500">
+                      发布（{detail.releases.length}）
+                    </div>
+                    {detail.releases.map((r) => (
+                      <div key={r.id}>
+                        <span className="text-blue-600">●</span> {r.version} · {r.status}
+                      </div>
+                    ))}
+                    {detail.releases.length === 0 && <div className="text-neutral-400">无</div>}
                   </div>
                 </div>
-              )}
+                {detail.commits.length > 0 && (
+                  <div className="mt-2 border-t border-neutral-200 pt-2">
+                    <div className="mb-1 font-medium text-neutral-500">
+                      版本历史（{detail.commits.length}，可部署/回滚任意版本）
+                    </div>
+                    <div className="space-y-1">
+                      {detail.commits.map((c) => (
+                        <div key={c.sha} className="flex items-center gap-2">
+                          <code className="text-xs text-neutral-400">{c.sha.slice(0, 7)}</code>
+                          <span className="truncate text-neutral-700">{c.message}</span>
+                          <button
+                            onClick={() => deployCommit(a.id, c.sha)}
+                            className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700"
+                          >
+                            部署此版本
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
         ))}
-        {apps.length === 0 && <div className="text-sm text-neutral-400">暂无应用。注册一个（源码目录需含 Dockerfile）后点「构建部署」。</div>}
+        {apps.length === 0 && (
+          <div className="text-sm text-neutral-400">
+            暂无应用。注册一个（源码目录需含 Dockerfile）后点「构建部署」。
+          </div>
+        )}
       </div>
 
       <div className="mt-4 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
-        说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是<b>后端容器内可见</b>的路径（产出应用默认在 <code>/data/repos/&lt;应用名&gt;</code>，对应宿主 <code>/opt/anp/data/repos/...</code>）。端口自动从 9100-9300 分配。
+        说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是
+        <b>后端容器内可见</b>的路径（产出应用默认在 <code>/data/repos/&lt;应用名&gt;</code>
+        ，对应宿主 <code>/opt/anp/data/repos/...</code>）。端口自动从 9100-9300 分配。
       </div>
     </div>
   );

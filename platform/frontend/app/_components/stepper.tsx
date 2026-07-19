@@ -11,8 +11,8 @@ export function FlowStepper({ current }: { current: number }) {
               i === current
                 ? "bg-blue-600 text-white"
                 : i < current
-                ? "bg-emerald-500 text-white"
-                : "bg-neutral-200 text-neutral-500"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-neutral-200 text-neutral-500"
             }`}
           >
             {i + 1}. {s}

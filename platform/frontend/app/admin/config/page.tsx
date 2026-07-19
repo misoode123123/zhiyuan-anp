@@ -43,10 +43,13 @@ export default function ConfigPage() {
     load();
   }
 
-  const grouped = items.reduce((acc, it) => {
-    (acc[it.category] ||= []).push(it);
-    return acc;
-  }, {} as Record<string, ConfigItem[]>);
+  const grouped = items.reduce(
+    (acc, it) => {
+      (acc[it.category] ||= []).push(it);
+      return acc;
+    },
+    {} as Record<string, ConfigItem[]>
+  );
 
   const isSecret = (k: string) => k.includes("key") || k.includes("secret");
 
@@ -63,7 +66,10 @@ export default function ConfigPage() {
           <div className="mb-2 text-sm font-semibold text-neutral-700">{cat}</div>
           <div className="space-y-2">
             {list.map((it) => (
-              <div key={it.key} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2">
+              <div
+                key={it.key}
+                className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2"
+              >
                 <div className="w-56 shrink-0">
                   <div className="font-mono text-xs text-neutral-700">{it.key}</div>
                   <div className="text-xs text-neutral-400">{it.description || "—"}</div>

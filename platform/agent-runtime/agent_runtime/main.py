@@ -1,4 +1,5 @@
 """智源 ANP AI 运行时入口（FastAPI + Uvicorn）。"""
+
 import logging
 
 import uvicorn
@@ -27,8 +28,12 @@ async def health() -> dict:
 
 
 def main() -> None:
-    logger.info("agent-runtime starting on :%s (env=%s, model=%s)",
-                settings.port, settings.env, settings.default_model)
+    logger.info(
+        "agent-runtime starting on :%s (env=%s, model=%s)",
+        settings.port,
+        settings.env,
+        settings.default_model,
+    )
     uvicorn.run("agent_runtime.main:app", host="0.0.0.0", port=settings.port, reload=False)
 
 

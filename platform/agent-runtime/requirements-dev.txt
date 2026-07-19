@@ -1,0 +1,3 @@
+# 开发期工具（非运行时依赖）。安装：pip install -r requirements-dev.txt
+ruff>=0.6
+pyright>=1.1

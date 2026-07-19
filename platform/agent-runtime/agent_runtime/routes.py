@@ -1,7 +1,8 @@
 """HTTP 路由。M0：Go 后端经 HTTP 调用；装 protoc 后切 gRPC（见 infra/proto）。"""
+
 import base64
 import json
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -19,16 +20,16 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
-    model: Optional[str] = None
-    trace_id: Optional[str] = None
+    model: str | None = None
+    trace_id: str | None = None
 
 
 class ChatResponse(BaseModel):
     model: str
-    content: Optional[str] = None
-    usage: Optional[dict] = None
-    error: Optional[str] = None
-    mock: Optional[bool] = None
+    content: str | None = None
+    usage: dict | None = None
+    error: str | None = None
+    mock: bool | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)

@@ -18,17 +18,26 @@ export function ProjectDocs({ psID, appID }: { psID: string; appID: string }) {
     let aborted = false;
     fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/repo-docs`)
       .then((r) => r.json())
-      .then((r) => { if (!aborted) setDocs(r.data ?? []); })
+      .then((r) => {
+        if (!aborted) setDocs(r.data ?? []);
+      })
       .catch(() => {});
-    return () => { aborted = true; };
+    return () => {
+      aborted = true;
+    };
   }, [psID, appID]);
 
   async function toggle(path: string) {
-    if (open === path) { setOpen(null); return; }
+    if (open === path) {
+      setOpen(null);
+      return;
+    }
     setOpen(path);
     setLoading(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/repo-file?path=${encodeURIComponent(path)}`).then((rr) => rr.json());
+      const r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/repo-file?path=${encodeURIComponent(path)}`
+      ).then((rr) => rr.json());
       setContent(r.data?.content ?? "(空)");
     } catch (e) {
       setContent(String(e));
@@ -43,7 +52,9 @@ export function ProjectDocs({ psID, appID }: { psID: string; appID: string }) {
         <div key={d.path}>
           <button onClick={() => toggle(d.path)} className="flex w-full gap-1 py-0.5 text-left">
             <span>{open === d.path ? "▾" : "▸"}</span>
-            <span className="truncate text-neutral-700" title={d.path}>📄 {d.path}</span>
+            <span className="truncate text-neutral-700" title={d.path}>
+              📄 {d.path}
+            </span>
           </button>
           {open === d.path && (
             <pre className="mb-1 ml-3 max-h-64 overflow-auto whitespace-pre-wrap border-l border-neutral-300 bg-white p-1 text-[11px] text-neutral-700">
