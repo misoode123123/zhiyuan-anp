@@ -80,6 +80,37 @@ jobs:
       - name: ruff format check
         run: ruff format --check .
 
+  # ============ OpenAPI 契约（生成 + 一致性检查）============
+  openapi:
+    name: OpenAPI (swag + gen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.31.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - name: install swag
+        working-directory: platform/backend
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+      - name: swag init
+        working-directory: platform/backend
+        run: swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+      - run: pnpm install --frozen-lockfile
+      - name: swagger2openapi + openapi-typescript
+        run: |
+          cd platform/frontend
+          pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json
+          pnpm exec openapi-typescript ../backend/docs/openapi.json -o lib/api-types.ts
+      - name: 契约一致性（生成的须与提交一致，否则说明改了 handler 没 regen）
+        run: git diff --exit-code -- platform/backend/docs platform/frontend/lib/api-types.ts
+
   # ============ 安全扫描（密钥泄漏）============
   security:
     name: Security (gitleaks)

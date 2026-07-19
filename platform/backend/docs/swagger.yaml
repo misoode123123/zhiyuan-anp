@@ -7,8 +7,8 @@ definitions:
       password:
         type: string
     required:
-      - name
-      - password
+    - name
+    - password
     type: object
 info:
   contact: {}
@@ -19,16 +19,16 @@ paths:
   /auth/login:
     post:
       consumes:
-        - application/json
+      - application/json
       parameters:
-        - description: 登录凭证(name+password)
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: "#/definitions/internal_auth.loginBody"
+      - description: 登录凭证(name+password)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.loginBody'
       produces:
-        - application/json
+      - application/json
       responses:
         "200":
           description: code/message/data{token,user}
@@ -47,11 +47,11 @@ paths:
             type: object
       summary: 用户登录
       tags:
-        - 认证
+      - 认证
   /auth/logout:
     post:
       produces:
-        - application/json
+      - application/json
       responses:
         "200":
           description: logged_out
@@ -59,14 +59,14 @@ paths:
             additionalProperties: true
             type: object
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       summary: 登出
       tags:
-        - 认证
+      - 认证
   /auth/me:
     get:
       produces:
-        - application/json
+      - application/json
       responses:
         "200":
           description: user
@@ -74,10 +74,10 @@ paths:
             additionalProperties: true
             type: object
       security:
-        - BearerAuth: []
+      - BearerAuth: []
       summary: 当前登录用户
       tags:
-        - 认证
+      - 认证
 securityDefinitions:
   BearerAuth:
     in: header

@@ -18,3 +18,7 @@ tmp/
 
 # 第三方 / 试点产出（AI 生成代码，不纳入格式化）
 pilots/
+
+# OpenAPI 生成产物（swag/openapi-typescript 生成，不格式化）
+platform/backend/docs/
+platform/frontend/lib/api-types.ts
