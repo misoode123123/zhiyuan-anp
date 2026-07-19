@@ -1,0 +1,86 @@
+basePath: /api/v1
+definitions:
+  internal_auth.loginBody:
+    properties:
+      name:
+        type: string
+      password:
+        type: string
+    required:
+      - name
+      - password
+    type: object
+info:
+  contact: {}
+  description: 企业 AI 原生研发平台后端（AI 驱动 需求→研发→测试→审批→发布 全流程）
+  title: 智源 ANP 平台 API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+        - application/json
+      parameters:
+        - description: 登录凭证(name+password)
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/internal_auth.loginBody"
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: code/message/data{token,user}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 凭证错误
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户登录
+      tags:
+        - 认证
+  /auth/logout:
+    post:
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: logged_out
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+        - BearerAuth: []
+      summary: 登出
+      tags:
+        - 认证
+  /auth/me:
+    get:
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: user
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+        - BearerAuth: []
+      summary: 当前登录用户
+      tags:
+        - 认证
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

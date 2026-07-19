@@ -123,6 +123,16 @@ type loginBody struct {
 }
 
 // Login 用户名+密码登录，返回 token（后续请求带 Authorization: Bearer <token>）。
+//
+// @Summary      用户登录
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        body  body      loginBody  true  "登录凭证(name+password)"
+// @Success      200   {object}  map[string]interface{}  "code/message/data{token,user}"
+// @Failure      400   {object}  map[string]interface{}  "invalid body"
+// @Failure      401   {object}  map[string]interface{}  "凭证错误"
+// @Router       /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var in loginBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -138,6 +148,13 @@ func (h *Handler) Login(c *gin.Context) {
 }
 
 // Logout 登出（吊销当前 token）。
+//
+// @Summary      登出
+// @Tags         认证
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]interface{}  "logged_out"
+// @Router       /auth/logout [post]
 func (h *Handler) Logout(c *gin.Context) {
 	if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		_ = h.store.Logout(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
@@ -146,6 +163,13 @@ func (h *Handler) Logout(c *gin.Context) {
 }
 
 // Me 当前登录用户。
+//
+// @Summary      当前登录用户
+// @Tags         认证
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]interface{}  "user"
+// @Router       /auth/me [get]
 func (h *Handler) Me(c *gin.Context) {
 	httpx.OK(c, gin.H{"user": c.GetString(CtxUserID)})
 }

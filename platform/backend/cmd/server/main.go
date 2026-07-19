@@ -1,4 +1,12 @@
 // Package main 是智源 ANP 平台后端入口。
+//
+// @title           智源 ANP 平台 API
+// @version         1.0
+// @description     企业 AI 原生研发平台后端（AI 驱动 需求→研发→测试→审批→发布 全流程）
+// @BasePath        /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 package main
 
 import (
