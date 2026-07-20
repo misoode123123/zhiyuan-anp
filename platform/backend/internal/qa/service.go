@@ -169,17 +169,19 @@ func (s *Service) RunHTTPRequest(ctx context.Context, tc *TestCase, baseURL stri
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	tc.ActualStatus = resp.StatusCode
 	tc.ActualBody = truncate(string(body), 500)
-	pass := true
-	if tc.ExpectedStatus != 0 && resp.StatusCode != tc.ExpectedStatus {
-		pass = false
-	}
-	if eb := strings.TrimSpace(tc.ExpectedBody); eb != "" && !strings.Contains(string(body), eb) {
-		pass = false
-	}
-	if pass {
+	statusOK := tc.ExpectedStatus == 0 || resp.StatusCode == tc.ExpectedStatus
+	bodyOK := strings.TrimSpace(tc.ExpectedBody) == "" || strings.Contains(string(body), strings.TrimSpace(tc.ExpectedBody))
+	switch {
+	case !statusOK && tc.ExpectedStatus >= 500 && resp.StatusCode < 500:
+		// 期望异常(5xx)但请求正常返回:异常状态无法自动触发(如 GET 无参),标人工而非失败
+		tc.Status = "manual"
+		tc.ActualBody = tc.ActualBody + "\n(期望异常状态 " + fmt.Sprintf("%d", tc.ExpectedStatus) + " 但无触发方式,需人工验证异常路径)"
+	case !statusOK:
+		tc.Status = "failed" // status 不符(非异常用例)= 真失败
+	case !bodyOK:
+		tc.Status = "partial" // status 对但 body 不符:AI expected_body 可能猜错实现格式,降为部分通过
+	default:
 		tc.Status = "passed"
-	} else {
-		tc.Status = "failed"
 	}
 	return s.store.UpdateRun(ctx, tc)
 }

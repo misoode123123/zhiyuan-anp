@@ -258,8 +258,29 @@ func TestRunHTTPRequest_FailBody(t *testing.T) {
 	if err := svc.RunHTTPRequest(ctx, tc, srv.URL); err != nil {
 		t.Fatalf("RunHTTPRequest: %v", err)
 	}
-	if tc.Status != "failed" {
-		t.Fatalf("body 不匹配应标 failed，得到 %s", tc.Status)
+	if tc.Status != "partial" {
+		t.Fatalf("body 不匹配但 status 对应标 partial(AI expected 可能猜错),得到 %s", tc.Status)
+	}
+}
+
+// TestRunHTTPRequest_ExpectErrorManual 期望异常(5xx)但请求正常返回 → manual(异常无触发方式,不判 failed)。
+func TestRunHTTPRequest_ExpectErrorManual(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "expect_err")
+	tc.ID = "tc_expect_err"
+	tc.ExpectedStatus = 500
+	_ = svc.store.Create(ctx, tc)
+	if err := svc.RunHTTPRequest(ctx, tc, srv.URL); err != nil {
+		t.Fatalf("RunHTTPRequest: %v", err)
+	}
+	if tc.Status != "manual" {
+		t.Fatalf("期望异常但正常返回应标 manual,得到 %s", tc.Status)
 	}
 }
 
