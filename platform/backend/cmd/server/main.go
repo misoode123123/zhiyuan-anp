@@ -22,9 +22,9 @@ import (
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
 
-	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/attendance"
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codetask"
@@ -35,6 +35,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/db"
 	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/docs"
+	zhlog "zhiyuan-anp/platform/backend/internal/log"
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
@@ -44,10 +45,15 @@ import (
 	"zhiyuan-anp/platform/backend/internal/server"
 	"zhiyuan-anp/platform/backend/internal/standard"
 	"zhiyuan-anp/platform/backend/internal/workspace"
-	zhlog "zhiyuan-anp/platform/backend/internal/log"
 )
 
 func main() {
+	// 子命令：migrate-up / migrate-down（仅迁移不启 server，供 make 调用）。
+	if len(os.Args) > 1 && (os.Args[1] == "migrate-up" || os.Args[1] == "migrate-down") {
+		runMigrateCmd(os.Args[1])
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		panic(err)
@@ -256,5 +262,33 @@ func main() {
 	defer cancel()
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", zap.Error(err))
+	}
+}
+
+// runMigrateCmd 处理 migrate-up / migrate-down 子命令：只跑迁移（不启 server）。
+func runMigrateCmd(cmd string) {
+	cfg, err := config.Load()
+	if err != nil {
+		panic(err)
+	}
+	logger := zhlog.New(cfg.LogLevel)
+	defer logger.Sync()
+	database, err := db.Open(cfg.DatabaseURL)
+	if err != nil {
+		logger.Fatal("open db", zap.Error(err))
+	}
+	defer database.Close()
+	ctx := context.Background()
+	switch cmd {
+	case "migrate-up":
+		if err := db.Migrate(ctx, database); err != nil {
+			logger.Fatal("migrate-up", zap.Error(err))
+		}
+		logger.Info("migrate-up done")
+	case "migrate-down":
+		if err := db.MigrateDown(ctx, database); err != nil {
+			logger.Fatal("migrate-down", zap.Error(err))
+		}
+		logger.Info("migrate-down done（回滚最新一步）")
 	}
 }
