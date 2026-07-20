@@ -44,7 +44,7 @@ func (h *Handler) Register(r gin.IRouter) {
 // @Router       /project-spaces/{id}/my-tasks [get]
 func (h *Handler) MyTasks(c *gin.Context) {
 	psID := c.Param("id")
-	user := c.GetHeader("X-User")
+	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
 	}
@@ -192,7 +192,7 @@ func (h *Handler) Breakdown(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/requirements/{rid}/assign [post]
 func (h *Handler) Assign(c *gin.Context) {
-	user := c.GetHeader("X-User")
+	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/config"
@@ -141,7 +142,7 @@ func (h *Handler) Workspace(c *gin.Context) {
 		Tool string `json:"tool"` // opencode(默认) / claude / codex ...
 	}
 	_ = c.ShouldBindJSON(&in)
-	user := c.GetHeader("X-User") // 开发者身份（不同开发者可各选各的工具）
+	user := c.GetString(auth.CtxUserID) // 开发者身份（不同开发者可各选各的工具）
 	if user == "" {
 		user = "anonymous"
 	}
@@ -190,7 +191,7 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	// 自动获取 opencode 对话内容(免手填)
 	conversation := ""
 	if h.codeWS != nil {
-		user := c.GetHeader("X-User")
+		user := c.GetString(auth.CtxUserID)
 		if user == "" {
 			user = "anonymous"
 		}
@@ -327,7 +328,7 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
 	}
-	user := c.GetHeader("X-User")
+	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
 	}
@@ -387,7 +388,7 @@ func (h *Handler) Submit(c *gin.Context) {
 		return
 	}
 	// P0-1:读开发者 worktree 代码(.worktrees/<user>/),不是主 repo
-	user := c.GetHeader("X-User")
+	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
 	}
@@ -457,7 +458,7 @@ func (h *Handler) Merge(c *gin.Context) {
 		ReqID string `json:"req_id"` // 合并哪条需求的变更(收敛:释放认领+delivered)
 	}
 	_ = c.ShouldBindJSON(&in)
-	user := c.GetHeader("X-User")
+	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
 	}

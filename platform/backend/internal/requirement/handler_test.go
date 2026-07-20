@@ -63,6 +63,13 @@ func newHandlerWith(t *testing.T, repo *Repository, chgStore *change.Store) *gin
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// 模拟 AuthUser:测试用 X-User 头 → 注入 CtxUserID(撤回退后 handler 读 CtxUserID)
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
 	svc := NewService(repo, "", nil, nil, nil)
 	h := NewHandler(svc, chgStore, nil) // authStore=nil：跳过 RBAC（其逻辑属 auth 包）
 	h.Register(r.Group("/api/v1"))
@@ -350,6 +357,13 @@ func TestHandler_MyTasks_WithAuthStoreRoles(t *testing.T) {
 	authStore := auth.NewStore(db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// 模拟 AuthUser:测试用 X-User 头 → 注入 CtxUserID(撤回退后 handler 读 CtxUserID)
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
 	svc := NewService(repo, "", nil, nil, nil)
 	h := NewHandler(svc, chg, authStore)
 	h.Register(r.Group("/api/v1"))
@@ -381,6 +395,13 @@ func newClosedRepoHandler(t *testing.T) http.Handler {
 	_ = repo.db.Close() // 关库 → 后续查询/执行均报错
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// 模拟 AuthUser:测试用 X-User 头 → 注入 CtxUserID(撤回退后 handler 读 CtxUserID)
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
 	svc := NewService(repo, "", nil, nil, nil)
 	h := NewHandler(svc, nil, nil)
 	h.Register(r.Group("/api/v1"))

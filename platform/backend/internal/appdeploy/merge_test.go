@@ -63,6 +63,13 @@ func setupMerge(t *testing.T, approved, makeWorktree bool) (*Handler, *sqlx.DB) 
 func doMerge(h *Handler, body, user string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// 模拟 AuthUser:X-User 头 → CtxUserID(撤回退后 handler 读 CtxUserID)
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
 	r.POST("/p/:id/a/:aid/merge", h.Merge)
 	req := httptest.NewRequest("POST", "/p/ps_1/a/app_1/merge", strings.NewReader(body))
 	req.Header.Set("X-User", user)

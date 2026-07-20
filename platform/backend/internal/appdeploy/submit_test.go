@@ -63,6 +63,13 @@ func setupSubmit(t *testing.T, ac, user string, makeWorktree bool, check checkFu
 func doSubmit(h *Handler, body, user string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	// 模拟 AuthUser:X-User 头 → CtxUserID(撤回退后 handler 读 CtxUserID)
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
 	r.POST("/p/:id/a/:aid/submit", h.Submit)
 	req := httptest.NewRequest("POST", "/p/ps_1/a/app_1/submit", strings.NewReader(body))
 	if user != "" {

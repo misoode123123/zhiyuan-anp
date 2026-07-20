@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -89,7 +90,7 @@ func (h *Handler) Reject(c *gin.Context) {
 
 // reviewer M1 取自请求头 X-User，默认 user。
 func reviewer(c *gin.Context) string {
-	if u := c.GetHeader("X-User"); u != "" {
+	if u := c.GetString(auth.CtxUserID); u != "" {
 		return u
 	}
 	return "user"
