@@ -13,6 +13,9 @@ type Change = {
   status: string;
   app_name: string;
   created_at: string;
+  reviewer?: string;
+  reviewed_at?: string;
+  output?: string;
 };
 type Rel = { id: string; change_id: string; version: string; status: string; created_at: string };
 
@@ -118,22 +121,37 @@ export default function ReleasePage() {
               key={c.id}
               className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm"
             >
-              <div className="min-w-0">
-                <span className="font-medium text-neutral-800">
-                  {c.app_name || c.id.slice(0, 12)}
-                </span>
-                <span className="ml-2 font-mono text-[10px] text-neutral-400">
-                  {c.id.slice(0, 12)}
-                </span>
-                {c.created_at && (
-                  <span className="ml-2 text-xs text-neutral-400">
-                    📅 {new Date(c.created_at).toLocaleString("zh-CN", { hour12: false })}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-neutral-800">
+                    {c.app_name || c.id.slice(0, 12)}
                   </span>
-                )}
+                  <span className="font-mono text-[10px] text-neutral-400">
+                    {c.id.slice(0, 12)}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-xs text-neutral-500">
+                  👤 提交/审批: {c.reviewer || "?"}
+                  {(c.reviewed_at || c.created_at) && (
+                    <span className="ml-2">
+                      📅{" "}
+                      {new Date(c.reviewed_at || c.created_at).toLocaleString("zh-CN", {
+                        hour12: false,
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 line-clamp-1 text-xs text-neutral-600">
+                  📝 {(c.output || "").match(/【总结】(.+)/)?.[1] || c.prompt || "(无内容说明)"}
+                </div>
               </div>
               <button
                 onClick={() => release(c.id)}
-                className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+                className="ml-2 shrink-0 rounded bg-emerald-600 px-2 py-1 text-xs text-white"
               >
                 发布
               </button>
