@@ -46,11 +46,14 @@ CREATE TABLE IF NOT EXISTS "user" (
 CREATE TABLE IF NOT EXISTS requirement (
   id                  TEXT PRIMARY KEY,
   project_space_id    TEXT NOT NULL,
+  application_id      TEXT,        -- 归属应用(发布自动部署后回填)
   title               TEXT NOT NULL,
   description         TEXT,
   user_story          TEXT,
   acceptance_criteria TEXT,
   status              TEXT NOT NULL DEFAULT 'draft',
+  priority            TEXT,        -- 优先级
+  fixed_version       TEXT,        -- 计划版本
   tasks               TEXT,        -- JSON 子任务清单(AI 拆解)
   assignee            TEXT,        -- 认领的开发者(认领互斥)
   assigned_at         TIMESTAMP,

@@ -63,6 +63,7 @@ func (s *Store) ListSkills(ctx context.Context, psID, status string, publicOnly 
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
 	q += ` ORDER BY created_at DESC`
+	q = sqlx.Rebind(sqlx.DOLLAR, q) // 动态拼 WHERE，?→$N（PG 兼容）
 	var list []Skill
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err

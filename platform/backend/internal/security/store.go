@@ -87,7 +87,7 @@ func (s *Store) RunScan(ctx context.Context, psID, content, scanType string) (*S
 // ListFindings 发现列表（severity/status 可选）。
 func (s *Store) ListFindings(ctx context.Context, psID, severity, status string) ([]Finding, error) {
 	q := `SELECT id, project_space_id, scan_result_id, category, rule_id, severity, title, description, line_number, code_snippet, remediation, confidence, status, created_at, suppressed_at
-	      FROM security_finding WHERE project_space_id = $1`
+	      FROM security_finding WHERE project_space_id = ?`
 	args := []interface{}{psID}
 	if severity != "" {
 		q += ` AND severity = ?`
@@ -100,6 +100,7 @@ func (s *Store) ListFindings(ctx context.Context, psID, severity, status string)
 		q += ` AND status = 'open'` // 默认只看未处理
 	}
 	q += ` ORDER BY created_at DESC LIMIT 300`
+	q = sqlx.Rebind(sqlx.DOLLAR, q) // 动态拼 WHERE，?→$N（PG 兼容；SQLite 同认 $N）
 	var list []Finding
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err

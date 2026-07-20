@@ -42,13 +42,14 @@ func (s *Store) ListByUser(ctx context.Context, projectSpaceID, userID string) (
 
 // ListBySupervisor 列出待某上级审批的考勤记录（approvalStatus 为空则不限）。
 func (s *Store) ListBySupervisor(ctx context.Context, supervisorID, approvalStatus string) ([]AttendanceRecord, error) {
-	q := `SELECT id, project_space_id, user_id, status, start_time, end_time, COALESCE(reason,'') AS reason, supervisor_id, approval_status, COALESCE(approver,'') AS approver, approved_at, created_at, updated_at FROM attendance_record WHERE supervisor_id = $1`
+	q := `SELECT id, project_space_id, user_id, status, start_time, end_time, COALESCE(reason,'') AS reason, supervisor_id, approval_status, COALESCE(approver,'') AS approver, approved_at, created_at, updated_at FROM attendance_record WHERE supervisor_id = ?`
 	args := []interface{}{supervisorID}
 	if approvalStatus != "" {
 		q += ` AND approval_status = ?`
 		args = append(args, approvalStatus)
 	}
 	q += ` ORDER BY created_at DESC`
+	q = sqlx.Rebind(sqlx.DOLLAR, q) // 动态拼 WHERE，?→$N（PG 兼容）
 	var list []AttendanceRecord
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err

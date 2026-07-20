@@ -46,7 +46,7 @@ func (s *Store) Roles(ctx context.Context, userID, projectSpaceID string) ([]str
 	q := `SELECT role FROM membership WHERE user_id = $1`
 	args := []interface{}{userID}
 	if projectSpaceID != "" {
-		q += ` AND project_space_id = ?`
+		q += ` AND project_space_id = $2`
 		args = append(args, projectSpaceID)
 	}
 	var roles []string
