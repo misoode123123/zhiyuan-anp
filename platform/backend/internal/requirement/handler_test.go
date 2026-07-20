@@ -305,18 +305,18 @@ func TestHandler_ListByApp(t *testing.T) {
 	}
 }
 
-// TestHandler_Assign_DefaultUserAnonymous 未带 X-User 头 → 默认 "anonymous" 认领。
-// 补 Handler.Assign 中 user 默认分支。
-func TestHandler_Assign_DefaultUserAnonymous(t *testing.T) {
+// TestHandler_Assign_DefaultUsesCtxUserID 无 body assignee → 用 CtxUserID(自己认领)。
+// 撤 X-User 回退后 handler 从 token 取 user,不再默认 anonymous。
+func TestHandler_Assign_DefaultUsesCtxUserID(t *testing.T) {
 	repo, _ := newReqRepoWithChanges(t)
 	mustCreateRepo(t, repo, mkReq("req_h5", "ps_1"))
 
 	r := newHandlerWith(t, repo, nil)
-	code, body := doJSON(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/requirements/req_h5/assign", "")
+	code, body := doJSON(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/requirements/req_h5/assign", "alice")
 	if code != 200 {
-		t.Fatalf("assign(anonymous) 应 200，得到 %d body=%v", code, body)
+		t.Fatalf("自己认领(无 body assignee) 应 200,得到 %d body=%v", code, body)
 	}
-	if dataOf(t, body)["assigned_to"] != "anonymous" {
+	if dataOf(t, body)["assigned_to"] != "alice" {
 		t.Fatalf("默认应 assigned_to=anonymous，得到 %v", body["data"])
 	}
 }

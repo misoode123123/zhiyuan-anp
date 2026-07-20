@@ -43,6 +43,7 @@ export function useTabs() {
 export const NAV_MAP: Record<string, Tab> = {
   "/": { path: "/", label: "概览", icon: "📊" },
   "/requirements": { path: "/requirements", label: "需求工作台", icon: "💬" },
+  "/team": { path: "/team", label: "团队看板", icon: "📋" },
   "/dev": { path: "/dev", label: "研发工作台", icon: "💻" },
   "/testing": { path: "/testing", label: "测试中心", icon: "🧪" },
   "/release": { path: "/release", label: "发布中心", icon: "🚀" },

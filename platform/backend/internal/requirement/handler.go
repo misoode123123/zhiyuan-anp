@@ -22,7 +22,8 @@ func NewHandler(svc *Service, chgStore *change.Store, authStore *auth.Store) *Ha
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
-	r.GET("/project-spaces/:id/my-tasks", h.MyTasks) // 我的任务聚合(待认领/开发中/待审批/待上线)
+	r.GET("/project-spaces/:id/my-tasks", h.MyTasks)     // 我的任务聚合(待认领/我的开发中/待审批/待上线)
+	r.GET("/project-spaces/:id/team-tasks", h.TeamTasks) // 全队看板(不限 user,团队视角)
 	r.POST("/project-spaces/:id/requirements", h.Create)
 	r.GET("/project-spaces/:id/requirements", h.List)
 	r.GET("/project-spaces/:id/apps/:aid/requirements", h.ListByApp) // 应用一等公民：应用的需求池
@@ -81,6 +82,45 @@ func (h *Handler) MyTasks(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, gin.H{"roles": roles, "toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
+}
+
+// TeamTasks 全队任务看板聚合(不限 user):待认领/全队开发中/待审批/待上线/已交付。
+//
+// @Summary      团队任务看板
+// @Tags         requirement
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "toClaim/inDev/toApprove/toRelease/delivered"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/team-tasks [get]
+func (h *Handler) TeamTasks(c *gin.Context) {
+	psID := c.Param("id")
+	ctx := c.Request.Context()
+	reqs, _ := h.svc.List(ctx, psID)
+	toClaim, inDev, delivered := []Requirement{}, []Requirement{}, []Requirement{}
+	for _, q := range reqs {
+		switch {
+		case q.Assignee == "" && q.Status == "specified":
+			toClaim = append(toClaim, q)
+		case q.Assignee != "" && q.Status == "developing": // 全队开发中(不限 user)
+			inDev = append(inDev, q)
+		case q.Status == "delivered":
+			delivered = append(delivered, q)
+		}
+	}
+	toApprove, toRelease := []change.ChangeRequest{}, []change.ChangeRequest{}
+	if h.chgStore != nil {
+		chgs, _ := h.chgStore.List(ctx, "")
+		for _, ch := range chgs {
+			if ch.Status == "pending" {
+				toApprove = append(toApprove, ch)
+			}
+			if ch.Status == "approved" {
+				toRelease = append(toRelease, ch)
+			}
+		}
+	}
+	httpx.OK(c, gin.H{"toClaim": toClaim, "inDev": inDev, "toApprove": toApprove, "toRelease": toRelease, "delivered": delivered})
 }
 
 type createRequest struct {
@@ -192,15 +232,19 @@ func (h *Handler) Breakdown(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/requirements/{rid}/assign [post]
 func (h *Handler) Assign(c *gin.Context) {
-	user := c.GetString(auth.CtxUserID)
-	if user == "" {
-		user = "anonymous"
+	var in struct {
+		Assignee string `json:"assignee"` // 空=自己认领;有=指派给该人(管理员/lead 操作)
 	}
-	if err := h.svc.Assign(c.Request.Context(), c.Param("rid"), user); err != nil {
+	_ = c.ShouldBindJSON(&in)
+	target := in.Assignee
+	if target == "" {
+		target = c.GetString(auth.CtxUserID) // 自己认领
+	}
+	if err := h.svc.Assign(c.Request.Context(), c.Param("rid"), target); err != nil {
 		httpx.Err(c, 409, 40901, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"assigned_to": user})
+	httpx.OK(c, gin.H{"assigned_to": target})
 }
 
 // Release 释放需求认领。
