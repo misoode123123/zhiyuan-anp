@@ -377,27 +377,20 @@ export default function WorkspaceFrame() {
       alert("先选需求");
       return;
     }
-    const req = detail?.requirements?.find((q) => q.id === selectedReq);
-    if (!req) {
-      return;
-    }
     setSubmitting(true);
     setSubmitMsg("AI 核对代码 vs 需求验收标准…");
     try {
       const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: req.title,
-          acceptance_criteria: req.acceptance_criteria || "",
-        }),
+        body: JSON.stringify({ req_id: selectedReq }),
       }).then((rr) => rr.json());
       if (r.code !== 0) {
         setSubmitMsg("❌ 核对未通过,请按差异修正:\n" + (r.message || ""));
         setSubmitting(false);
         return;
       }
-      setSubmitMsg("✅ 核对通过,可点「📝登记变更」提交");
+      setSubmitMsg("✅ 核对通过,已登记变更 " + (r.data?.change_id || "") + ",待审批");
     } catch (e) {
       setSubmitMsg(String(e));
     }
