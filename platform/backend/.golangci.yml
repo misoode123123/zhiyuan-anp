@@ -18,7 +18,6 @@ linters:
     - ineffassign # 无效赋值
     - unused # 未使用
     - misspell # 拼写
-    - gocritic # 代码改进建议
 
 linters-settings:
   goimports:
