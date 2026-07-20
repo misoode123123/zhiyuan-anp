@@ -51,7 +51,6 @@ export const NAV_MAP: Record<string, Tab> = {
   "/security": { path: "/security", label: "安全合规", icon: "🛡️" },
   "/compute": { path: "/compute", label: "算力资源", icon: "⚡" },
   "/capabilities": { path: "/capabilities", label: "AI能力市场", icon: "🧩" },
-  "/attendance": { path: "/attendance", label: "考勤管理", icon: "🗓️" },
   "/applications": { path: "/applications", label: "应用部署", icon: "📦" },
   "/workspace": { path: "/workspace", label: "编码工作台", icon: "🧑‍💻" },
   "/admin/config": { path: "/admin/config", label: "系统配置", icon: "⚙️" },
