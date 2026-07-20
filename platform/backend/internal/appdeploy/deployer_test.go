@@ -81,3 +81,71 @@ func TestParseContainerNames(t *testing.T) {
 		t.Fatalf("空输出应返回空切片, got %d", n)
 	}
 }
+
+// TestNewDeployer 构造函数注入 host 字段。
+func TestNewDeployer(t *testing.T) {
+	d := NewDeployer("10.10.0.28")
+	if d == nil {
+		t.Fatal("NewDeployer 不应返回 nil")
+	}
+	if d.host != "10.10.0.28" {
+		t.Fatalf("host 字段应注入，得到 %q", d.host)
+	}
+}
+
+// TestEnvPortRange 按环境返回互不冲突的端口区间：test 9100-9199，prod 9200-9300。
+func TestEnvPortRange(t *testing.T) {
+	d := NewDeployer("h")
+	cases := []struct {
+		env        string
+		min, max   int
+	}{
+		{EnvTest, portTestMin, portTestMax},
+		{EnvProd, portProdMin, portProdMax},
+	}
+	for _, c := range cases {
+		min, max := d.envPortRange(c.env)
+		if min != c.min || max != c.max {
+			t.Fatalf("env=%s got [%d,%d] want [%d,%d]", c.env, min, max, c.min, c.max)
+		}
+	}
+	// 未知环境也走 test 区间（兜底）
+	min, max := d.envPortRange("staging")
+	if min != portTestMin || max != portTestMax {
+		t.Fatalf("未知环境应兜底 test 区间，得到 [%d,%d]", min, max)
+	}
+	// 两环境区间不重叠（关键不变式：test 与 prod 端口互不冲突）
+	_, testMax := d.envPortRange(EnvTest)
+	prodMin, _ := d.envPortRange(EnvProd)
+	if testMax >= prodMin {
+		t.Fatalf("test 与 prod 端口段重叠: testMax=%d >= prodMin=%d", testMax, prodMin)
+	}
+}
+
+// TestPortRangeConstants 端口段常量数值校验（防误改）。
+func TestPortRangeConstants(t *testing.T) {
+	if portTestMin != 9100 || portTestMax != 9199 {
+		t.Fatalf("test 端口段应是 9100-9199，得到 %d-%d", portTestMin, portTestMax)
+	}
+	if portProdMin != 9200 || portProdMax != 9300 {
+		t.Fatalf("prod 端口段应是 9200-9300，得到 %d-%d", portProdMin, portProdMax)
+	}
+}
+
+// TestAllocFreePort_PortExhaustion 边界：min==max 且占用 → 0。
+func TestAllocFreePort_PortExhaustion(t *testing.T) {
+	used := map[int]struct{}{5: {}}
+	if p := AllocFreePort(used, 5, 5); p != 0 {
+		t.Fatalf("min==max 且占用应 0，得到 %d", p)
+	}
+	if p := AllocFreePort(map[int]struct{}{}, 5, 5); p != 5 {
+		t.Fatalf("min==max 且空闲应返回 min，得到 %d", p)
+	}
+}
+
+// TestAllocFreePort_MinGtMax 异常：min>max → 空循环返回 0。
+func TestAllocFreePort_MinGtMax(t *testing.T) {
+	if p := AllocFreePort(map[int]struct{}{}, 10, 5); p != 0 {
+		t.Fatalf("min>max 应返回 0，得到 %d", p)
+	}
+}
