@@ -267,19 +267,13 @@ func TestSummarizeChange_NoApiKeyOrEmpty(t *testing.T) {
 	}
 }
 
-// TestCheckRequirement_NoApiKeyOrEmpty 无 apiKey 或无内容 → 放行（passed=true），不调 HTTP。
-func TestCheckRequirement_NoApiKeyOrEmpty(t *testing.T) {
-	// 无 apiKey → 放行
-	passed, details := checkRequirement(context.Background(), "", "code", "title", "criteria")
-	if !passed {
-		t.Fatal("无 apiKey 应放行")
+// TestCheckRequirement_NoApiKeyRejected 无 apiKey → 拒绝(返回 err,不静默放行,不发 HTTP)。
+func TestCheckRequirement_NoApiKeyRejected(t *testing.T) {
+	passed, err, _ := checkRequirement(context.Background(), "", "code", "title", "criteria")
+	if passed {
+		t.Fatal("无 apiKey 应不放行(passed=false)")
 	}
-	if !strings.Contains(details, "未配置") && !strings.Contains(details, "跳过") {
-		t.Fatalf("放行原因应含 '未配置' 或 '跳过'，得到 %q", details)
-	}
-	// 有 apiKey 但 code/criteria 都空 → 放行
-	passed2, _ := checkRequirement(context.Background(), "k", "", "", "")
-	if !passed2 {
-		t.Fatal("有 apiKey 但无内容应放行")
+	if err == nil {
+		t.Fatal("无 apiKey 应返回 err(供 Submit 转 503)")
 	}
 }
