@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,20 +18,29 @@ import (
 	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/requirement"
 )
 
 // Handler 应用部署 HTTP 接口。
 type Handler struct {
 	store    *Store
 	deployer *Deployer
-	codeWS   *codews.Manager // 交互编码工作台（opencode serve）；nil=未启用
-	changes  *change.Store   // 变更闸门（期2）；nil=未启用
-	cfg      *config.Store   // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
+	codeWS   *codews.Manager         // 交互编码工作台（opencode serve）；nil=未启用
+	changes  *change.Store           // 变更闸门（期2）；nil=未启用
+	cfg      *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
+	reqRepo  *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
+	checkFn  checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
-// NewHandler 构造。codeWS/changes/cfg 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store) *Handler {
-	return &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg}
+// checkFunc 需求-代码核对的函数签名(便于测试 mock)。
+// passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
+type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
+
+// NewHandler 构造。codeWS/changes/cfg/reqRepo 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository) *Handler {
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo}
+	h.checkFn = checkRequirement // 默认真 AI 核对
+	return h
 }
 
 // Register 注册路由。
@@ -265,8 +276,8 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 	httpx.OK(c, gin.H{"injected": true, "note": "需求已发给 opencode,在工作台看 AI 实时编码"})
 }
 
-// Submit 需求-代码核对门禁:读 repo 代码 + AI 逐条核对需求验收标准,
-// 有 ❌未实现 → 拦截(返回差异);全 ✅ → 放行(提示可登记变更)。开发者据此保证代码实现需求。
+// Submit 需求-代码核对门禁:从 requirement 读验收标准 + 读开发者 worktree 代码,AI 逐条核对。
+// 有 ❌ → 拦截(409);AI 失败 → 拒绝(503,不静默放行);全 ✅ → 自动登记变更(关联需求)。
 func (h *Handler) Submit(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -275,21 +286,70 @@ func (h *Handler) Submit(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Title              string `json:"title"`
-		AcceptanceCriteria string `json:"acceptance_criteria"` // 验收标准(JSON 数组字符串或文本)
+		ReqID string `json:"req_id"` // 必填:关联需求(核对其验收标准)
 	}
 	_ = c.ShouldBindJSON(&in)
-	code := readRepoCode(a.RepoDir)
+	if in.ReqID == "" {
+		httpx.Err(c, 400, 40031, "缺少 req_id(需关联需求以核对其验收标准)")
+		return
+	}
+	if h.reqRepo == nil {
+		httpx.Err(c, 500, 50021, "需求仓库未启用,无法核对")
+		return
+	}
+	req, err := h.reqRepo.Get(c.Request.Context(), in.ReqID)
+	if err != nil || req == nil || req.ID == "" {
+		httpx.Err(c, 404, 40420, "需求不存在")
+		return
+	}
+	// P0-2:验收标准从 requirement 读(不信前端 body),空则拒绝(不跳过核对)
+	ac := strings.TrimSpace(req.AcceptanceCriteria)
+	if ac == "" || ac == "[]" {
+		httpx.Err(c, 400, 40031, "需求无验收标准,请先补全后再提交")
+		return
+	}
+	// P0-1:读开发者 worktree 代码(.worktrees/<user>/),不是主 repo
+	user := c.GetHeader("X-User")
+	if user == "" {
+		user = "anonymous"
+	}
+	worktreeDir := filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user))
+	if _, err := os.Stat(worktreeDir); err != nil {
+		httpx.Err(c, 400, 40032, "工作分支不存在,请先认领需求/打开工作台生成 dev-"+sanitizeID(user)+" 分支")
+		return
+	}
+	code := readRepoCode(worktreeDir)
 	apiKey := ""
 	if h.cfg != nil {
 		apiKey = h.cfg.Get("zhipuai_api_key", "")
 	}
-	passed, details := checkRequirement(c.Request.Context(), apiKey, code, in.Title, in.AcceptanceCriteria)
+	check := h.checkFn
+	if check == nil {
+		check = checkRequirement
+	}
+	passed, checkErr, details := check(c.Request.Context(), apiKey, code, req.Title, ac)
+	if checkErr != nil {
+		httpx.Err(c, 503, 50301, "AI 核对失败(请重试): "+checkErr.Error())
+		return
+	}
 	if !passed {
 		httpx.Err(c, 409, 40930, "❌ 需求-代码核对未通过(请按差异修正后再提交):\n"+details)
 		return
 	}
-	httpx.OK(c, gin.H{"passed": true, "details": details, "note": "✅ 核对通过,可点「登记变更」提交"})
+	// P1:全 ✅ 自动登记变更(关联需求),不再两步手工
+	if h.changes == nil {
+		httpx.OK(c, gin.H{"passed": true, "details": details, "note": "✅ 核对通过(变更闸门未启用,未自动登记)"})
+		return
+	}
+	chg := &change.ChangeRequest{
+		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		Output: "【需求】" + in.ReqID + "\n【核对】通过\n" + details,
+	}
+	if err := h.changes.Create(c.Request.Context(), chg); err != nil {
+		httpx.Err(c, 500, 50022, "核对通过但登记变更失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"passed": true, "details": details, "change_id": chg.ID, "note": "✅ 核对通过,已登记变更,待审批"})
 }
 
 // Merge 把开发者分支(dev-<user>)合并到主线 main,供上线。冲突则放弃合并并报错。
@@ -338,11 +398,12 @@ func readRepoCode(repoDir string) string {
 	return sb.String()
 }
 
-// checkRequirement 调 GLM 核对代码是否实现需求验收标准。返回(是否通过, 差异详情)。
-// apiKey 空/AI 失败时放行(不阻塞,降级),由审批人兜底。
-func checkRequirement(ctx context.Context, apiKey, code, title, criteria string) (bool, string) {
-	if apiKey == "" || (code == "" && criteria == "") {
-		return true, "(未配置 AI 或无内容,跳过核对)"
+// checkRequirement 调 GLM 核对代码是否实现需求验收标准。
+// 返回 (passed, err, details):err!=nil → AI 失败(调用方应 503,不静默放行);
+// passed=false&err=nil → 核对未通过(409);passed=true → 通过。
+func checkRequirement(ctx context.Context, apiKey, code, title, criteria string) (bool, error, string) {
+	if apiKey == "" {
+		return false, fmt.Errorf("AI 未配置(zhipuai_api_key 为空)"), ""
 	}
 	prompt := fmt.Sprintf("你是严格的代码核对员。判断以下代码是否实现了需求的每条验收标准。\n需求标题:%s\n验收标准:\n%s\n\n代码:\n%s\n\n对每条验收标准判断:✅已实现/❌未实现/⚠️偏离,note 指出实现位置或差异。\n严格只返回 JSON: {\"passed\": true/false, \"details\":[{\"criteria\":\"原标准\",\"status\":\"✅/❌/⚠️\",\"note\":\"\"}]}\npassed=true 当且仅当没有任何 ❌。", title, criteria, truncateStr(code, 6000))
 	body, _ := json.Marshal(map[string]interface{}{
@@ -351,13 +412,13 @@ func checkRequirement(ctx context.Context, apiKey, code, title, criteria string)
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return true, "(核对请求构造失败,放行)"
+		return false, fmt.Errorf("核对请求构造失败: %w", err), ""
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return true, "(AI 核对失败,放行):" + err.Error()
+		return false, fmt.Errorf("AI 调用失败: %w", err), ""
 	}
 	defer resp.Body.Close()
 	var r struct {
@@ -368,7 +429,7 @@ func checkRequirement(ctx context.Context, apiKey, code, title, criteria string)
 		} `json:"choices"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&r) != nil || len(r.Choices) == 0 {
-		return true, "(AI 无响应,放行)"
+		return false, fmt.Errorf("AI 无响应"), ""
 	}
 	var result struct {
 		Passed  bool `json:"passed"`
@@ -379,13 +440,13 @@ func checkRequirement(ctx context.Context, apiKey, code, title, criteria string)
 		} `json:"details"`
 	}
 	if json.Unmarshal([]byte(extractJSONObject(r.Choices[0].Message.Content)), &result) != nil {
-		return true, "(AI 返回解析失败,放行):" + r.Choices[0].Message.Content
+		return false, fmt.Errorf("AI 返回解析失败: %s", r.Choices[0].Message.Content), ""
 	}
 	var sb strings.Builder
 	for _, d := range result.Details {
 		sb.WriteString(d.Status + " " + d.Criteria + " — " + d.Note + "\n")
 	}
-	return result.Passed, sb.String()
+	return result.Passed, nil, sb.String()
 }
 
 // extractJSONObject 从可能含 markdown 的文本提取首个 JSON 对象。
