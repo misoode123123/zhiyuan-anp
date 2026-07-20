@@ -709,6 +709,36 @@ type createBody struct {
 	InternalPort int    `json:"internal_port"` // 可选；buildpack 检测或默认 8080
 }
 
+// validateAppName 应用名必须人工起名(非随机数/ID):trim 非空、≥2 字符、不带 ID 前缀(chg_/app_/req_/rel_/ps_)、非纯数字。
+// 返回错误消息(空串=合法)。各中心显示应用名的前提是 name 本身可读。
+func validateAppName(name string) string {
+	n := strings.TrimSpace(name)
+	rc := 0
+	for range n {
+		rc++
+	}
+	if rc < 2 {
+		return "应用名需人工填写(至少 2 个字符)"
+	}
+	lower := strings.ToLower(n)
+	for _, p := range []string{"chg_", "app_", "req_", "rel_", "ps_"} {
+		if strings.HasPrefix(lower, p) {
+			return "应用名不能使用 ID 前缀 " + p + ",请起一个可读的名字(如 hello-go)"
+		}
+	}
+	allDigit := true
+	for _, r := range n {
+		if r < '0' || r > '9' {
+			allDigit = false
+			break
+		}
+	}
+	if allDigit {
+		return "应用名不能为纯数字,请起一个可读的名字"
+	}
+	return ""
+}
+
 // Create 注册一个产出应用，并初始化其托管 git 仓库（代码归属确立：/data/repos/<name>）。
 //
 // @Summary      创建应用
@@ -726,6 +756,10 @@ func (h *Handler) Create(c *gin.Context) {
 	var in createBody
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if msg := validateAppName(in.Name); msg != "" {
+		httpx.Err(c, 400, 40001, msg)
 		return
 	}
 	repoDir := in.RepoDir

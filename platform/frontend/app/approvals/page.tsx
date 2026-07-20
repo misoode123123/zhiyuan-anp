@@ -16,6 +16,8 @@ type Change = {
   status: string;
   reviewer: string;
   created_at: string;
+  reviewed_at: string;
+  app_name: string;
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -72,8 +74,11 @@ export default function ApprovalsPage() {
         {list.map((c) => (
           <div key={c.id} className="rounded-md border border-neutral-200 bg-white p-3 text-sm">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-neutral-500">{c.id}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium text-neutral-800">
+                  {c.app_name || c.id.slice(0, 12)}
+                </span>
+                <span className="font-mono text-[10px] text-neutral-400">{c.id.slice(0, 12)}</span>
                 <span
                   className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[c.status] ?? "bg-neutral-100"}`}
                 >
@@ -101,7 +106,19 @@ export default function ApprovalsPage() {
               )}
             </div>
             <div className="mt-1 text-neutral-700">{c.prompt}</div>
-            <div className="mt-1 text-xs text-neutral-400">{c.repo_dir}</div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-400">
+              {c.created_at && (
+                <span>
+                  📅 创建 {new Date(c.created_at).toLocaleString("zh-CN", { hour12: false })}
+                </span>
+              )}
+              {c.reviewed_at && (
+                <span>
+                  ✅ 审批 {new Date(c.reviewed_at).toLocaleString("zh-CN", { hour12: false })}
+                </span>
+              )}
+              <span className="truncate">📁 {c.repo_dir}</span>
+            </div>
             {c.output && (
               <pre className="mt-2 max-h-32 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
                 {c.output}

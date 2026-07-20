@@ -17,7 +17,14 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 // chgCols 显式列（可空文本列 COALESCE 防 NULL→string 扫描错误）。
-const chgCols = `id, project_space_id, COALESCE(kind,'') AS kind, COALESCE(source_id,'') AS source_id, COALESCE(repo_dir,'') AS repo_dir, COALESCE(prompt,'') AS prompt, COALESCE(model,'') AS model, COALESCE(output,'') AS output, status, reviewer, reviewed_at, created_at`
+// c. 前缀:LEFT JOIN 后列名需消歧;app_name 派生自 source_id→app 或 source_id→requirement→app。
+const chgCols = `c.id, c.project_space_id, COALESCE(c.kind,'') AS kind, COALESCE(c.source_id,'') AS source_id, COALESCE(c.repo_dir,'') AS repo_dir, COALESCE(c.prompt,'') AS prompt, COALESCE(c.model,'') AS model, COALESCE(c.output,'') AS output, c.status, c.reviewer, c.reviewed_at, c.created_at, COALESCE(a.name,'') AS app_name`
+
+// chgFrom change_request LEFT JOIN appdeploy_application(双路径:source_id 直接是 app_id,或经 requirement.application_id)。
+const chgFrom = ` FROM change_request c
+ LEFT JOIN appdeploy_application a
+   ON a.id = c.source_id
+   OR a.id IN (SELECT application_id FROM requirement WHERE id = c.source_id)`
 
 // Create 登记一条待审批变更。
 func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
@@ -32,20 +39,20 @@ func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 // Get 读取单条变更。
 func (s *Store) Get(ctx context.Context, id string) (*ChangeRequest, error) {
 	var c ChangeRequest
-	err := s.db.GetContext(ctx, &c, `SELECT `+chgCols+` FROM change_request WHERE id = $1`, id)
+	err := s.db.GetContext(ctx, &c, `SELECT `+chgCols+chgFrom+` WHERE c.id = $1`, id)
 	return &c, err
 }
 
 // List 列出变更（status 为空则全部）。
 func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error) {
 	var list []ChangeRequest
-	q := `SELECT ` + chgCols + ` FROM change_request`
+	q := `SELECT ` + chgCols + chgFrom
 	args := []interface{}{}
 	if status != "" {
-		q += ` WHERE status = $1`
+		q += ` WHERE c.status = $1`
 		args = append(args, status)
 	}
-	q += ` ORDER BY created_at DESC`
+	q += ` ORDER BY c.created_at DESC`
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err
 }

@@ -53,6 +53,8 @@ func newReqRepoWithChanges(t *testing.T) (*Repository, *change.Store) {
   reviewer        TEXT,
   reviewed_at     DATETIME,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	// change.Store.List LEFT JOIN appdeploy_application 出 app_name(2026-07-20 显示规范化),测试库需建该表
+	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
 	return NewRepository(db), change.NewStore(db)
 }
 

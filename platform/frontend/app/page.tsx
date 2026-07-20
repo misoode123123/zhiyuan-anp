@@ -31,6 +31,7 @@ type Chg = {
   output?: string;
   created_at?: string;
   reviewer?: string;
+  app_name?: string;
 };
 type MyTasks = {
   roles: string[];
@@ -133,7 +134,11 @@ export default function Home() {
         })
       : "?";
   const chgLabel = (c: Chg) =>
-    ((c.output || "").match(/【总结】(.+)/)?.[1] || `变更 ${c.id.slice(0, 12)}`).slice(0, 50);
+    (
+      (c.output || "").match(/【总结】(.+)/)?.[1] ||
+      c.app_name ||
+      `变更 ${c.id.slice(0, 12)}`
+    ).slice(0, 50);
   const ws = (q: Req) => `/workspace?app=${q.application_id || ""}&ps=${psID}`;
 
   return (
@@ -263,7 +268,7 @@ export default function Home() {
             items={toApprove.map((c) => ({
               id: c.id,
               label: chgLabel(c),
-              sub: `应用: ${appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`,
+              sub: `应用: ${c.app_name || appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`,
               tag: c.status,
               action: "审批",
               path: "/approvals",
@@ -276,7 +281,7 @@ export default function Home() {
             items={toRelease.map((c) => ({
               id: c.id,
               label: chgLabel(c),
-              sub: `应用: ${appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`,
+              sub: `应用: ${c.app_name || appName(c.source_id || "")} · 提交: ${c.reviewer || "?"} · ${fmtDate(c.created_at)}`,
               tag: c.status,
               action: "上线",
               path: `/applications`,

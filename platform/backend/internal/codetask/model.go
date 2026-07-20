@@ -17,4 +17,6 @@ type Task struct {
 	ChangeID       *string   `json:"change_id" db:"change_id"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ReqTitle       string    `json:"req_title" db:"req_title"` // 派生:source_id=requirement_id 时 JOIN 出的需求标题
+	AppName        string    `json:"app_name" db:"app_name"`   // 派生:change_id→change→app 的应用名
 }

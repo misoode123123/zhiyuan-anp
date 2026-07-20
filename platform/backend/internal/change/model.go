@@ -18,4 +18,5 @@ type ChangeRequest struct {
 	Reviewer       *string    `json:"reviewer" db:"reviewer"`
 	ReviewedAt     *time.Time `json:"reviewed_at" db:"reviewed_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	AppName        string     `json:"app_name" db:"app_name"` // 派生:归属应用名(source_id 经 app/requirement JOIN),供各中心显示
 }

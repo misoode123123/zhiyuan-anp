@@ -17,6 +17,8 @@ type Task = {
   output: string | null;
   change_id: string | null;
   created_at: string;
+  req_title?: string;
+  app_name?: string;
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -181,12 +183,13 @@ export default function DevPage() {
                 </span>
                 {fromReq && t.source_id && (
                   <span className="text-xs text-neutral-400">
-                    来自需求 {t.source_id.slice(0, 8)}
+                    来自需求 {t.req_title || t.source_id.slice(0, 8)}
                   </span>
                 )}
                 {t.change_id && (
                   <span className="text-xs text-neutral-400">
-                    → 变更 {t.change_id.slice(0, 8)}（待🚪G3 审批）
+                    → 变更{t.app_name ? `·${t.app_name}` : ` ${t.change_id.slice(0, 8)}`}（待🚪G3
+                    审批）
                   </span>
                 )}
                 {t.status === "completed" && t.change_id && (

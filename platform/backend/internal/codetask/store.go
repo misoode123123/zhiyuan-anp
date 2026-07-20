@@ -36,8 +36,14 @@ func (s *Store) Get(ctx context.Context, id string) (*Task, error) {
 func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) ([]Task, error) {
 	var list []Task
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, status, output, change_id, created_at, updated_at
-		 FROM code_task WHERE project_space_id = $1 ORDER BY created_at DESC LIMIT 100`, projectSpaceID)
+		`SELECT t.id, t.project_space_id, t.kind, t.source_id, t.repo_dir, t.prompt, t.model, t.status, t.output, t.change_id, t.created_at, t.updated_at,
+		        COALESCE(r.title,'') AS req_title,
+		        COALESCE(a.name,'') AS app_name
+		 FROM code_task t
+		 LEFT JOIN requirement r ON r.id = t.source_id
+		 LEFT JOIN change_request ch ON ch.id = t.change_id
+		 LEFT JOIN appdeploy_application a ON a.id = ch.source_id OR a.id IN (SELECT application_id FROM requirement WHERE id = ch.source_id)
+		 WHERE t.project_space_id = $1 ORDER BY t.created_at DESC LIMIT 100`, projectSpaceID)
 	return list, err
 }
 

@@ -30,6 +30,9 @@ func newTestStore(t *testing.T) *Store {
   reviewer TEXT,
   reviewed_at DATETIME,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	// app_name JOIN 依赖的两张表(LEFT JOIN 需表存在;空表也容错)
+	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
+	db.MustExec(`CREATE TABLE requirement (id TEXT PRIMARY KEY, application_id TEXT)`)
 	return NewStore(db)
 }
 
@@ -108,5 +111,42 @@ func TestMarkReleased(t *testing.T) {
 	}
 	if has, _ := s.HasApproved(context.Background(), "app_1"); has {
 		t.Fatal("released 后 HasApproved 应为 false")
+	}
+}
+
+// TestList_AppName List/Get 返回的 app_name 经双路径 JOIN:
+//   - source_id=app_id → 直接 JOIN appdeploy_application
+//   - source_id=requirement_id → 经 requirement.application_id JOIN
+//
+// 各中心据此显示应用名而非 chg_xxx 随机 ID。
+func TestList_AppName(t *testing.T) {
+	s := newTestStore(t)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello-go')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_2', 'chat-app')`)
+	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_2', 'app_2')`)
+
+	c1 := mk("ps_1", "app_1")
+	_ = s.Create(context.Background(), c1)
+	c2 := mk("ps_1", "req_2")
+	_ = s.Create(context.Background(), c2)
+
+	list, err := s.List(context.Background(), "")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := map[string]string{}
+	for _, c := range list {
+		got[c.SourceID] = c.AppName
+	}
+	if got["app_1"] != "hello-go" {
+		t.Fatalf("source_id=app_id 应 JOIN 出 hello-go,得到 %q", got["app_1"])
+	}
+	if got["req_2"] != "chat-app" {
+		t.Fatalf("source_id=requirement_id 经 application_id 应 JOIN 出 chat-app,得到 %q", got["req_2"])
+	}
+	// Get 同样带 app_name
+	g, _ := s.Get(context.Background(), c1.ID)
+	if g.AppName != "hello-go" {
+		t.Fatalf("Get 应带 app_name=hello-go,得到 %q", g.AppName)
 	}
 }

@@ -6,7 +6,14 @@ import { FlowStepper } from "../_components/stepper";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
-type Change = { id: string; kind: string; prompt: string; status: string };
+type Change = {
+  id: string;
+  kind: string;
+  prompt: string;
+  status: string;
+  app_name: string;
+  created_at: string;
+};
 type Rel = { id: string; change_id: string; version: string; status: string; created_at: string };
 
 export default function ReleasePage() {
@@ -111,9 +118,18 @@ export default function ReleasePage() {
               key={c.id}
               className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm"
             >
-              <div>
-                <span className="font-mono text-xs text-neutral-500">{c.id}</span>
-                <span className="ml-2 text-neutral-700">{c.prompt}</span>
+              <div className="min-w-0">
+                <span className="font-medium text-neutral-800">
+                  {c.app_name || c.id.slice(0, 12)}
+                </span>
+                <span className="ml-2 font-mono text-[10px] text-neutral-400">
+                  {c.id.slice(0, 12)}
+                </span>
+                {c.created_at && (
+                  <span className="ml-2 text-xs text-neutral-400">
+                    📅 {new Date(c.created_at).toLocaleString("zh-CN", { hour12: false })}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => release(c.id)}
@@ -140,8 +156,12 @@ export default function ReleasePage() {
               <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
                 {r.version}
               </span>
-              <span className="font-mono text-xs text-neutral-500">{r.change_id}</span>
               <span className="text-xs text-neutral-400">{r.status}</span>
+              {r.created_at && (
+                <span className="ml-auto text-xs text-neutral-400">
+                  📅 {new Date(r.created_at).toLocaleString("zh-CN", { hour12: false })}
+                </span>
+              )}
             </div>
           ))}
           {releases.length === 0 && <div className="text-sm text-neutral-400">暂无发布</div>}
