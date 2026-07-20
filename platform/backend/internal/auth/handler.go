@@ -85,8 +85,9 @@ func (h *Handler) ListUsers(c *gin.Context) {
 }
 
 type createUserBody struct {
-	Name  string `json:"name" binding:"required"`
-	Email string `json:"email"`
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email"`
+	Password string `json:"password"` // 可选;空=不设密码(用户登不了,需后续重置)
 }
 
 // CreateUser 新建用户。
@@ -100,6 +101,12 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	if err := h.store.CreateUser(c.Request.Context(), u); err != nil {
 		httpx.Err(c, 500, 50011, err.Error())
 		return
+	}
+	if in.Password != "" {
+		if err := h.store.SetPasswordByName(c.Request.Context(), in.Name, in.Password); err != nil {
+			httpx.Err(c, 500, 50011, "用户已建但设密码失败: "+err.Error())
+			return
+		}
 	}
 	httpx.Created(c, u)
 }

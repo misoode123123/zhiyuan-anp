@@ -28,7 +28,7 @@ export default function UsersPage() {
   const [psID, setPsID] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [newUser, setNewUser] = useState({ name: "", email: "" });
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
   const [selUser, setSelUser] = useState("");
   const [role, setRole] = useState("business");
   const [msg, setMsg] = useState("");
@@ -68,7 +68,7 @@ export default function UsersPage() {
     const r = await res.json();
     setMsg(r.code === 0 ? `✓ 已创建用户 ${newUser.name}` : `✗ ${r.message}`);
     if (r.code === 0) {
-      setNewUser({ name: "", email: "" });
+      setNewUser({ name: "", email: "", password: "" });
       loadUsers();
     }
   }
@@ -101,7 +101,7 @@ export default function UsersPage() {
         {/* 用户目录 */}
         <div>
           <div className="mb-2 text-sm font-semibold">用户目录（{users.length}）</div>
-          <div className="mb-3 flex gap-2 rounded-lg border border-neutral-200 bg-white p-2">
+          <div className="mb-3 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-white p-2">
             <input
               value={newUser.name}
               onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
@@ -112,6 +112,13 @@ export default function UsersPage() {
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
               placeholder="邮箱（可选）"
+              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+            />
+            <input
+              type="password"
+              value={newUser.password}
+              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              placeholder="初始密码"
               className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
             />
             <button
