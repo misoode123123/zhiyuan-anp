@@ -11,4 +11,8 @@ type Release struct {
 	Version        string    `json:"version" db:"version"`
 	Status         string    `json:"status" db:"status"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	AppName        string    `json:"app_name" db:"app_name"` // 派生:release→change→source→app
+	Reviewer       string    `json:"reviewer" db:"reviewer"` // 派生:审批/提交人(change.reviewer)
+	Prompt         string    `json:"prompt" db:"prompt"`     // 派生:变更说明(change.prompt)
+	Output         string    `json:"output" db:"output"`     // 派生:变更产出(change.output,含【总结】)
 }

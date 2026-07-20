@@ -29,8 +29,17 @@ func (s *Store) Create(ctx context.Context, r *Release) error {
 func (s *Store) List(ctx context.Context, projectSpaceID string) ([]Release, error) {
 	var list []Release
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT id, project_space_id, change_id, version, status, created_at
-		 FROM release_record WHERE project_space_id = $1 ORDER BY created_at DESC`, projectSpaceID)
+		`SELECT r.id, r.project_space_id, r.change_id, r.version, r.status, r.created_at,
+		        COALESCE(a.name,'') AS app_name,
+		        COALESCE(ch.reviewer,'') AS reviewer,
+		        COALESCE(ch.prompt,'') AS prompt,
+		        COALESCE(ch.output,'') AS output
+		 FROM release_record r
+		 LEFT JOIN change_request ch ON ch.id = r.change_id
+		 LEFT JOIN appdeploy_application a
+		   ON a.id = ch.source_id
+		   OR a.id IN (SELECT application_id FROM requirement WHERE id = ch.source_id)
+		 WHERE r.project_space_id = $1 ORDER BY r.created_at DESC`, projectSpaceID)
 	return list, err
 }
 

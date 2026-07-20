@@ -17,7 +17,16 @@ type Change = {
   reviewed_at?: string;
   output?: string;
 };
-type Rel = { id: string; change_id: string; version: string; status: string; created_at: string };
+type Rel = {
+  id: string;
+  change_id: string;
+  version: string;
+  status: string;
+  created_at: string;
+  app_name?: string;
+  reviewer?: string;
+  output?: string;
+};
 
 export default function ReleasePage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
@@ -167,19 +176,34 @@ export default function ReleasePage() {
         <div className="mb-2 text-sm font-semibold">发布历史（{releases.length}）</div>
         <div className="space-y-1">
           {releases.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-3 rounded-md border border-neutral-200 bg-white p-2 text-sm"
-            >
-              <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                {r.version}
-              </span>
-              <span className="text-xs text-neutral-400">{r.status}</span>
-              {r.created_at && (
-                <span className="ml-auto text-xs text-neutral-400">
-                  📅 {new Date(r.created_at).toLocaleString("zh-CN", { hour12: false })}
+            <div key={r.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                  {r.version}
                 </span>
-              )}
+                <span className="font-medium text-neutral-800">
+                  {r.app_name || r.change_id.slice(0, 12)}
+                </span>
+                <span className="text-xs text-neutral-400">{r.status}</span>
+                {r.created_at && (
+                  <span className="ml-auto text-xs text-neutral-400">
+                    📅{" "}
+                    {new Date(r.created_at).toLocaleString("zh-CN", {
+                      hour12: false,
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-neutral-500">
+                <span>👤 {r.reviewer || "?"}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  📝 {(r.output || "").match(/【总结】(.+)/)?.[1] || "(无内容说明)"}
+                </span>
+              </div>
             </div>
           ))}
           {releases.length === 0 && <div className="text-sm text-neutral-400">暂无发布</div>}

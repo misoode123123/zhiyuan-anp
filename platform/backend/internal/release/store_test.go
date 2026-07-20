@@ -28,6 +28,10 @@ func newTestStore(t *testing.T) *Store {
   version          TEXT NOT NULL,
   status           TEXT NOT NULL DEFAULT 'released',
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	// List JOIN 依赖:release→change→app(双路径)
+	db.MustExec(`CREATE TABLE change_request (id TEXT PRIMARY KEY, source_id TEXT, reviewer TEXT, prompt TEXT, output TEXT)`)
+	db.MustExec(`CREATE TABLE requirement (id TEXT PRIMARY KEY, application_id TEXT)`)
+	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
 	return NewStore(db)
 }
 
@@ -160,5 +164,33 @@ func TestCount_IsolatesByProjectSpace(t *testing.T) {
 	}
 	if n, _ := s.Count(ctx, "ps_2"); n != 1 {
 		t.Fatalf("ps_2 Count 应为 1，得到 %d", n)
+	}
+}
+
+// TestList_AppNameAndChangeInfo List JOIN 出 app_name/reviewer/prompt/output
+// (release→change→source→app 双路径),供发布历史显示应用名+内容+提交人。
+func TestList_AppNameAndChangeInfo(t *testing.T) {
+	s := newTestStore(t)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello-go')`)
+	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	s.db.MustExec(`INSERT INTO change_request (id, source_id, reviewer, prompt, output) VALUES ('chg_1', 'req_1', 'alice', '实现登录', '【总结】登录页完成')`)
+	_ = s.Create(context.Background(), mkRelease("ps_1", "chg_1", "v1"))
+
+	list, err := s.List(context.Background(), "ps_1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("应 1 条,得到 %d", len(list))
+	}
+	got := list[0]
+	if got.AppName != "hello-go" {
+		t.Fatalf("app_name 应 JOIN 出 hello-go(经 change→requirement→app),得到 %q", got.AppName)
+	}
+	if got.Reviewer != "alice" {
+		t.Fatalf("reviewer 应 alice,得到 %q", got.Reviewer)
+	}
+	if got.Prompt != "实现登录" {
+		t.Fatalf("prompt 应实现登录,得到 %q", got.Prompt)
 	}
 }
