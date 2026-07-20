@@ -28,6 +28,17 @@ type codeRequest struct {
 }
 
 // Code 异步提交编码任务，立即返回 task_id。
+//
+// @Summary      异步提交编码任务（立即返回 task_id）
+// @Tags         dev
+// @Accept       json
+// @Produce      json
+// @Param        body  body  codeRequest  true  "编码任务(repo_dir+prompt+model)"
+// @Success      200  {object}  map[string]interface{}  "task_id+status=running+note"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "提交失败"
+// @Security     BearerAuth
+// @Router       /code [post]
 func (h *Handler) Code(c *gin.Context) {
 	var req codeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -48,6 +59,15 @@ func (h *Handler) Code(c *gin.Context) {
 }
 
 // GetTask 查询异步任务状态/产出。
+//
+// @Summary      查询编码任务状态/产出
+// @Tags         dev
+// @Produce      json
+// @Param        id  path  string  true  "任务ID"
+// @Success      200  {object}  map[string]interface{}  "任务详情"
+// @Failure      404  {object}  map[string]interface{}  "任务不存在"
+// @Security     BearerAuth
+// @Router       /code-tasks/{id} [get]
 func (h *Handler) GetTask(c *gin.Context) {
 	t, err := h.agent.tasks.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -58,6 +78,15 @@ func (h *Handler) GetTask(c *gin.Context) {
 }
 
 // ListTasks 列出项目空间的编码任务。
+//
+// @Summary      列出项目空间的编码任务
+// @Tags         dev
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "任务列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/code-tasks [get]
 func (h *Handler) ListTasks(c *gin.Context) {
 	list, err := h.agent.tasks.ListByProjectSpace(c.Request.Context(), c.Param("id"))
 	if err != nil {

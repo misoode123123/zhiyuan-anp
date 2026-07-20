@@ -69,6 +69,15 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // List 应用列表，附带各环境实例（前端展示 test/prod URL）。
+//
+// @Summary      应用列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "应用列表(含各环境实例)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.store.List(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -82,6 +91,16 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Detail 应用详情：应用本体 + 归属需求/变更/发布 + 仓库版本 + 各环境实例。
+//
+// @Summary      应用详情
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "应用详情"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/detail [get]
 func (h *Handler) Detail(c *gin.Context) {
 	d, err := h.store.Detail(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if err != nil || d == nil {
@@ -93,6 +112,20 @@ func (h *Handler) Detail(c *gin.Context) {
 
 // Workspace 启动/复用应用的 opencode 交互编码工作台，返回 opencode 官方 web UI 的访问 URL。
 // 不造轮子：直接集成 opencode serve 自带的 web 界面，开发者用它原生体验编码。
+//
+// @Summary      启动交互编码工作台
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true   "项目空间ID"
+// @Param        aid    path    string  true   "应用ID"
+// @Param        body   body    object  false  "工作台选项{tool:opencode/claude/codex}"
+// @Param        X-User header  string  false  "开发者身份"
+// @Success      200    {object}  map[string]interface{}  "工作台信息(url/session_id等)"
+// @Failure      404    {object}  map[string]interface{}  "应用不存在"
+// @Failure      500    {object}  map[string]interface{}  "工作台未启用/启动失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/workspace [post]
 func (h *Handler) Workspace(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	if h.codeWS == nil {
@@ -123,6 +156,20 @@ func (h *Handler) Workspace(c *gin.Context) {
 // RegisterChange 把 opencode 交互编码的产出登记为待审批变更（期2 变更闸门）。
 // 自动总结:拉取 opencode 会话的对话内容 + repo 最近提交日志组成变更说明,免手填。
 // source_id=应用ID；审批通过后该应用方可 promote prod。
+//
+// @Summary      登记交互编码变更为待审批
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true   "项目空间ID"
+// @Param        aid    path    string  true   "应用ID"
+// @Param        body   body    object  false  "登记选项{note,req_id}"
+// @Param        X-User header  string  false  "开发者身份"
+// @Success      200    {object}  map[string]interface{}  "登记的变更"
+// @Failure      404    {object}  map[string]interface{}  "应用不存在"
+// @Failure      500    {object}  map[string]interface{}  "变更闸门未启用/登记失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/register-change [post]
 func (h *Handler) RegisterChange(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -247,6 +294,21 @@ func summarizeChange(ctx context.Context, apiKey, diff, conversation string) str
 
 // InjectRequirement 把需求规格作为 prompt 注入 opencode 会话,AI 在工作台实时编码(开发者看过程/介入)。
 // 替代 dispatch 黑盒:交互式需求驱动开发。prompt 由前端从需求规格拼装。
+//
+// @Summary      向工作台注入需求 prompt
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true   "项目空间ID"
+// @Param        aid    path    string  true   "应用ID"
+// @Param        body   body    object  true   "注入内容{prompt}"
+// @Param        X-User header  string  false  "开发者身份"
+// @Success      200    {object}  map[string]interface{}  "注入结果"
+// @Failure      400    {object}  map[string]interface{}  "invalid body"
+// @Failure      404    {object}  map[string]interface{}  "应用不存在"
+// @Failure      500    {object}  map[string]interface{}  "工作台未启用/注入失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/inject-requirement [post]
 func (h *Handler) InjectRequirement(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -278,6 +340,22 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 
 // Submit 需求-代码核对门禁:从 requirement 读验收标准 + 读开发者 worktree 代码,AI 逐条核对。
 // 有 ❌ → 拦截(409);AI 失败 → 拒绝(503,不静默放行);全 ✅ → 自动登记变更(关联需求)。
+//
+// @Summary      提交需求-代码核对门禁
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true   "项目空间ID"
+// @Param        aid    path    string  true   "应用ID"
+// @Param        body   body    object  true   "提交内容{req_id}"
+// @Param        X-User header  string  false  "开发者身份"
+// @Success      200    {object}  map[string]interface{}  "核对通过,已登记变更"
+// @Failure      400    {object}  map[string]interface{}  "缺少 req_id/无验收标准/工作分支不存在"
+// @Failure      404    {object}  map[string]interface{}  "应用/需求不存在"
+// @Failure      409    {object}  map[string]interface{}  "核对未通过"
+// @Failure      503    {object}  map[string]interface{}  "AI 核对失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/submit [post]
 func (h *Handler) Submit(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -354,6 +432,20 @@ func (h *Handler) Submit(c *gin.Context) {
 
 // Merge 把开发者分支(dev-<user>)合并到主线 main,供上线。
 // G3 前置:需有 approved 变更;合并成功后收敛(释放认领+需求delivered+清worktree)。冲突则放弃合并并报错。
+//
+// @Summary      合并开发者分支到 main
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true   "项目空间ID"
+// @Param        aid    path    string  true   "应用ID"
+// @Param        body   body    object  false  "合并选项{req_id}"
+// @Param        X-User header  string  false  "开发者身份"
+// @Success      200    {object}  map[string]interface{}  "合并结果(merged/released/delivered)"
+// @Failure      404    {object}  map[string]interface{}  "应用不存在"
+// @Failure      409    {object}  map[string]interface{}  "需先审批/合并冲突"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/merge [post]
 func (h *Handler) Merge(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -488,6 +580,16 @@ func extractJSONObject(s string) string {
 }
 
 // RepoDocs 扫描当前应用 repo 的文档(README/.md),供编码时查阅项目文档结构。
+//
+// @Summary      应用 repo 文档列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "文档列表"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/repo-docs [get]
 func (h *Handler) RepoDocs(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a == nil || a.ID == "" {
@@ -499,6 +601,18 @@ func (h *Handler) RepoDocs(c *gin.Context) {
 }
 
 // RepoFile 读当前应用 repo 内某文件内容(供文档展开查看)。
+//
+// @Summary      读应用 repo 文件内容
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id    path   string  true  "项目空间ID"
+// @Param        aid   path   string  true  "应用ID"
+// @Param        path  query  string  true  "文件路径"
+// @Success      200   {object}  map[string]interface{}  "文件内容"
+// @Failure      400   {object}  map[string]interface{}  "读取失败"
+// @Failure      404   {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/repo-file [get]
 func (h *Handler) RepoFile(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a == nil || a.ID == "" {
@@ -514,6 +628,16 @@ func (h *Handler) RepoFile(c *gin.Context) {
 }
 
 // ListEnv 列出应用运行时环境变量（部署时 docker run -e 注入）。is_secret 的 value 接口层 mask（不泄露）。
+//
+// @Summary      应用环境变量列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "环境变量列表(密钥值已 mask)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/env [get]
 func (h *Handler) ListEnv(c *gin.Context) {
 	list, err := h.store.ListEnv(c.Request.Context(), c.Param("aid"))
 	if err != nil {
@@ -529,6 +653,19 @@ func (h *Handler) ListEnv(c *gin.Context) {
 }
 
 // UpsertEnv 新增/更新环境变量。
+//
+// @Summary      新增/更新环境变量
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  object  true  "项目空间ID"
+// @Param        aid   path  object  true  "应用ID"
+// @Param        body  body  object  true  "环境变量{key,value,is_secret}"
+// @Success      200   {object}  map[string]interface{}  "保存结果"
+// @Failure      400   {object}  map[string]interface{}  "invalid body"
+// @Failure      500   {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/env [post]
 func (h *Handler) UpsertEnv(c *gin.Context) {
 	var in struct {
 		Key      string `json:"key" binding:"required"`
@@ -547,6 +684,17 @@ func (h *Handler) UpsertEnv(c *gin.Context) {
 }
 
 // DeleteEnv 删除环境变量。
+//
+// @Summary      删除环境变量
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Param        key  path  string  true  "环境变量键名"
+// @Success      200  {object}  map[string]interface{}  "删除结果"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/env/{key} [delete]
 func (h *Handler) DeleteEnv(c *gin.Context) {
 	if err := h.store.DeleteEnv(c.Request.Context(), c.Param("aid"), c.Param("key")); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
@@ -562,6 +710,18 @@ type createBody struct {
 }
 
 // Create 注册一个产出应用，并初始化其托管 git 仓库（代码归属确立：/data/repos/<name>）。
+//
+// @Summary      创建应用
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  createBody  true  "项目空间ID"
+// @Param        body  body  createBody  true  "应用(name+repo_dir+internal_port)"
+// @Success      200   {object}  map[string]interface{}  "创建的应用"
+// @Failure      400   {object}  map[string]interface{}  "invalid body"
+// @Failure      500   {object}  map[string]interface{}  "仓库初始化/创建失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps [post]
 func (h *Handler) Create(c *gin.Context) {
 	var in createBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -595,6 +755,18 @@ type deployBody struct {
 }
 
 // Deploy 构建+部署到指定环境（默认 test=测试验证）。立即返回 building，后台完成。
+//
+// @Summary      构建并部署应用
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string  true   "项目空间ID"
+// @Param        aid   path  string  true   "应用ID"
+// @Param        body  body  object  false  "部署选项{env,sha}"
+// @Success      200   {object}  map[string]interface{}  "异步构建状态(building)"
+// @Failure      404   {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/deploy [post]
 func (h *Handler) Deploy(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
@@ -612,6 +784,17 @@ func (h *Handler) Deploy(c *gin.Context) {
 }
 
 // Promote 上线：部署到 prod 环境（用户可访问）。
+//
+// @Summary      上线应用到 prod
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "上线状态(building)"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Failure      409  {object}  map[string]interface{}  "需先登记变更并审批通过(变更闸门)"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/promote [post]
 func (h *Handler) Promote(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
@@ -635,6 +818,19 @@ func (h *Handler) Promote(c *gin.Context) {
 }
 
 // DeployCommit 部署/回滚到指定历史版本（默认 test 环境）。
+//
+// @Summary      部署/回滚到指定版本
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        aid   path  string  true  "应用ID"
+// @Param        body  body  object  true  "部署选项{sha,env}"
+// @Success      200   {object}  map[string]interface{}  "版本化部署状态(building)"
+// @Failure      400   {object}  map[string]interface{}  "需提供 sha"
+// @Failure      404   {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/deploy-commit [post]
 func (h *Handler) DeployCommit(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	var in deployBody
@@ -744,6 +940,17 @@ func min(a, b int) int {
 }
 
 // instanceFromCtx 取 prod 实例（停止/启动/日志针对正式环境）。
+//
+// @Summary      停止应用(prod)
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "停止结果(stopped)"
+// @Failure      400  {object}  map[string]interface{}  "应用未在 prod 部署"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/stop [post]
 func (h *Handler) Stop(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), EnvProd)
@@ -760,6 +967,18 @@ func (h *Handler) Stop(c *gin.Context) {
 	httpx.OK(c, gin.H{"id": a.ID, "status": "stopped"})
 }
 
+// Start 启动应用(prod 实例)。
+//
+// @Summary      启动应用(prod)
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "启动结果(running)"
+// @Failure      400  {object}  map[string]interface{}  "应用未在 prod 部署"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/start [post]
 func (h *Handler) Start(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), EnvProd)
@@ -777,6 +996,16 @@ func (h *Handler) Start(c *gin.Context) {
 }
 
 // Delete 删除应用 + 清理所有环境实例容器。
+//
+// @Summary      删除应用
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "删除结果"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a != nil {
@@ -800,6 +1029,17 @@ func (h *Handler) Delete(c *gin.Context) {
 	httpx.OK(c, gin.H{"id": c.Param("aid"), "deleted": true})
 }
 
+// Logs 应用 prod 实例日志。
+//
+// @Summary      应用日志
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "日志内容"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/logs [get]
 func (h *Handler) Logs(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), EnvProd)
@@ -816,6 +1056,17 @@ func (h *Handler) Logs(c *gin.Context) {
 }
 
 // Stats 应用某环境的资源占用(docker stats) + URL 健康探测（运维可观测性）。
+//
+// @Summary      应用资源占用与健康探测
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path   string  true  "项目空间ID"
+// @Param        aid  path   string  true  "应用ID"
+// @Param        env  query  string  false "环境(test/prod,默认 prod)"
+// @Success      200  {object}  map[string]interface{}  "资源占用+健康状态"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/stats [get]
 func (h *Handler) Stats(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, _ := h.store.Get(c.Request.Context(), psID, aid)

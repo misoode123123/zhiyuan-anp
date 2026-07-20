@@ -21,6 +21,13 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // List 列出全部系统配置。
+//
+// @Summary      列出全部系统配置
+// @Tags         config
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "系统配置列表"
+// @Security     BearerAuth
+// @Router       /config [get]
 func (h *Handler) List(c *gin.Context) {
 	httpx.OK(c, h.store.All())
 }
@@ -32,6 +39,18 @@ type setRequest struct {
 }
 
 // Set 新增/更新一条配置（热生效：写入即刷新缓存）。
+//
+// @Summary      新增/更新一条系统配置
+// @Tags         config
+// @Accept       json
+// @Produce      json
+// @Param        key   path  string       true  "配置键"
+// @Param        body  body  setRequest   true  "配置值(value)"
+// @Success      200  {object}  map[string]interface{}  "{key,value}"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /config/{key} [put]
 func (h *Handler) Set(c *gin.Context) {
 	var in setRequest
 	if err := c.ShouldBindJSON(&in); err != nil {

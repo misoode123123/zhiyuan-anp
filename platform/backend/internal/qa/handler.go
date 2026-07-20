@@ -36,6 +36,17 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // Generate 把需求验收标准转为测试用例并入库。
+//
+// @Summary      根据需求生成测试用例
+// @Tags         qa
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        rid  path  string  true  "需求ID"
+// @Success      200  {object}  map[string]interface{}  "生成的测试用例"
+// @Failure      404  {object}  map[string]interface{}  "需求不存在"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/generate-tests [post]
 func (h *Handler) Generate(c *gin.Context) {
 	psID := c.Param("id")
 	rid := c.Param("rid")
@@ -53,6 +64,15 @@ func (h *Handler) Generate(c *gin.Context) {
 }
 
 // List 列出项目空间下的测试用例。
+//
+// @Summary      测试用例列表
+// @Tags         qa
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "测试用例列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/test-cases [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.ListByProjectSpace(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -63,6 +83,17 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Run 单条自动验收：对着该用例归属应用的运行 URL 真发请求、比对期望、写回结果。
+//
+// @Summary      运行单条测试用例(自动验收)
+// @Tags         qa
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        tcid  path  string  true  "测试用例ID"
+// @Success      200  {object}  map[string]interface{}  "运行后的用例(含结果)"
+// @Failure      404  {object}  map[string]interface{}  "用例不存在"
+// @Failure      500  {object}  map[string]interface{}  "运行失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/test-cases/{tcid}/run [post]
 func (h *Handler) Run(c *gin.Context) {
 	tc, err := h.svc.GetCase(c.Request.Context(), c.Param("tcid"))
 	if err != nil || tc == nil || tc.ID == "" {
@@ -78,6 +109,16 @@ func (h *Handler) Run(c *gin.Context) {
 }
 
 // RunForReq 批量验收某需求下所有用例（统一对着该需求归属应用的 URL）。
+//
+// @Summary      批量运行需求的测试用例
+// @Tags         qa
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        rid  path  string  true  "需求ID"
+// @Success      200  {object}  map[string]interface{}  "批量验收结果(total/passed/failed/manual)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/requirements/{rid}/run-tests [post]
 func (h *Handler) RunForReq(c *gin.Context) {
 	rid := c.Param("rid")
 	list, err := h.svc.ListByRequirement(c.Request.Context(), rid)

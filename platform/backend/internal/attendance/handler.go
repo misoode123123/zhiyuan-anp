@@ -36,6 +36,18 @@ type submitRequest struct {
 }
 
 // Submit 员工提交考勤（选择状态、起止时间）→ 入库并转直接上级审批。
+//
+// @Summary      提交考勤记录
+// @Tags         attendance
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string         true  "项目空间ID"
+// @Param        body  body  submitRequest  true  "考勤提交内容(status+start_time+end_time+supervisor_id)"
+// @Success      200   {object}  map[string]interface{}  "创建的考勤记录"
+// @Failure      400   {object}  map[string]interface{}  "invalid body / 时间格式错误"
+// @Failure      500   {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/attendance [post]
 func (h *Handler) Submit(c *gin.Context) {
 	var in submitRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -69,6 +81,15 @@ func (h *Handler) Submit(c *gin.Context) {
 }
 
 // List 列出项目空间下的考勤记录。
+//
+// @Summary      列出项目空间下的考勤记录
+// @Tags         attendance
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "考勤记录列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/attendance [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.List(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -79,6 +100,15 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Mine 列出当前员工的考勤记录。
+//
+// @Summary      当前员工的考勤记录
+// @Tags         attendance
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "当前用户的考勤记录列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/attendance/mine [get]
 func (h *Handler) Mine(c *gin.Context) {
 	list, err := h.svc.ListMine(c.Request.Context(), c.Param("id"), c.GetString(auth.CtxUserID))
 	if err != nil {
@@ -89,6 +119,15 @@ func (h *Handler) Mine(c *gin.Context) {
 }
 
 // Inbox 列出待当前用户（作为直接上级）审批的考勤记录。
+//
+// @Summary      待我审批的考勤收件箱
+// @Tags         attendance
+// @Produce      json
+// @Param        status  query  string  false  "状态过滤(pending/approved/rejected)"
+// @Success      200  {object}  map[string]interface{}  "待审批考勤列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /attendance/inbox [get]
 func (h *Handler) Inbox(c *gin.Context) {
 	list, err := h.svc.Inbox(c.Request.Context(), c.GetString(auth.CtxUserID), c.Query("status"))
 	if err != nil {
@@ -99,6 +138,15 @@ func (h *Handler) Inbox(c *gin.Context) {
 }
 
 // Approve 直接上级审批通过。
+//
+// @Summary      审批通过考勤
+// @Tags         attendance
+// @Produce      json
+// @Param        id   path  string  true  "考勤记录ID"
+// @Success      200  {object}  map[string]interface{}  "审批后的考勤记录"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /attendance/{id}/approve [post]
 func (h *Handler) Approve(c *gin.Context) {
 	rec, err := h.svc.Approve(c.Request.Context(), c.Param("id"), c.GetString(auth.CtxUserID))
 	if err != nil {
@@ -109,6 +157,15 @@ func (h *Handler) Approve(c *gin.Context) {
 }
 
 // Reject 直接上级审批驳回。
+//
+// @Summary      驳回考勤
+// @Tags         attendance
+// @Produce      json
+// @Param        id   path  string  true  "考勤记录ID"
+// @Success      200  {object}  map[string]interface{}  "驳回后的考勤记录"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /attendance/{id}/reject [post]
 func (h *Handler) Reject(c *gin.Context) {
 	rec, err := h.svc.Reject(c.Request.Context(), c.Param("id"), c.GetString(auth.CtxUserID))
 	if err != nil {

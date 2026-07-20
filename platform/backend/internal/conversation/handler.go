@@ -29,6 +29,15 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // Create 建会话。
+//
+// @Summary      创建对话会话
+// @Tags         conversation
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "创建的会话"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/conversations [post]
 func (h *Handler) Create(c *gin.Context) {
 	conv, err := h.svc.CreateConversation(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -39,6 +48,15 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 // List 会话列表。
+//
+// @Summary      列出项目空间下的会话
+// @Tags         conversation
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "会话列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/conversations [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.ListConversations(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -49,6 +67,15 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Get 会话详情 + 全部消息。
+//
+// @Summary      获取会话详情（含全部消息）
+// @Tags         conversation
+// @Produce      json
+// @Param        cid  path  string  true  "会话ID"
+// @Success      200  {object}  map[string]interface{}  "conversation+messages"
+// @Failure      404  {object}  map[string]interface{}  "会话不存在"
+// @Security     BearerAuth
+// @Router       /conversations/{cid} [get]
 func (h *Handler) Get(c *gin.Context) {
 	conv, msgs, err := h.svc.GetConversation(c.Request.Context(), c.Param("cid"))
 	if err != nil {
@@ -64,6 +91,17 @@ type messageRequest struct {
 }
 
 // Message 用户发消息 → SSE 流式返回 assistant 回复（逐 chunk），流结束发完整 message。
+//
+// @Summary      发送消息（SSE 流式回复）
+// @Tags         conversation
+// @Accept       json
+// @Produce      text/event-stream
+// @Param        cid   path   string          true  "会话ID"
+// @Param        body  body   messageRequest  true  "消息内容(text+images)"
+// @Success      200  {object}  map[string]interface{}  "SSE 流：data: {delta}|{error}|{done,message}"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Security     BearerAuth
+// @Router       /conversations/{cid}/messages [post]
 func (h *Handler) Message(c *gin.Context) {
 	var in messageRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -99,6 +137,17 @@ type asrRequest struct {
 }
 
 // ASR 语音识别 → 文字。
+//
+// @Summary      语音识别（ASR）
+// @Tags         conversation
+// @Accept       json
+// @Produce      json
+// @Param        body  body  asrRequest  true  "音频(base64 audio+filename)"
+// @Success      200  {object}  map[string]interface{}  "识别文本 {text}"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "识别失败"
+// @Security     BearerAuth
+// @Router       /asr [post]
 func (h *Handler) ASR(c *gin.Context) {
 	var in asrRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -118,6 +167,15 @@ func (h *Handler) ASR(c *gin.Context) {
 }
 
 // GenSpec 生成规格草稿（不入库）。
+//
+// @Summary      生成规格草稿（不入库）
+// @Tags         conversation
+// @Produce      json
+// @Param        cid  path  string  true  "会话ID"
+// @Success      200  {object}  map[string]interface{}  "spec 草稿"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /conversations/{cid}/generate-spec [post]
 func (h *Handler) GenSpec(c *gin.Context) {
 	spec, err := h.svc.GenerateSpec(c.Request.Context(), c.Param("cid"))
 	if err != nil {
@@ -134,6 +192,18 @@ type commitRequest struct {
 }
 
 // Commit 确认入库 → 生成 requirement + 会话 submitted。
+//
+// @Summary      确认入库（生成 requirement）
+// @Tags         conversation
+// @Accept       json
+// @Produce      json
+// @Param        cid   path  string         true  "会话ID"
+// @Param        body  body  commitRequest  true  "规格(title+user_story+acceptance_criteria)"
+// @Success      200  {object}  map[string]interface{}  "conversation_id+requirement"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /conversations/{cid}/commit [post]
 func (h *Handler) Commit(c *gin.Context) {
 	var in commitRequest
 	if err := c.ShouldBindJSON(&in); err != nil {

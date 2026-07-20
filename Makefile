@@ -74,7 +74,7 @@ be-swag:
 
 # 一键：后端 spec(swag+swagger2openapi) + 前端 TS 类型(openapi-typescript)
 api-gen: be-swag
-	cd $(FE) && pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json
+	cd $(FE) && pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json --patch
 	cd $(FE) && pnpm exec openapi-typescript ../backend/docs/openapi.json -o lib/api-types.ts
 
 # ---- 数据库迁移（手动 up/down，不启 server）----

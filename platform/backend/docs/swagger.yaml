@@ -1,5 +1,40 @@
 basePath: /api/v1
 definitions:
+  internal_appdeploy.createBody:
+    properties:
+      internal_port:
+        description: 可选；buildpack 检测或默认 8080
+        type: integer
+      name:
+        type: string
+      repo_dir:
+        description: 可选；空=平台托管 git 仓库 /data/repos/<name>
+        type: string
+    required:
+    - name
+    type: object
+  internal_attendance.submitRequest:
+    properties:
+      end_time:
+        description: RFC3339
+        type: string
+      reason:
+        type: string
+      start_time:
+        description: RFC3339
+        type: string
+      status:
+        description: rest/overtime/leave
+        type: string
+      supervisor_id:
+        description: 直接上级，提交后转其审批
+        type: string
+    required:
+    - end_time
+    - start_time
+    - status
+    - supervisor_id
+    type: object
   internal_auth.loginBody:
     properties:
       name:
@@ -9,6 +44,166 @@ definitions:
     required:
     - name
     - password
+    type: object
+  internal_capability.apiKeyBody:
+    properties:
+      allowed_skills:
+        type: string
+      app_name:
+        type: string
+      scope:
+        type: string
+    required:
+    - app_name
+    type: object
+  internal_capability.domainAgentBody:
+    properties:
+      code:
+        type: string
+      composed_skills:
+        type: string
+      domain:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  internal_capability.invokeBody:
+    properties:
+      input:
+        type: string
+      render_hint:
+        description: card/form/chart/text
+        type: string
+      skill_code:
+        type: string
+    required:
+    - input
+    - skill_code
+    type: object
+  internal_capability.skillBody:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      data_access_scope:
+        type: string
+      description:
+        type: string
+      is_public:
+        type: boolean
+      name:
+        type: string
+      prompt_template:
+        type: string
+      risk_level:
+        type: string
+      version:
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  internal_config.setRequest:
+    properties:
+      category:
+        type: string
+      description:
+        type: string
+      value:
+        type: string
+    required:
+    - value
+    type: object
+  internal_conversation.asrRequest:
+    properties:
+      audio:
+        type: string
+      filename:
+        type: string
+    required:
+    - audio
+    type: object
+  internal_conversation.commitRequest:
+    properties:
+      acceptance_criteria:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      user_story:
+        type: string
+    required:
+    - acceptance_criteria
+    - title
+    - user_story
+    type: object
+  internal_conversation.messageRequest:
+    properties:
+      images:
+        items:
+          type: string
+        type: array
+      text:
+        type: string
+    required:
+    - text
+    type: object
+  internal_dev.codeRequest:
+    properties:
+      model:
+        type: string
+      prompt:
+        type: string
+      repo_dir:
+        type: string
+    required:
+    - prompt
+    - repo_dir
+    type: object
+  internal_ops.alertBody:
+    properties:
+      description:
+        type: string
+      severity:
+        type: string
+      source:
+        type: string
+      title:
+        type: string
+    required:
+    - severity
+    - title
+    type: object
+  internal_ops.sopBody:
+    properties:
+      category:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      requires_approval:
+        type: boolean
+      risk_level:
+        type: string
+      rollback:
+        type: string
+      status:
+        type: string
+      steps:
+        type: string
+    required:
+    - code
+    - name
     type: object
   internal_release.createRequest:
     properties:
@@ -102,6 +297,32 @@ definitions:
     - condition
     - name
     type: object
+  internal_security.dcBody:
+    properties:
+      data_type:
+        type: string
+      field_name:
+        type: string
+      masking_strategy:
+        type: string
+      sensitivity_level:
+        type: string
+      table_ref:
+        type: string
+    required:
+    - field_name
+    - table_ref
+    type: object
+  internal_security.scanBody:
+    properties:
+      content:
+        type: string
+      scan_type:
+        description: secret/sast/prompt/full（空=full）
+        type: string
+    required:
+    - content
+    type: object
   internal_standard.createBody:
     properties:
       category:
@@ -173,6 +394,117 @@ info:
   title: 智源 ANP 平台 API
   version: "1.0"
 paths:
+  /asr:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 音频(base64 audio+filename)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation.asrRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 识别文本 {text}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 识别失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 语音识别（ASR）
+      tags:
+      - conversation
+  /attendance/{id}/approve:
+    post:
+      parameters:
+      - description: 考勤记录ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 审批后的考勤记录
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 审批通过考勤
+      tags:
+      - attendance
+  /attendance/{id}/reject:
+    post:
+      parameters:
+      - description: 考勤记录ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 驳回后的考勤记录
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 驳回考勤
+      tags:
+      - attendance
+  /attendance/inbox:
+    get:
+      parameters:
+      - description: 状态过滤(pending/approved/rejected)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 待审批考勤列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 待我审批的考勤收件箱
+      tags:
+      - attendance
   /auth/login:
     post:
       consumes:
@@ -235,6 +567,105 @@ paths:
       summary: 当前登录用户
       tags:
       - 认证
+  /capabilities/invoke:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: APIKey（与 Bearer 二选一）
+        in: header
+        name: X-Api-Key
+        type: string
+      - description: Bearer sk_anp_xxx
+        in: header
+        name: Authorization
+        type: string
+      - description: 调用入参(skill_code+input)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_capability.invokeBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: result/api_key_id/caller_app
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: APIKey 无效
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权调用
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 技能不存在或不可用
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: 网关/上游错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 统一技能调用入口
+      tags:
+      - capability
+  /capabilities/skills:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已上架公共技能列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 公共技能目录
+      tags:
+      - capability
+  /capabilities/skills/{sid}:
+    get:
+      parameters:
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 技能详情
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 技能不存在
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 公共技能详情
+      tags:
+      - capability
   /changes:
     get:
       parameters:
@@ -315,6 +746,245 @@ paths:
       summary: 拒绝变更
       tags:
       - change
+  /code:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 编码任务(repo_dir+prompt+model)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_dev.codeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: task_id+status=running+note
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 提交失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 异步提交编码任务（立即返回 task_id）
+      tags:
+      - dev
+  /code-tasks/{id}:
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务详情
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询编码任务状态/产出
+      tags:
+      - dev
+  /config:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 系统配置列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出全部系统配置
+      tags:
+      - config
+  /config/{key}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 配置键
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: 配置值(value)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_config.setRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{key,value}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新增/更新一条系统配置
+      tags:
+      - config
+  /conversations/{cid}:
+    get:
+      parameters:
+      - description: 会话ID
+        in: path
+        name: cid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: conversation+messages
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 会话不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取会话详情（含全部消息）
+      tags:
+      - conversation
+  /conversations/{cid}/commit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 会话ID
+        in: path
+        name: cid
+        required: true
+        type: string
+      - description: 规格(title+user_story+acceptance_criteria)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation.commitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: conversation_id+requirement
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 确认入库（生成 requirement）
+      tags:
+      - conversation
+  /conversations/{cid}/generate-spec:
+    post:
+      parameters:
+      - description: 会话ID
+        in: path
+        name: cid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: spec 草稿
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 生成规格草稿（不入库）
+      tags:
+      - conversation
+  /conversations/{cid}/messages:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 会话ID
+        in: path
+        name: cid
+        required: true
+        type: string
+      - description: 消息内容(text+images)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation.messageRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: 'SSE 流：data: {delta}|{error}|{done,message}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发送消息（SSE 流式回复）
+      tags:
+      - conversation
   /project-spaces:
     get:
       produces:
@@ -384,6 +1054,617 @@ paths:
       summary: 获取项目空间详情
       tags:
       - workspace
+  /project-spaces/{id}/apps:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 应用列表(含各环境实例)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用列表
+      tags:
+      - appdeploy
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 可选；buildpack 检测或默认 8080
+        in: path
+        name: internal_port
+        type: integer
+      - in: path
+        name: name
+        required: true
+        type: string
+      - description: 可选；空=平台托管 git 仓库 /data/repos/<name>
+        in: path
+        name: repo_dir
+        type: string
+      - description: 应用(name+repo_dir+internal_port)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_appdeploy.createBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的应用
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 仓库初始化/创建失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建应用
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除应用
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/deploy:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 部署选项{env,sha}
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 异步构建状态(building)
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 构建并部署应用
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/deploy-commit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 部署选项{sha,env}
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 版本化部署状态(building)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 需提供 sha
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 部署/回滚到指定版本
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/detail:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 应用详情
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用详情
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/env:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 环境变量列表(密钥值已 mask)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用环境变量列表
+      tags:
+      - appdeploy
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: object
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: object
+      - description: 环境变量{key,value,is_secret}
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存结果
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新增/更新环境变量
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/env/{key}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 环境变量键名
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除环境变量
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/inject-requirement:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 注入内容{prompt}
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      - description: 开发者身份
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 注入结果
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 工作台未启用/注入失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 向工作台注入需求 prompt
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/logs:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 日志内容
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用日志
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/merge:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 合并选项{req_id}
+        in: body
+        name: body
+        schema:
+          type: object
+      - description: 开发者身份
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 合并结果(merged/released/delivered)
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 需先审批/合并冲突
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 合并开发者分支到 main
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/promote:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 上线状态(building)
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 需先登记变更并审批通过(变更闸门)
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上线应用到 prod
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/register-change:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 登记选项{note,req_id}
+        in: body
+        name: body
+        schema:
+          type: object
+      - description: 开发者身份
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登记的变更
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 变更闸门未启用/登记失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 登记交互编码变更为待审批
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/repo-docs:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 文档列表
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用 repo 文档列表
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/repo-file:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 文件路径
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 文件内容
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 读取失败
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读应用 repo 文件内容
+      tags:
+      - appdeploy
   /project-spaces/{id}/apps/{aid}/requirements:
     get:
       parameters:
@@ -410,6 +1691,862 @@ paths:
       summary: 列出应用需求池
       tags:
       - requirement
+  /project-spaces/{id}/apps/{aid}/start:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 启动结果(running)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 应用未在 prod 部署
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动应用(prod)
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/stats:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 环境(test/prod,默认 prod)
+        in: query
+        name: env
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源占用+健康状态
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用资源占用与健康探测
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/stop:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 停止结果(stopped)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 应用未在 prod 部署
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止应用(prod)
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 提交内容{req_id}
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      - description: 开发者身份
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 核对通过,已登记变更
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 缺少 req_id/无验收标准/工作分支不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用/需求不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 核对未通过
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: AI 核对失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交需求-代码核对门禁
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/workspace:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 工作台选项{tool:opencode/claude/codex}
+        in: body
+        name: body
+        schema:
+          type: object
+      - description: 开发者身份
+        in: header
+        name: X-User
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 工作台信息(url/session_id等)
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 工作台未启用/启动失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动交互编码工作台
+      tags:
+      - appdeploy
+  /project-spaces/{id}/attendance:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 考勤记录列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间下的考勤记录
+      tags:
+      - attendance
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 考勤提交内容(status+start_time+end_time+supervisor_id)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_attendance.submitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的考勤记录
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body / 时间格式错误
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交考勤记录
+      tags:
+      - attendance
+  /project-spaces/{id}/attendance/mine:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前用户的考勤记录列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 当前员工的考勤记录
+      tags:
+      - attendance
+  /project-spaces/{id}/capabilities/api-keys:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: APIKey 列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间下的 APIKey
+      tags:
+      - capability
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: APIKey 内容(app_name)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_capability.apiKeyBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{api_key,secret,note}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建 APIKey
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/api-keys/{kid}/revoke:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: APIKey ID
+        in: path
+        name: kid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,status:revoked}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 吊销 APIKey
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/domain-agents:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 领域 Agent 列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出领域 Agent
+      tags:
+      - capability
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 领域 Agent 内容(code+name)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_capability.domainAgentBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的领域 Agent
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建领域 Agent
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/domain-agents/{did}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 领域 Agent ID
+        in: path
+        name: did
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,deleted:true}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除领域 Agent
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/skills:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 状态过滤(draft/pending_review/active/offline)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 技能列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间下的技能
+      tags:
+      - capability
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能内容(code+name)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_capability.skillBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的技能
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建技能
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/skills/{sid}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,deleted:true}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除技能
+      tags:
+      - capability
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: 技能内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_capability.skillBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的技能
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新技能
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/skills/{sid}/approve:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,status:active}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 审批通过技能上架
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/skills/{sid}/offline:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,status:offline}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下线技能（紧急熔断）
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/skills/{sid}/submit:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 技能ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{id,status:pending_review}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交技能上架评审
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/usage:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用量明细列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 用量明细
+      tags:
+      - capability
+  /project-spaces/{id}/capabilities/usage/by-skill:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 按技能聚合的用量
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按技能聚合的用量
+      tags:
+      - capability
+  /project-spaces/{id}/code-tasks:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间的编码任务
+      tags:
+      - dev
+  /project-spaces/{id}/conversations:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 会话列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出项目空间下的会话
+      tags:
+      - conversation
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的会话
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建对话会话
+      tags:
+      - conversation
   /project-spaces/{id}/my-tasks:
     get:
       parameters:
@@ -435,6 +2572,376 @@ paths:
       summary: 我的任务聚合
       tags:
       - requirement
+  /project-spaces/{id}/ops/alerts:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 严重度过滤(critical/warning/info)
+        in: query
+        name: severity
+        type: string
+      - description: 状态过滤(firing/resolved)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 告警列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 告警列表
+      tags:
+      - ops
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - in: path
+        name: description
+        type: string
+      - in: path
+        name: severity
+        required: true
+        type: string
+      - in: path
+        name: source
+        type: string
+      - in: path
+        name: title
+        required: true
+        type: string
+      - description: 告警{source,severity,title,description}
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_ops.alertBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的告警
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新建告警
+      tags:
+      - ops
+  /project-spaces/{id}/ops/alerts/{aid}/resolve:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 告警ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 解决结果(resolved)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解决告警
+      tags:
+      - ops
+  /project-spaces/{id}/ops/dashboard:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 看板(健康+统计+用量+活动+告警计数)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 运维总览看板
+      tags:
+      - ops
+  /project-spaces/{id}/ops/health:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 总体健康+组件健康列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 组件健康详情
+      tags:
+      - ops
+  /project-spaces/{id}/ops/inspect:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 巡检报告(健康+新增/抑制告警计数)
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 触发巡检(自动告警)
+      tags:
+      - ops
+  /project-spaces/{id}/ops/sops:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 状态过滤(draft/active/archived)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: SOP 列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: SOP 预案列表
+      tags:
+      - ops
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - in: path
+        name: category
+        type: string
+      - in: path
+        name: code
+        required: true
+        type: string
+      - in: path
+        name: description
+        type: string
+      - in: path
+        name: name
+        required: true
+        type: string
+      - in: path
+        name: requires_approval
+        type: boolean
+      - in: path
+        name: risk_level
+        type: string
+      - in: path
+        name: rollback
+        type: string
+      - in: path
+        name: status
+        type: string
+      - in: path
+        name: steps
+        type: string
+      - description: SOP{code,name,steps,rollback,...}
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_ops.sopBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的 SOP
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新建 SOP 预案
+      tags:
+      - ops
+  /project-spaces/{id}/ops/sops/{sid}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: SOP ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除 SOP 预案
+      tags:
+      - ops
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - in: path
+        name: category
+        type: string
+      - in: path
+        name: code
+        required: true
+        type: string
+      - in: path
+        name: description
+        type: string
+      - in: path
+        name: name
+        required: true
+        type: string
+      - in: path
+        name: requires_approval
+        type: boolean
+      - in: path
+        name: risk_level
+        type: string
+      - in: path
+        name: rollback
+        type: string
+      - in: path
+        name: status
+        type: string
+      - in: path
+        name: steps
+        type: string
+      - description: SOP ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: SOP{code,name,steps,rollback,...}
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_ops.sopBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的 SOP
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 SOP 预案
+      tags:
+      - ops
   /project-spaces/{id}/overview:
     get:
       parameters:
@@ -723,6 +3230,42 @@ paths:
       summary: 派发编码任务
       tags:
       - requirement
+  /project-spaces/{id}/requirements/{rid}/generate-tests:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 生成的测试用例
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 需求不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 根据需求生成测试用例
+      tags:
+      - qa
   /project-spaces/{id}/requirements/{rid}/release:
     post:
       parameters:
@@ -749,6 +3292,303 @@ paths:
       summary: 释放需求认领
       tags:
       - requirement
+  /project-spaces/{id}/requirements/{rid}/run-tests:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 需求ID
+        in: path
+        name: rid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 批量验收结果(total/passed/failed/manual)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量运行需求的测试用例
+      tags:
+      - qa
+  /project-spaces/{id}/security/audit-logs:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 审计日志列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全审计日志
+      tags:
+      - security
+  /project-spaces/{id}/security/data-classifications:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据分级列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 数据分级列表
+      tags:
+      - security
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - in: path
+        name: data_type
+        type: string
+      - in: path
+        name: field_name
+        required: true
+        type: string
+      - in: path
+        name: masking_strategy
+        type: string
+      - in: path
+        name: sensitivity_level
+        type: string
+      - in: path
+        name: table_ref
+        required: true
+        type: string
+      - description: 数据分级{field_name,table_ref,...}
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_security.dcBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建的数据分级
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新增数据分级
+      tags:
+      - security
+  /project-spaces/{id}/security/data-classifications/{did}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 数据分级ID
+        in: path
+        name: did
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除数据分级
+      tags:
+      - security
+  /project-spaces/{id}/security/findings:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 严重度过滤(critical/high/medium/low)
+        in: query
+        name: severity
+        type: string
+      - description: 状态过滤(open/suppressed)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 安全发现列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全发现列表
+      tags:
+      - security
+  /project-spaces/{id}/security/findings/{fid}/suppress:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 发现ID
+        in: path
+        name: fid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 抑制结果(suppressed)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 抑制安全发现
+      tags:
+      - security
+  /project-spaces/{id}/security/gate:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 闸门状态(风险汇总+决策)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全闸门
+      tags:
+      - security
+  /project-spaces/{id}/security/scans:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - in: path
+        name: content
+        required: true
+        type: string
+      - description: secret/sast/prompt/full（空=full）
+        in: path
+        name: scan_type
+        type: string
+      - description: 扫描请求{content,scan_type}
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_security.scanBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描结果与发现{scan,findings}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 触发安全扫描
+      tags:
+      - security
   /project-spaces/{id}/standards:
     get:
       parameters:
@@ -824,6 +3664,120 @@ paths:
       summary: 预览生效规范
       tags:
       - standard
+  /project-spaces/{id}/test-cases:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 测试用例列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 测试用例列表
+      tags:
+      - qa
+  /project-spaces/{id}/test-cases/{tcid}/run:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 测试用例ID
+        in: path
+        name: tcid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 运行后的用例(含结果)
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 用例不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 运行失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 运行单条测试用例(自动验收)
+      tags:
+      - qa
+  /project-spaces/{id}/usage:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用量明细列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 算力用量明细
+      tags:
+      - compute
+  /project-spaces/{id}/usage/stats:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用量统计
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务端错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 算力用量统计看板
+      tags:
+      - compute
   /rules:
     get:
       produces:

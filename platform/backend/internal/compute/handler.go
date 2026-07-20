@@ -21,6 +21,15 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // List 用量明细。
+//
+// @Summary      算力用量明细
+// @Tags         compute
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "用量明细列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/usage [get]
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.store.List(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -31,6 +40,15 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Stats 用量统计看板。
+//
+// @Summary      算力用量统计看板
+// @Tags         compute
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "用量统计"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/usage/stats [get]
 func (h *Handler) Stats(c *gin.Context) {
 	st, err := h.store.Stats(c.Request.Context(), c.Param("id"))
 	if err != nil {

@@ -112,7 +112,7 @@ jobs:
       - name: swagger2openapi + openapi-typescript
         run: |
           cd platform/frontend
-          pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json
+          pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json --patch
           pnpm exec openapi-typescript ../backend/docs/openapi.json -o lib/api-types.ts
       - name: 契约一致性（生成的须与提交一致，否则说明改了 handler 没 regen）
         run: git diff --exit-code -- platform/backend/docs platform/frontend/lib/api-types.ts

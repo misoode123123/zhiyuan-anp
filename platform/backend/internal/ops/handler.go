@@ -39,6 +39,15 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 // Dashboard 运维总览看板（健康 + 统计 + 用量 + 活动 + 告警计数）。
+//
+// @Summary      运维总览看板
+// @Tags         ops
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "看板(健康+统计+用量+活动+告警计数)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/dashboard [get]
 func (h *Handler) Dashboard(c *gin.Context) {
 	psID := c.Param("id")
 	ctx := c.Request.Context()
@@ -71,12 +80,28 @@ func (h *Handler) Dashboard(c *gin.Context) {
 }
 
 // Health 组件健康详情。
+//
+// @Summary      组件健康详情
+// @Tags         ops
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "总体健康+组件健康列表"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/health [get]
 func (h *Handler) Health(c *gin.Context) {
 	comps := h.store.Components(c.Request.Context(), h.agentRuntimeURL)
 	httpx.OK(c, gin.H{"overall": OverallHealth(comps), "components": comps})
 }
 
 // Inspect 触发巡检：跑健康检查，对 down/degraded 组件自动产生告警（去重），返回报告。
+//
+// @Summary      触发巡检(自动告警)
+// @Tags         ops
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "巡检报告(健康+新增/抑制告警计数)"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/inspect [post]
 func (h *Handler) Inspect(c *gin.Context) {
 	psID := c.Param("id")
 	ctx := c.Request.Context()
@@ -121,6 +146,18 @@ func countHealthy(comps []ComponentHealth) int {
 
 // ---------------- 告警接口 ----------------
 
+// ListAlerts 列出告警（可按 severity/status 过滤）。
+//
+// @Summary      告警列表
+// @Tags         ops
+// @Produce      json
+// @Param        id        path   string  true  "项目空间ID"
+// @Param        severity  query  string  false "严重度过滤(critical/warning/info)"
+// @Param        status    query  string  false "状态过滤(firing/resolved)"
+// @Success      200  {object}  map[string]interface{}  "告警列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/alerts [get]
 func (h *Handler) ListAlerts(c *gin.Context) {
 	list, err := h.store.ListAlerts(c.Request.Context(), c.Param("id"), c.Query("severity"), c.Query("status"))
 	if err != nil {
@@ -137,6 +174,19 @@ type alertBody struct {
 	Description string `json:"description"`
 }
 
+// CreateAlert 新建告警。
+//
+// @Summary      新建告警
+// @Tags         ops
+// @Accept       json
+// @Produce      json
+// @Param        id    path  alertBody  true  "项目空间ID"
+// @Param        body  body  alertBody  true  "告警{source,severity,title,description}"
+// @Success      200  {object}  map[string]interface{}  "创建的告警"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/alerts [post]
 func (h *Handler) CreateAlert(c *gin.Context) {
 	var in alertBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -157,6 +207,17 @@ func (h *Handler) CreateAlert(c *gin.Context) {
 	httpx.Created(c, a)
 }
 
+// ResolveAlert 解决（关闭）某条告警。
+//
+// @Summary      解决告警
+// @Tags         ops
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "告警ID"
+// @Success      200  {object}  map[string]interface{}  "解决结果(resolved)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/alerts/{aid}/resolve [post]
 func (h *Handler) ResolveAlert(c *gin.Context) {
 	if err := h.store.ResolveAlert(c.Request.Context(), c.Param("id"), c.Param("aid")); err != nil {
 		httpx.Err(c, 500, 50070, err.Error())
@@ -167,6 +228,17 @@ func (h *Handler) ResolveAlert(c *gin.Context) {
 
 // ---------------- SOP 接口 ----------------
 
+// ListSOPs 列出 SOP 预案（可按 status 过滤）。
+//
+// @Summary      SOP 预案列表
+// @Tags         ops
+// @Produce      json
+// @Param        id      path   string  true  "项目空间ID"
+// @Param        status  query  string  false "状态过滤(draft/active/archived)"
+// @Success      200  {object}  map[string]interface{}  "SOP 列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/sops [get]
 func (h *Handler) ListSOPs(c *gin.Context) {
 	list, err := h.store.ListSOPs(c.Request.Context(), c.Param("id"), c.Query("status"))
 	if err != nil {
@@ -200,6 +272,19 @@ func (b *sopBody) defaults() {
 	}
 }
 
+// CreateSOP 新建 SOP 预案。
+//
+// @Summary      新建 SOP 预案
+// @Tags         ops
+// @Accept       json
+// @Produce      json
+// @Param        id    path  sopBody  true  "项目空间ID"
+// @Param        body  body  sopBody  true  "SOP{code,name,steps,rollback,...}"
+// @Success      200  {object}  map[string]interface{}  "创建的 SOP"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/sops [post]
 func (h *Handler) CreateSOP(c *gin.Context) {
 	var in sopBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -219,6 +304,20 @@ func (h *Handler) CreateSOP(c *gin.Context) {
 	httpx.Created(c, sop)
 }
 
+// UpdateSOP 更新 SOP 预案。
+//
+// @Summary      更新 SOP 预案
+// @Tags         ops
+// @Accept       json
+// @Produce      json
+// @Param        id    path  sopBody  true  "项目空间ID"
+// @Param        sid   path  string   true  "SOP ID"
+// @Param        body  body  sopBody  true  "SOP{code,name,steps,rollback,...}"
+// @Success      200  {object}  map[string]interface{}  "更新后的 SOP"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/sops/{sid} [put]
 func (h *Handler) UpdateSOP(c *gin.Context) {
 	var in sopBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -238,6 +337,17 @@ func (h *Handler) UpdateSOP(c *gin.Context) {
 	httpx.OK(c, sop)
 }
 
+// DeleteSOP 删除 SOP 预案。
+//
+// @Summary      删除 SOP 预案
+// @Tags         ops
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        sid  path  string  true  "SOP ID"
+// @Success      200  {object}  map[string]interface{}  "删除结果"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/ops/sops/{sid} [delete]
 func (h *Handler) DeleteSOP(c *gin.Context) {
 	if err := h.store.DeleteSOP(c.Request.Context(), c.Param("id"), c.Param("sid")); err != nil {
 		httpx.Err(c, 500, 50070, err.Error())

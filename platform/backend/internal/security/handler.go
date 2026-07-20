@@ -36,6 +36,18 @@ type scanBody struct {
 }
 
 // Scan 触发安全扫描：Go 原生正则引擎 → 落库 → 返回结果与发现。
+//
+// @Summary      触发安全扫描
+// @Tags         security
+// @Accept       json
+// @Produce      json
+// @Param        id    path  scanBody  true  "项目空间ID"
+// @Param        body  body  scanBody  true  "扫描请求{content,scan_type}"
+// @Success      200  {object}  map[string]interface{}  "扫描结果与发现{scan,findings}"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/scans [post]
 func (h *Handler) Scan(c *gin.Context) {
 	var in scanBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -62,6 +74,18 @@ func (h *Handler) Scan(c *gin.Context) {
 	httpx.Created(c, gin.H{"scan": res, "findings": findings})
 }
 
+// ListFindings 列出安全发现（可按 severity/status 过滤）。
+//
+// @Summary      安全发现列表
+// @Tags         security
+// @Produce      json
+// @Param        id        path   string  true  "项目空间ID"
+// @Param        severity  query  string  false "严重度过滤(critical/high/medium/low)"
+// @Param        status    query  string  false "状态过滤(open/suppressed)"
+// @Success      200  {object}  map[string]interface{}  "安全发现列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/findings [get]
 func (h *Handler) ListFindings(c *gin.Context) {
 	list, err := h.store.ListFindings(c.Request.Context(), c.Param("id"), c.Query("severity"), c.Query("status"))
 	if err != nil {
@@ -71,6 +95,17 @@ func (h *Handler) ListFindings(c *gin.Context) {
 	httpx.OK(c, list)
 }
 
+// Suppress 抑制（忽略）某条安全发现。
+//
+// @Summary      抑制安全发现
+// @Tags         security
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        fid  path  string  true  "发现ID"
+// @Success      200  {object}  map[string]interface{}  "抑制结果(suppressed)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/findings/{fid}/suppress [post]
 func (h *Handler) Suppress(c *gin.Context) {
 	psID, fid := c.Param("id"), c.Param("fid")
 	if err := h.store.SuppressFinding(c.Request.Context(), psID, fid); err != nil {
@@ -84,6 +119,16 @@ func (h *Handler) Suppress(c *gin.Context) {
 	httpx.OK(c, gin.H{"id": fid, "status": "suppressed"})
 }
 
+// Gate 安全闸门：按项目空间汇总风险并给出放行/阻断决策。
+//
+// @Summary      安全闸门
+// @Tags         security
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "闸门状态(风险汇总+决策)"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/gate [get]
 func (h *Handler) Gate(c *gin.Context) {
 	g, err := h.store.Gate(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -95,6 +140,16 @@ func (h *Handler) Gate(c *gin.Context) {
 
 // ---------------- 数据分级 ----------------
 
+// ListDC 列出数据分级配置。
+//
+// @Summary      数据分级列表
+// @Tags         security
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "数据分级列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/data-classifications [get]
 func (h *Handler) ListDC(c *gin.Context) {
 	list, err := h.store.ListDC(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -124,6 +179,19 @@ func (b *dcBody) defaults() {
 	}
 }
 
+// CreateDC 新增数据分级配置。
+//
+// @Summary      新增数据分级
+// @Tags         security
+// @Accept       json
+// @Produce      json
+// @Param        id    path  dcBody  true  "项目空间ID"
+// @Param        body  body  dcBody  true  "数据分级{field_name,table_ref,...}"
+// @Success      200  {object}  map[string]interface{}  "创建的数据分级"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/data-classifications [post]
 func (h *Handler) CreateDC(c *gin.Context) {
 	var in dcBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -142,6 +210,17 @@ func (h *Handler) CreateDC(c *gin.Context) {
 	httpx.Created(c, dc)
 }
 
+// DeleteDC 删除数据分级配置。
+//
+// @Summary      删除数据分级
+// @Tags         security
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        did  path  string  true  "数据分级ID"
+// @Success      200  {object}  map[string]interface{}  "删除结果"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/data-classifications/{did} [delete]
 func (h *Handler) DeleteDC(c *gin.Context) {
 	if err := h.store.DeleteDC(c.Request.Context(), c.Param("id"), c.Param("did")); err != nil {
 		httpx.Err(c, 500, 50050, err.Error())
@@ -152,6 +231,16 @@ func (h *Handler) DeleteDC(c *gin.Context) {
 
 // ---------------- 审计 ----------------
 
+// ListAudit 列出安全审计日志。
+//
+// @Summary      安全审计日志
+// @Tags         security
+// @Produce      json
+// @Param        id  path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "审计日志列表"
+// @Failure      500  {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/security/audit-logs [get]
 func (h *Handler) ListAudit(c *gin.Context) {
 	list, err := h.store.ListAudit(c.Request.Context(), c.Param("id"))
 	if err != nil {

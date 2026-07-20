@@ -92,6 +92,22 @@ type invokeBody struct {
 }
 
 // Invoke 统一技能调用入口：网关鉴权 → 校验技能 → 调模型 → 记用量。
+//
+// @Summary      统一技能调用入口
+// @Tags         capability
+// @Accept       json
+// @Produce      json
+// @Param        X-Api-Key    header  string       false  "APIKey（与 Bearer 二选一）"
+// @Param        Authorization  header  string     false  "Bearer sk_anp_xxx"
+// @Param        body          body    invokeBody  true   "调用入参(skill_code+input)"
+// @Success      200  {object}  map[string]interface{}  "result/api_key_id/caller_app"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      401  {object}  map[string]interface{}  "APIKey 无效"
+// @Failure      403  {object}  map[string]interface{}  "无权调用"
+// @Failure      404  {object}  map[string]interface{}  "技能不存在或不可用"
+// @Failure      502  {object}  map[string]interface{}  "网关/上游错误"
+// @Security     BearerAuth
+// @Router       /capabilities/invoke [post]
 func (h *Handler) Invoke(c *gin.Context) {
 	var in invokeBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -126,6 +142,14 @@ func (h *Handler) Invoke(c *gin.Context) {
 
 // ---------------- 公共目录 ----------------
 
+// Catalog 公共技能目录（浏览，无需 APIKey）。
+//
+// @Summary      公共技能目录
+// @Tags         capability
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "已上架公共技能列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Router       /capabilities/skills [get]
 func (h *Handler) Catalog(c *gin.Context) {
 	list, err := h.store.ListSkills(c.Request.Context(), "", "", true)
 	if err != nil {
@@ -135,6 +159,15 @@ func (h *Handler) Catalog(c *gin.Context) {
 	httpx.OK(c, list)
 }
 
+// SkillDetail 公共技能详情。
+//
+// @Summary      公共技能详情
+// @Tags         capability
+// @Produce      json
+// @Param        sid   path  string  true  "技能ID"
+// @Success      200  {object}  map[string]interface{}  "技能详情"
+// @Failure      404  {object}  map[string]interface{}  "技能不存在"
+// @Router       /capabilities/skills/{sid} [get]
 func (h *Handler) SkillDetail(c *gin.Context) {
 	sk, err := h.store.GetSkill(c.Request.Context(), c.Param("sid"))
 	if err != nil {
@@ -146,6 +179,17 @@ func (h *Handler) SkillDetail(c *gin.Context) {
 
 // ---------------- 技能管理 ----------------
 
+// ListSkills 列出项目空间下的技能。
+//
+// @Summary      列出项目空间下的技能
+// @Tags         capability
+// @Produce      json
+// @Param        id      path   string  true  "项目空间ID"
+// @Param        status  query  string  false "状态过滤(draft/pending_review/active/offline)"
+// @Success      200  {object}  map[string]interface{}  "技能列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills [get]
 func (h *Handler) ListSkills(c *gin.Context) {
 	list, err := h.store.ListSkills(c.Request.Context(), c.Param("id"), c.Query("status"), false)
 	if err != nil {
@@ -176,6 +220,19 @@ func (b *skillBody) defaults() {
 	}
 }
 
+// CreateSkill 在项目空间下创建技能。
+//
+// @Summary      创建技能
+// @Tags         capability
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string      true  "项目空间ID"
+// @Param        body  body  skillBody   true  "技能内容(code+name)"
+// @Success      200  {object}  map[string]interface{}  "创建的技能"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills [post]
 func (h *Handler) CreateSkill(c *gin.Context) {
 	var in skillBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -195,6 +252,20 @@ func (h *Handler) CreateSkill(c *gin.Context) {
 	httpx.Created(c, sk)
 }
 
+// UpdateSkill 更新技能。
+//
+// @Summary      更新技能
+// @Tags         capability
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string     true  "项目空间ID"
+// @Param        sid   path  string     true  "技能ID"
+// @Param        body  body  skillBody  true  "技能内容"
+// @Success      200  {object}  map[string]interface{}  "更新后的技能"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills/{sid} [put]
 func (h *Handler) UpdateSkill(c *gin.Context) {
 	var in skillBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -214,6 +285,17 @@ func (h *Handler) UpdateSkill(c *gin.Context) {
 	httpx.OK(c, sk)
 }
 
+// DeleteSkill 删除技能。
+//
+// @Summary      删除技能
+// @Tags         capability
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        sid   path  string  true  "技能ID"
+// @Success      200  {object}  map[string]interface{}  "{id,deleted:true}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills/{sid} [delete]
 func (h *Handler) DeleteSkill(c *gin.Context) {
 	if err := h.store.DeleteSkill(c.Request.Context(), c.Param("sid")); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
@@ -223,6 +305,16 @@ func (h *Handler) DeleteSkill(c *gin.Context) {
 }
 
 // SubmitSkill 提交上架评审（draft → pending_review）。
+//
+// @Summary      提交技能上架评审
+// @Tags         capability
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        sid   path  string  true  "技能ID"
+// @Success      200  {object}  map[string]interface{}  "{id,status:pending_review}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills/{sid}/submit [post]
 func (h *Handler) SubmitSkill(c *gin.Context) {
 	if err := h.store.SetSkillStatus(c.Request.Context(), c.Param("sid"), "pending_review"); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
@@ -232,6 +324,16 @@ func (h *Handler) SubmitSkill(c *gin.Context) {
 }
 
 // ApproveSkill 审批通过上架（→ active）。
+//
+// @Summary      审批通过技能上架
+// @Tags         capability
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        sid   path  string  true  "技能ID"
+// @Success      200  {object}  map[string]interface{}  "{id,status:active}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills/{sid}/approve [post]
 func (h *Handler) ApproveSkill(c *gin.Context) {
 	if err := h.store.SetSkillStatus(c.Request.Context(), c.Param("sid"), "active"); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
@@ -241,6 +343,16 @@ func (h *Handler) ApproveSkill(c *gin.Context) {
 }
 
 // OfflineSkill 下线/紧急熔断（→ offline，网关即时拦截）。
+//
+// @Summary      下线技能（紧急熔断）
+// @Tags         capability
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        sid   path  string  true  "技能ID"
+// @Success      200  {object}  map[string]interface{}  "{id,status:offline}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/skills/{sid}/offline [post]
 func (h *Handler) OfflineSkill(c *gin.Context) {
 	if err := h.store.SetSkillStatus(c.Request.Context(), c.Param("sid"), "offline"); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
@@ -251,6 +363,16 @@ func (h *Handler) OfflineSkill(c *gin.Context) {
 
 // ---------------- APIKey 管理 ----------------
 
+// ListAPIKeys 列出项目空间下的 APIKey。
+//
+// @Summary      列出项目空间下的 APIKey
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "APIKey 列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/api-keys [get]
 func (h *Handler) ListAPIKeys(c *gin.Context) {
 	list, err := h.store.ListAPIKeys(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -266,6 +388,19 @@ type apiKeyBody struct {
 	Scope         string `json:"scope"`
 }
 
+// CreateAPIKey 创建 APIKey（明文 secret 仅返回一次）。
+//
+// @Summary      创建 APIKey
+// @Tags         capability
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string       true  "项目空间ID"
+// @Param        body  body  apiKeyBody   true  "APIKey 内容(app_name)"
+// @Success      200  {object}  map[string]interface{}  "{api_key,secret,note}"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/api-keys [post]
 func (h *Handler) CreateAPIKey(c *gin.Context) {
 	var in apiKeyBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -281,6 +416,17 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 	httpx.Created(c, gin.H{"api_key": k, "secret": plain, "note": "明文仅此一次返回，请妥善保存"})
 }
 
+// RevokeAPIKey 吊销 APIKey。
+//
+// @Summary      吊销 APIKey
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        kid  path  string  true  "APIKey ID"
+// @Success      200  {object}  map[string]interface{}  "{id,status:revoked}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/api-keys/{kid}/revoke [post]
 func (h *Handler) RevokeAPIKey(c *gin.Context) {
 	if err := h.store.RevokeAPIKey(c.Request.Context(), c.Param("id"), c.Param("kid")); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
@@ -291,6 +437,16 @@ func (h *Handler) RevokeAPIKey(c *gin.Context) {
 
 // ---------------- 用量 ----------------
 
+// UsageList 用量明细列表。
+//
+// @Summary      用量明细
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "用量明细列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/usage [get]
 func (h *Handler) UsageList(c *gin.Context) {
 	list, err := h.store.UsageList(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -300,6 +456,16 @@ func (h *Handler) UsageList(c *gin.Context) {
 	httpx.OK(c, list)
 }
 
+// UsageBySkill 按技能聚合的用量。
+//
+// @Summary      按技能聚合的用量
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "按技能聚合的用量"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/usage/by-skill [get]
 func (h *Handler) UsageBySkill(c *gin.Context) {
 	list, err := h.store.UsageBySkill(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -311,6 +477,16 @@ func (h *Handler) UsageBySkill(c *gin.Context) {
 
 // ---------------- 领域 Agent ----------------
 
+// ListDomainAgents 列出领域 Agent。
+//
+// @Summary      列出领域 Agent
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "领域 Agent 列表"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/domain-agents [get]
 func (h *Handler) ListDomainAgents(c *gin.Context) {
 	list, err := h.store.ListDomainAgents(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -328,6 +504,19 @@ type domainAgentBody struct {
 	Status         string `json:"status"`
 }
 
+// CreateDomainAgent 创建领域 Agent。
+//
+// @Summary      创建领域 Agent
+// @Tags         capability
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string           true  "项目空间ID"
+// @Param        body  body  domainAgentBody  true  "领域 Agent 内容(code+name)"
+// @Success      200  {object}  map[string]interface{}  "创建的领域 Agent"
+// @Failure      400  {object}  map[string]interface{}  "invalid body"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/domain-agents [post]
 func (h *Handler) CreateDomainAgent(c *gin.Context) {
 	var in domainAgentBody
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -348,6 +537,17 @@ func (h *Handler) CreateDomainAgent(c *gin.Context) {
 	httpx.Created(c, d)
 }
 
+// DeleteDomainAgent 删除领域 Agent。
+//
+// @Summary      删除领域 Agent
+// @Tags         capability
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        did  path  string  true  "领域 Agent ID"
+// @Success      200  {object}  map[string]interface{}  "{id,deleted:true}"
+// @Failure      500  {object}  map[string]interface{}  "服务端错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/capabilities/domain-agents/{did} [delete]
 func (h *Handler) DeleteDomainAgent(c *gin.Context) {
 	if err := h.store.DeleteDomainAgent(c.Request.Context(), c.Param("id"), c.Param("did")); err != nil {
 		httpx.Err(c, 500, 50090, err.Error())
