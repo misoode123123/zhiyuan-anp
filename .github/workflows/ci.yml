@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - run: go mod download
       - run: go build ./...
@@ -33,6 +33,11 @@ jobs:
           working-directory: platform/backend
       - name: go test
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: 覆盖率门禁 (≥30%)
+        run: |
+          COV=$(go tool cover -func=coverage.out | awk '/^total/ {gsub("%",""); print $NF}')
+          echo "Total coverage: ${COV}%"
+          awk "BEGIN {exit !(${COV} >= 30)}" || { echo "::error::后端总覆盖率 ${COV}% 低于门禁 30%"; exit 1; }
       - name: 上传覆盖率
         uses: actions/upload-artifact@v4
         with:
@@ -59,6 +64,8 @@ jobs:
         run: pnpm --filter frontend exec prettier --check .
       - name: tsc typecheck
         run: pnpm --filter frontend exec tsc --noEmit
+      - name: vitest
+        run: pnpm --filter frontend test
       - name: build
         run: pnpm --filter frontend build
 
@@ -88,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
       - uses: pnpm/action-setup@v4
         with:
           version: 10.31.0
