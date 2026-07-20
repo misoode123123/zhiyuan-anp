@@ -150,3 +150,38 @@ func TestList_AppName(t *testing.T) {
 		t.Fatalf("Get 应带 app_name=hello-go,得到 %q", g.AppName)
 	}
 }
+
+// TestHasApproved_ViaRequirement source_id=requirement_id(AI 编码派生)时,经 requirement.application_id 识别归属应用。
+// 闸门三方法必须双路径,否则 req 派生的变更被漏判。
+func TestHasApproved_ViaRequirement(t *testing.T) {
+	s := newTestStore(t)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello')`)
+	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	c := mk("ps_1", "req_1") // source_id=requirement_id
+	_ = s.Create(context.Background(), c)
+	_ = s.Decide(context.Background(), c.ID, "approved", "admin")
+	if has, _ := s.HasApproved(context.Background(), "app_1"); !has {
+		t.Fatal("source_id=req_id 经 application_id 应识别为 app_1 的 approved 变更")
+	}
+	if hasAny, _ := s.HasAny(context.Background(), "app_1"); !hasAny {
+		t.Fatal("HasAny 双路径应识别 req_id 派生的变更")
+	}
+}
+
+// TestMarkReleased_ViaRequirement source_id=req_id 的 approved 变更,MarkReleased(app_id) 后应 released。
+// dogfooding 暴露:原仅 source_id=app_id,漏 req_id 派生 → 上线后变更不标 released(用户反馈"还显示")。
+func TestMarkReleased_ViaRequirement(t *testing.T) {
+	s := newTestStore(t)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello')`)
+	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	c := mk("ps_1", "req_1")
+	_ = s.Create(context.Background(), c)
+	_ = s.Decide(context.Background(), c.ID, "approved", "admin")
+	if err := s.MarkReleased(context.Background(), "app_1"); err != nil {
+		t.Fatalf("mark released: %v", err)
+	}
+	got, _ := s.Get(context.Background(), c.ID)
+	if got.Status != "released" {
+		t.Fatalf("source_id=req_id 的变更 MarkReleased(app_id) 后应 released,得到 %s", got.Status)
+	}
+}

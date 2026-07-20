@@ -26,6 +26,11 @@ const chgFrom = ` FROM change_request c
    ON a.id = c.source_id
    OR a.id IN (SELECT application_id FROM requirement WHERE id = c.source_id)`
 
+// appSourceCond 应用 source 条件:source_id=app_id 直接,或 source_id 是该应用的需求(requirement.application_id=app)。
+// 变更闸门三方法(HasAny/HasApproved/MarkReleased)必须覆盖双路径——AI 编码派生的变更 source_id=requirement_id,
+// 单按 source_id=app_id 会漏(上线后不标 released、闸门误判无 approved)。
+const appSourceCond = `(source_id = $1 OR source_id IN (SELECT id FROM requirement WHERE application_id = $1))`
+
 // Create 登记一条待审批变更。
 func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 	c.ID = "chg_" + uuid.NewString()[:20]
@@ -60,14 +65,14 @@ func (s *Store) List(ctx context.Context, status string) ([]ChangeRequest, error
 // HasAny 该 source（应用/需求）是否登记过变更——grandfather：未登记过的不受 promote 闸门约束。
 func (s *Store) HasAny(ctx context.Context, sourceID string) (bool, error) {
 	var c int
-	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = $1`, sourceID)
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE `+appSourceCond, sourceID)
 	return c > 0, err
 }
 
 // HasApproved 该 source 是否有已批准变更（promote 闸门放行条件）。
 func (s *Store) HasApproved(ctx context.Context, sourceID string) (bool, error) {
 	var c int
-	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE source_id = $1 AND status = 'approved'`, sourceID)
+	err := s.db.GetContext(ctx, &c, `SELECT COUNT(*) FROM change_request WHERE `+appSourceCond+` AND status = 'approved'`, sourceID)
 	return c > 0, err
 }
 
@@ -89,7 +94,7 @@ func (s *Store) Decide(ctx context.Context, id, decision, reviewer string) error
 // MarkReleased 把某应用( source_id)的所有 approved 变更标记为 released(已上线,从待上线消失)。
 func (s *Store) MarkReleased(ctx context.Context, sourceID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE change_request SET status = 'released' WHERE source_id = $1 AND status = 'approved'`,
+		`UPDATE change_request SET status = 'released' WHERE ` + appSourceCond + ` AND status = 'approved'`,
 		sourceID)
 	return err
 }
