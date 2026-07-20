@@ -40,7 +40,7 @@ func (a *CodingAgent) Submit(ctx context.Context, psID, kind, sourceID, repoDir,
 		return nil, err
 	}
 	t := &codetask.Task{
-		ID: "ctask_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:19],
+		ID:             "ctask_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:19],
 		ProjectSpaceID: psID, Kind: kind, SourceID: sourceID,
 		RepoDir: repoDir, Prompt: prompt, Model: model,
 	}

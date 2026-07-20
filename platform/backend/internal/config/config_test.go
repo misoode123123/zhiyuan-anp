@@ -15,10 +15,10 @@ func TestSplitCSV(t *testing.T) {
 		{"a,b,c", []string{"a", "b", "c"}},
 		{" a , b , c ", []string{"a", "b", "c"}}, // 两侧空格 trim
 		{"a,,b", []string{"a", "b"}},             // 空段过滤
-		{",,,", []string{}},                       // 全空段
-		{"", []string{}},                          // 空串返回空切片
-		{"single", []string{"single"}},            // 无分隔符
-		{"  ", []string{}},                        // 仅空白
+		{",,,", []string{}},                      // 全空段
+		{"", []string{}},                         // 空串返回空切片
+		{"single", []string{"single"}},           // 无分隔符
+		{"  ", []string{}},                       // 仅空白
 	}
 	for _, c := range cases {
 		got := splitCSV(c.in)

@@ -19,8 +19,8 @@ type Conversation struct {
 type Message struct {
 	ID             string    `json:"id" db:"id"`
 	ConversationID string    `json:"conversation_id" db:"conversation_id"`
-	Role           string    `json:"role" db:"role"` // user/assistant
-	Content        string    `json:"content" db:"content"` // JSON: {"text":...,"images":[...]}
+	Role           string    `json:"role" db:"role"`             // user/assistant
+	Content        string    `json:"content" db:"content"`       // JSON: {"text":...,"images":[...]}
 	MediaKind      string    `json:"media_kind" db:"media_kind"` // text/image/audio(预留)
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }

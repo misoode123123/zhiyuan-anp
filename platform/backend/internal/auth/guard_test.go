@@ -30,12 +30,12 @@ func newGuardTestStore(t *testing.T) *Store {
 
 func TestRouteOp_KnownAndUnknown(t *testing.T) {
 	cases := map[string]string{
-		"POST /api/v1/code":                 "code.run",
+		"POST /api/v1/code":                            "code.run",
 		"POST /api/v1/project-spaces/:id/requirements": "requirement.create",
-		"PUT /api/v1/config/:key":           "config.manage",
-		"GET /api/v1/project-spaces/:id/usage": "", // 读取类未登记 → 空
-		"GET /api/v1/rules":                 "",   // 读取类未登记 → 空
-		"DELETE /api/v1/standards/:id":      "rule.manage",
+		"PUT /api/v1/config/:key":                      "config.manage",
+		"GET /api/v1/project-spaces/:id/usage":         "", // 读取类未登记 → 空
+		"GET /api/v1/rules":                            "", // 读取类未登记 → 空
+		"DELETE /api/v1/standards/:id":                 "rule.manage",
 	}
 	for k, want := range cases {
 		if got := RouteOp(parseMethod(k), parsePath(k)); got != want {

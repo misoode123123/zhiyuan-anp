@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/jackc/pgx/v5/stdlib" // PG 驱动（副作用注册 database/sql，驱动名 "pgx"）
-	_ "modernc.org/sqlite"             // SQLite 驱动（保留，测试/回退）
+	"github.com/jmoiron/sqlx"
+	_ "modernc.org/sqlite" // SQLite 驱动（保留，测试/回退）
 )
 
 // Open 按 DATABASE_URL 打开数据库连接。

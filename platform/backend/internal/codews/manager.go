@@ -38,12 +38,12 @@ type Manager struct {
 
 // Session 一个开发者在一个应用上的编码工作台实例（per user × app × tool）。
 type Session struct {
-	AppID   string    `json:"app_id"`
-	UserID  string    `json:"user_id"` // 开发者（不同开发者可各开各的工作台/工具）
-	Tool    string    `json:"tool"`
-	Port    int       `json:"port"`
-	URL     string    `json:"url"`
-	RepoDir string    `json:"-"`
+	AppID   string `json:"app_id"`
+	UserID  string `json:"user_id"` // 开发者（不同开发者可各开各的工作台/工具）
+	Tool    string `json:"tool"`
+	Port    int    `json:"port"`
+	URL     string `json:"url"`
+	RepoDir string `json:"-"`
 	// SessionID 预创建的会话(带项目上下文); 开发者打开 web UI 即见此会话而非空白。
 	// 空=未预创建或失败(非致命, 用户可手动新建)。
 	SessionID string `json:"session_id,omitempty"`
@@ -179,9 +179,13 @@ func ensureSession(port int, repoDir string) string {
 		}
 		var r struct {
 			Data []struct {
-				ID       string `json:"id"`
-				Time     struct{ Updated int64 `json:"updated"` } `json:"time"`
-				Location struct{ Directory string `json:"directory"` } `json:"location"`
+				ID   string `json:"id"`
+				Time struct {
+					Updated int64 `json:"updated"`
+				} `json:"time"`
+				Location struct {
+					Directory string `json:"directory"`
+				} `json:"location"`
 			} `json:"data"`
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&r)

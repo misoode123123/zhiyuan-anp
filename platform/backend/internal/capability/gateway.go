@@ -28,11 +28,11 @@ func NewGateway(store *Store, agentRuntimeURL, defaultModel string) *Gateway {
 
 // InvokeResult 一次调用的结果。
 type InvokeResult struct {
-	Content   string `json:"content"`
-	RenderHint string `json:"render_hint"`
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TraceID   string `json:"trace_id"`
+	Content      string `json:"content"`
+	RenderHint   string `json:"render_hint"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+	TraceID      string `json:"trace_id"`
 }
 
 // Invoke 执行技能调用：鉴权 → 校验技能 → 调模型 → 记用量。
@@ -95,7 +95,7 @@ func (g *Gateway) callChat(ctx context.Context, prompt string) (string, int, int
 		model = "glm-4-flash"
 	}
 	body := map[string]interface{}{
-		"model": model,
+		"model":    model,
 		"messages": []map[string]string{{"role": "user", "content": prompt}},
 	}
 	buf, _ := json.Marshal(body)
@@ -132,7 +132,7 @@ func (g *Gateway) callChat(ctx context.Context, prompt string) (string, int, int
 
 // 业务错误哨兵值。
 var (
-	ErrAuth            = fmt.Errorf("APIKey 无效或已失效")
+	ErrAuth             = fmt.Errorf("APIKey 无效或已失效")
 	ErrSkillUnavailable = fmt.Errorf("技能不存在或未上架")
 	ErrNotAllowed       = fmt.Errorf("该 APIKey 未被授权调用此技能")
 )

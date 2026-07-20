@@ -4,11 +4,11 @@ package dev
 
 // CodeTask 编码任务。
 type CodeTask struct {
-	ID              string `json:"id"`
-	ProjectSpaceID  string `json:"project_space_id"`
-	Prompt          string `json:"prompt"`
-	RepoDir         string `json:"repo_dir"`
-	Model           string `json:"model,omitempty"`
-	Status          string `json:"status"`
-	Output          string `json:"output,omitempty"`
+	ID             string `json:"id"`
+	ProjectSpaceID string `json:"project_space_id"`
+	Prompt         string `json:"prompt"`
+	RepoDir        string `json:"repo_dir"`
+	Model          string `json:"model,omitempty"`
+	Status         string `json:"status"`
+	Output         string `json:"output,omitempty"`
 }

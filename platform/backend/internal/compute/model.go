@@ -24,7 +24,7 @@ type Stats struct {
 
 // ModelStat 按模型聚合。
 type ModelStat struct {
-	Model string `json:"model" db:"model"`
-	Tokens int   `json:"tokens" db:"tokens"`
-	Calls  int   `json:"calls" db:"calls"`
+	Model  string `json:"model" db:"model"`
+	Tokens int    `json:"tokens" db:"tokens"`
+	Calls  int    `json:"calls" db:"calls"`
 }

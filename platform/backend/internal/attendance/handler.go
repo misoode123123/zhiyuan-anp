@@ -28,9 +28,9 @@ func (h *Handler) Register(r gin.IRouter) {
 }
 
 type submitRequest struct {
-	Status       string `json:"status" binding:"required"`       // rest/overtime/leave
-	StartTime    string `json:"start_time" binding:"required"`   // RFC3339
-	EndTime      string `json:"end_time" binding:"required"`     // RFC3339
+	Status       string `json:"status" binding:"required"`     // rest/overtime/leave
+	StartTime    string `json:"start_time" binding:"required"` // RFC3339
+	EndTime      string `json:"end_time" binding:"required"`   // RFC3339
 	Reason       string `json:"reason,omitempty"`
 	SupervisorID string `json:"supervisor_id" binding:"required"` // 直接上级，提交后转其审批
 }

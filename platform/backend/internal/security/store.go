@@ -11,8 +11,8 @@ import (
 
 // Store 安全中心数据访问。
 type Store struct {
-	db       *sqlx.DB
-	scanner  Scanner
+	db      *sqlx.DB
+	scanner Scanner
 }
 
 // NewStore 构造 Store（默认 RegexScanner）。
