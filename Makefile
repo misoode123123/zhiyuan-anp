@@ -10,7 +10,7 @@ PY  := platform/agent-runtime
 .PHONY: dev build test lint fmt check \
         be-build be-test be-cover be-vet be-lint be-fmt \
         fe-build fe-lint fe-test fe-fmt \
-        py-lint py-fmt be-swag api-gen
+        py-lint py-fmt be-swag api-gen migrate-up migrate-down
 
 # ---- 聚合 ----
 dev:
@@ -76,3 +76,10 @@ be-swag:
 api-gen: be-swag
 	cd $(FE) && pnpm exec swagger2openapi ../backend/docs/swagger.json -o ../backend/docs/openapi.json
 	cd $(FE) && pnpm exec openapi-typescript ../backend/docs/openapi.json -o lib/api-types.ts
+
+# ---- 数据库迁移（手动 up/down，不启 server）----
+migrate-up:
+	cd $(BE) && $(GO) run ./cmd/server migrate-up
+
+migrate-down:
+	cd $(BE) && $(GO) run ./cmd/server migrate-down

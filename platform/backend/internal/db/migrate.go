@@ -7,8 +7,11 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -19,50 +22,175 @@ import (
 //go:embed migrations/pg/*.sql
 var migrationFS embed.FS
 
-// Migrate 执行 embed 的 PG 迁移文件（按 *.up.sql 文件名版本排序，幂等）。
-// 已在 schema_migrations 记录的跳过；未记录的执行并记录。
-func Migrate(ctx context.Context, db *sqlx.DB) error {
-	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version    TEXT PRIMARY KEY,
-		applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
-		return fmt.Errorf("create schema_migrations: %w", err)
-	}
+// migrationEntry 单个迁移版本的 up/down SQL。
+type migrationEntry struct {
+	version  string
+	up, down string
+	hasDown  bool
+}
 
-	entries, err := migrationFS.ReadDir("migrations/pg")
+// loadMigrations 从 fsys 读取并配对 *.up.sql / *.down.sql，按 version 升序。
+// fsys 根目录即迁移文件目录（生产用 fs.Sub 取 migrations/pg 子树）。
+func loadMigrations(fsys fs.FS) ([]migrationEntry, error) {
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return fmt.Errorf("read migrations dir: %w", err)
+		return nil, fmt.Errorf("read migrations dir: %w", err)
 	}
-	var ups []string
+	var names []string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".up.sql") {
-			ups = append(ups, e.Name())
+			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(ups)
-
-	for _, name := range ups {
+	sort.Strings(names)
+	out := make([]migrationEntry, 0, len(names))
+	for _, name := range names {
 		version := strings.TrimSuffix(name, ".up.sql")
-		var applied bool
-		if err := db.GetContext(ctx, &applied,
-			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version); err != nil {
-			return fmt.Errorf("check migration %s: %w", version, err)
+		upBytes, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		entry := migrationEntry{version: version, up: string(upBytes)}
+		if b, err := fs.ReadFile(fsys, version+".down.sql"); err == nil {
+			entry.down = string(b)
+			entry.hasDown = true
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// ensureMigrationsTable 确保 schema_migrations 版本表存在（幂等）。
+func ensureMigrationsTable(ctx context.Context, db *sqlx.DB) error {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version    TEXT PRIMARY KEY,
+		applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	if err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+	return nil
+}
+
+// isApplied 查询某版本是否已应用。
+func isApplied(ctx context.Context, db *sqlx.DB, version string) (bool, error) {
+	var applied bool
+	if err := db.GetContext(ctx, &applied,
+		`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version); err != nil {
+		return false, fmt.Errorf("check migration %s: %w", version, err)
+	}
+	return applied, nil
+}
+
+// migrateUp 正向应用所有未应用的迁移（按 version 升序），每个迁移一个事务包裹。
+// 单个迁移 SQL 失败 → 整个迁移回滚（含 schema_migrations 记录），不影响已应用版本。
+func migrateUp(ctx context.Context, db *sqlx.DB, fsys fs.FS) error {
+	if err := ensureMigrationsTable(ctx, db); err != nil {
+		return err
+	}
+	entries, err := loadMigrations(fsys)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		applied, err := isApplied(ctx, db, e.version)
+		if err != nil {
+			return err
 		}
 		if applied {
 			continue
 		}
-		sqlBytes, err := migrationFS.ReadFile("migrations/pg/" + name)
+		tx, err := db.BeginTxx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", name, err)
+			return fmt.Errorf("begin tx for %s: %w", e.version, err)
 		}
-		if _, err := db.ExecContext(ctx, string(sqlBytes)); err != nil {
-			return fmt.Errorf("exec migration %s: %w", name, err)
+		if _, err := tx.ExecContext(ctx, e.up); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("exec up %s: %w", e.version, err)
 		}
-		if _, err := db.ExecContext(ctx,
-			`INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
-			return fmt.Errorf("record migration %s: %w", version, err)
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO schema_migrations(version) VALUES ($1)`, e.version); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", e.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", e.version, err)
 		}
 	}
 	return nil
+}
+
+// migrateDown 回滚最新一个已应用版本（一步）。无已应用版本则空操作。
+// down SQL 失败 → 回滚（保留 schema_migrations 记录与表状态）。
+func migrateDown(ctx context.Context, db *sqlx.DB, fsys fs.FS) error {
+	if err := ensureMigrationsTable(ctx, db); err != nil {
+		return err
+	}
+	entries, err := loadMigrations(fsys)
+	if err != nil {
+		return err
+	}
+	var latest string
+	err = db.GetContext(ctx, &latest,
+		`SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1`)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // 无已应用版本，空操作
+		}
+		return fmt.Errorf("query latest migration: %w", err)
+	}
+	var down string
+	for _, e := range entries {
+		if e.version == latest {
+			if !e.hasDown {
+				return fmt.Errorf("migration %s 无 down.sql，无法回滚", latest)
+			}
+			down = e.down
+			break
+		}
+	}
+	if down == "" {
+		return fmt.Errorf("migration %s 未在迁移文件中找到", latest)
+	}
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for down %s: %w", latest, err)
+	}
+	if _, err := tx.ExecContext(ctx, down); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("exec down %s: %w", latest, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM schema_migrations WHERE version = $1`, latest); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete migration record %s: %w", latest, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit down %s: %w", latest, err)
+	}
+	return nil
+}
+
+// migrationsPG 生产迁移文件（migrations/pg/）的 fs.FS 视图（子目录为根，便于 loadMigrations 遍历）。
+func migrationsPG() (fs.FS, error) {
+	return fs.Sub(migrationFS, "migrations/pg")
+}
+
+// Migrate 正向应用所有未应用迁移（幂等，每个迁移事务包裹）。保留签名不变。
+func Migrate(ctx context.Context, db *sqlx.DB) error {
+	fsys, err := migrationsPG()
+	if err != nil {
+		return err
+	}
+	return migrateUp(ctx, db, fsys)
+}
+
+// MigrateDown 回滚最新一个已应用迁移（一步，事务包裹）。供手动回滚用（make migrate-down）。
+func MigrateDown(ctx context.Context, db *sqlx.DB) error {
+	fsys, err := migrationsPG()
+	if err != nil {
+		return err
+	}
+	return migrateDown(ctx, db, fsys)
 }
 
 // SeedUsers 若 user 表为空，播种演示用户（admin/dev1/biz1，与 SeedBootstrapMembers 成员名对齐）。
