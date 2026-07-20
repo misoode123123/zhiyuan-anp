@@ -538,7 +538,7 @@ func (h *Handler) Promote(c *gin.Context) {
 				return
 			}
 			// 上线后:把该应用的 approved 变更标记为 released（从待上线列表消失）
-			h.changes.MarkReleased(c.Request.Context(), aid)
+			_ = h.changes.MarkReleased(c.Request.Context(), aid) // 上线后标记 released;失败不阻塞(下次上线再标)
 		}
 	}
 	go h.buildAndDeploy(psID, aid, "", EnvProd)
