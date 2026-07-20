@@ -567,6 +567,22 @@ export default function WorkspaceFrame() {
                 return;
               }
               setSelectedReq(id);
+              // 期2联动:认领后自动建/复用工作区(Ensure dev-<user> worktree + opencode),开发者不用手动 git worktree
+              try {
+                const w = await fetch(
+                  `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ tool }),
+                  }
+                ).then((rr) => rr.json());
+                if (w.code === 0 && w.data?.url) {
+                  setUrl(w.data.deep_url || w.data.url);
+                }
+              } catch (e) {
+                /* 工作区启动失败不阻塞认领 */
+              }
               setTaskMsg("");
               setTestMsg("");
               setTestResults(null);
