@@ -43,7 +43,7 @@ func (s *Store) CreateAlert(ctx context.Context, a *Alert) error {
 // ListAlerts 告警列表（severity/status 可选过滤）。
 func (s *Store) ListAlerts(ctx context.Context, psID, severity, status string) ([]Alert, error) {
 	q := `SELECT id, project_space_id, source, severity, status, fingerprint, title, description, fired_at, resolved_at, created_at
-	      FROM ops_alert WHERE project_space_id = $1`
+	      FROM ops_alert WHERE project_space_id = ?`
 	args := []interface{}{psID}
 	if severity != "" {
 		q += ` AND severity = ?`
@@ -54,6 +54,7 @@ func (s *Store) ListAlerts(ctx context.Context, psID, severity, status string) (
 		args = append(args, status)
 	}
 	q += ` ORDER BY fired_at DESC LIMIT 200`
+	q = sqlx.Rebind(sqlx.DOLLAR, q) // 动态拼 WHERE，?→$N（PG 兼容）
 	var list []Alert
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err
@@ -110,13 +111,14 @@ func (s *Store) CreateSOP(ctx context.Context, sop *SOP) error {
 
 // ListSOPs SOP 列表（status 可选）。
 func (s *Store) ListSOPs(ctx context.Context, psID, status string) ([]SOP, error) {
-	q := `SELECT ` + sopCols() + ` FROM ops_sop WHERE project_space_id = $1`
+	q := `SELECT ` + sopCols() + ` FROM ops_sop WHERE project_space_id = ?`
 	args := []interface{}{psID}
 	if status != "" {
 		q += ` AND status = ?`
 		args = append(args, status)
 	}
 	q += ` ORDER BY created_at DESC`
+	q = sqlx.Rebind(sqlx.DOLLAR, q) // 动态拼 WHERE，?→$N（PG 兼容）
 	var list []SOP
 	err := s.db.SelectContext(ctx, &list, q, args...)
 	return list, err
