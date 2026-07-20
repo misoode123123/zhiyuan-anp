@@ -352,7 +352,8 @@ func (h *Handler) Submit(c *gin.Context) {
 	httpx.OK(c, gin.H{"passed": true, "details": details, "change_id": chg.ID, "note": "✅ 核对通过,已登记变更,待审批"})
 }
 
-// Merge 把开发者分支(dev-<user>)合并到主线 main,供上线。冲突则放弃合并并报错。
+// Merge 把开发者分支(dev-<user>)合并到主线 main,供上线。
+// G3 前置:需有 approved 变更;合并成功后收敛(释放认领+需求delivered+清worktree)。冲突则放弃合并并报错。
 func (h *Handler) Merge(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	a, err := h.store.Get(c.Request.Context(), psID, aid)
@@ -360,9 +361,20 @@ func (h *Handler) Merge(c *gin.Context) {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
+	var in struct {
+		ReqID string `json:"req_id"` // 合并哪条需求的变更(收敛:释放认领+delivered)
+	}
+	_ = c.ShouldBindJSON(&in)
 	user := c.GetHeader("X-User")
 	if user == "" {
 		user = "anonymous"
+	}
+	// G3 前置:需有 approved 变更才能合并(对齐 Promote grandfather 闸门)
+	if h.changes != nil {
+		if ok, _ := h.changes.HasApproved(c.Request.Context(), aid); !ok {
+			httpx.Err(c, 409, 40940, "需先审批通过变更才能合并(变更闸门)")
+			return
+		}
 	}
 	branch := "dev-" + sanitizeID(user)
 	ctx := c.Request.Context()
@@ -373,7 +385,23 @@ func (h *Handler) Merge(c *gin.Context) {
 		httpx.Err(c, 409, 40940, "合并冲突(需人工解决后重试):\n"+out)
 		return
 	}
-	httpx.OK(c, gin.H{"merged": branch, "note": "已合并到 main,可点「上线」"})
+	// 收敛:释放认领 + 需求 delivered + 清 worktree
+	released, delivered, cleaned := "", "", ""
+	if h.reqRepo != nil && in.ReqID != "" {
+		if err := h.reqRepo.Release(ctx, in.ReqID); err == nil {
+			released = in.ReqID
+		}
+		if err := h.reqRepo.UpdateStatus(ctx, in.ReqID, "delivered"); err == nil {
+			delivered = "delivered"
+		}
+	}
+	wt := filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user))
+	if _, err := os.Stat(wt); err == nil {
+		if _, err := runGit(ctx, a.RepoDir, "worktree", "remove", "--force", wt); err == nil {
+			cleaned = wt
+		}
+	}
+	httpx.OK(c, gin.H{"merged": branch, "released": released, "delivered": delivered, "worktree_cleaned": cleaned, "note": "已合并到 main,需求交付,工作区已清理"})
 }
 
 // readRepoCode 读 repo 内全部文件内容(代码+文档,截断),供 AI 核对。
