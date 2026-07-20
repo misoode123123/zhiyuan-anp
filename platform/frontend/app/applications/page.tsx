@@ -240,6 +240,7 @@ export default function ApplicationsPage() {
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
     load(psID);
+    loadChanges(id); // 上线后 approved→released,刷新变更列表让"待上线"消失
   }
   // 跳转到「编码工作台」tab(/workspace):由该页自己调 /workspace 接口拉起 opencode 并全屏加载。
   // 走 tab 系统而非弹窗/页内嵌入——与平台其他功能一致,可在 tab 间切换、不离开平台。
@@ -547,6 +548,17 @@ export default function ApplicationsPage() {
                                 {(
                                   (c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)
                                 ).slice(0, 50)}
+                                {c.created_at && (
+                                  <span className="ml-1 text-[10px] text-neutral-400">
+                                    {new Date(c.created_at).toLocaleString("zh-CN", {
+                                      hour12: false,
+                                      month: "2-digit",
+                                      day: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                )}
                               </div>
                             ))}
                         </div>

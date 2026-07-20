@@ -353,18 +353,29 @@ export default function WorkspaceFrame() {
   }
 
   // 合并 dev-<user> 到 main(上线前;worktree 模式必要)。
+  // 期2-A:传 req_id 触发后端收敛(释放认领+需求 delivered+清 worktree)。
   async function mergeReq() {
+    if (!selectedReq) {
+      alert("先选需求");
+      return;
+    }
     setMerging(true);
     try {
       const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ req_id: selectedReq }),
       }).then((rr) => rr.json());
       if (r.code !== 0) {
         alert(r.message || "合并失败");
         setMerging(false);
         return;
       }
-      alert("✅ 已合并到主线 main,可点「🚀上线」");
+      const d = r.data || {};
+      alert(
+        `✅ 已合并到主线 main,可点「🚀上线」\n${d.delivered ? "📦 需求已交付" : ""}${d.released ? " · 🔓 已释放认领" : ""}${d.worktree_cleaned ? " · 🧹 已清理工作区" : ""}`
+      );
+      fetchDetail();
     } catch (e) {
       alert(String(e));
     }
