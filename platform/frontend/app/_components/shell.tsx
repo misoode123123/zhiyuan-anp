@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { NAV_MAP, TabProvider, useTabs } from "./tabs";
 import { Sidebar } from "./sidebar";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { UserSwitcher } from "./user-switcher";
 import { TabBar } from "./tab-bar";
-import { installAuthInterceptor } from "@/lib/api";
+import { installAuthInterceptor, isLoggedIn } from "@/lib/api";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -20,12 +20,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { addTab, refreshKey } = useTabs();
 
-  // 客户端挂载后安装全局 fetch 拦截（注入 X-User / X-Project-Space-Id 头）。
+  // 客户端挂载后安装全局 fetch 拦截（注入 Authorization / X-Project-Space-Id）。
   useEffect(() => {
     installAuthInterceptor();
   }, []);
+
+  // 登录守卫:未登录且不在登录页 → 跳 /login(撤 X-User 模拟回退后强制真实登录)。
+  useEffect(() => {
+    if (pathname !== "/login" && !isLoggedIn()) {
+      router.replace("/login");
+    }
+  }, [pathname, router]);
 
   // 路由变化 → 确保对应 tab 已打开
   useEffect(() => {

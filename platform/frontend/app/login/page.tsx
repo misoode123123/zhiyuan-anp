@@ -65,11 +65,7 @@ export default function LoginPage() {
           {loading ? "登录中…" : "登录"}
         </button>
         <div className="mt-3 text-center text-xs text-neutral-400">
-          {/* 游客模式需硬刷新清空登录态，故用 <a> 而非 <Link> */}
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a href="/" className="hover:underline">
-            跳过，以游客继续（X-User 模拟）
-          </a>
+          初始账号 admin / admin123 · 联系管理员开通你的账号
         </div>
       </form>
     </div>

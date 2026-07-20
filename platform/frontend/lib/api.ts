@@ -62,12 +62,11 @@ export function installAuthInterceptor(): void {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes(API_BASE_URL) || url.includes(AGENT_RUNTIME_URL)) {
       const headers = new Headers(init?.headers);
-      // 已登录 → 带 Authorization Bearer token（真实鉴权）；未登录 → 回退 X-User 模拟（兼容调试）
+      // 已登录 → 带 Authorization Bearer token；无 token 不再回退 X-User(撤模拟回退,2026-07-20)
+      // 未登录请求会 401 → 登录守卫(Shell)跳 /login
       const token = getAuthToken();
       if (token && !headers.has("Authorization")) {
         headers.set("Authorization", "Bearer " + token);
-      } else if (!token && !headers.has("X-User")) {
-        headers.set("X-User", currentUser());
       }
       const ps = currentProjectSpace();
       if (ps && !headers.has("X-Project-Space-Id")) headers.set("X-Project-Space-Id", ps);

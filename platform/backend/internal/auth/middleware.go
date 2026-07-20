@@ -15,25 +15,38 @@ const (
 	CtxUserID = "user_id"
 )
 
-// AuthUser 解析当前用户注入 user_id。
-// 优先 Authorization: Bearer <token>（真实登录）；无 token/无效则回退 X-User 头（兼容调试/旧前端）。
-// store 为 nil 时纯走 X-User（测试用）。
+// publicPaths 无需登录的白名单（登录接口本身；healthz 不在 /api/v1 下,不受 AuthUser 管）。
+var publicPaths = map[string]bool{
+	"/api/v1/auth/login": true,
+}
+
+// AuthUser 强制真实登录:Bearer token 校验通过才放行,否则 401。
+// 撤 X-User 模拟回退(2026-07-20 真实鉴权)——任何人不再能靠 X-User 头伪装身份。
+// store 为 nil(未启用鉴权)→ 500;登录接口走白名单放行。
 func AuthUser(store *Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if store != nil {
-			if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-				if name, ok := store.ValidToken(c.Request.Context(), strings.TrimPrefix(auth, "Bearer ")); ok {
-					c.Set(CtxUserID, name)
-					c.Next()
-					return
-				}
-			}
+		if publicPaths[c.Request.URL.Path] {
+			c.Next()
+			return
 		}
-		u := c.GetHeader(HeaderUserID)
-		if u == "" {
-			u = "anonymous"
+		if store == nil {
+			httpx.Err(c, 500, 50001, "鉴权未配置")
+			c.Abort()
+			return
 		}
-		c.Set(CtxUserID, u)
+		auth := c.GetHeader("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			httpx.Err(c, 401, 40101, "未登录")
+			c.Abort()
+			return
+		}
+		name, ok := store.ValidToken(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
+		if !ok {
+			httpx.Err(c, 401, 40101, "登录已过期,请重新登录")
+			c.Abort()
+			return
+		}
+		c.Set(CtxUserID, name)
 		c.Next()
 	}
 }

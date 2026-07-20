@@ -114,9 +114,9 @@ func TestAutoRequire_AllowsAdminDeniesAnonymous(t *testing.T) {
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/code", nil)
 	req2.Header.Set(HeaderUserID, "admin")
 	w2 := httptest.NewRecorder()
-	// 覆盖默认 anonymous：用一个能读头的 AuthUser
+	// admin 已认证(直接注入 CtxUserID,模拟 AuthUser 通过;撤 X-User 回退后不再用 AuthUser(nil))
 	r2 := gin.New()
-	r2.Use(AuthUser(nil))
+	r2.Use(func(c *gin.Context) { c.Set(CtxUserID, "admin"); c.Next() })
 	v2 := r2.Group("/api/v1")
 	v2.Use(AutoRequire(store))
 	v2.POST("/code", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
@@ -125,9 +125,9 @@ func TestAutoRequire_AllowsAdminDeniesAnonymous(t *testing.T) {
 		t.Fatalf("admin 应通过(200)，得到 %d body=%s", w2.Code, w2.Body.String())
 	}
 
-	// 读取类路由（未登记）对 anonymous 放行
+	// 读取类路由（未登记）对已认证但无角色用户放行
 	r3 := gin.New()
-	r3.Use(AuthUser(nil))
+	r3.Use(func(c *gin.Context) { c.Set(CtxUserID, "anonymous"); c.Next() })
 	v3 := r3.Group("/api/v1")
 	v3.Use(AutoRequire(store))
 	v3.GET("/rules", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
