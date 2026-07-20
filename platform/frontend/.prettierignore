@@ -7,3 +7,5 @@ pnpm-lock.yaml
 next-env.d.ts
 tsconfig.tsbuildinfo
 *.eslint-out.json
+# OpenAPI 自动生成文件(openapi-typescript 生成),不检查 prettier 格式
+lib/api-types.ts
