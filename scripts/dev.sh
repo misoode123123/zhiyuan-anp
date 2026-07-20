@@ -10,8 +10,9 @@ if [ -f "$ROOT/platform/agent-runtime/.env" ]; then
   set -a; . "$ROOT/platform/agent-runtime/.env"; set +a
 fi
 
-echo "[1/3] Go 后端    : http://localhost:8080  (healthz)"
-( cd "$ROOT/platform/backend" && go run ./cmd/server ) &
+echo "[1/3] Go 后端    : http://localhost:8080  (healthz, 连 .28 dev PG)"
+# 本地默认连 .28 dev PG(开发/生产禁 SQLite);如需覆盖,设 DATABASE_URL 环境变量或 platform/backend/.env
+( cd "$ROOT/platform/backend" && DATABASE_URL="${DATABASE_URL:-postgres://anp:anp_dev_pwd@10.10.0.28:5432/anp_dev?sslmode=disable}" go run ./cmd/server ) &
 
 echo "[2/3] AI 运行时  : http://localhost:8001  (healthz)"
 ( cd "$ROOT/platform/agent-runtime" && python -m agent_runtime.main ) &

@@ -16,7 +16,7 @@ type Config struct {
 	LogLevel        string   // debug / info / warn / error
 	HTTPAddr        string   // 监听地址，如 :8080
 	CORSOrigins     []string // 允许的前端来源
-	DatabaseURL     string   // M0: sqlite://... ; 后续: postgres://...
+	DatabaseURL     string   // 必须 postgres://（开发/生产禁 SQLite;测试用 sqlite :memory: 不走 config.Open）
 	AgentRuntimeURL string   // Python AI 运行时地址（Go 经 HTTP 调用）
 	// opencode 编码引擎（研发工作台）
 	ZhipuAPIKey        string // 智谱 API Key（注入 opencode 子进程）
@@ -35,7 +35,7 @@ func Load() (*Config, error) {
 	v.SetDefault("log_level", "info")
 	v.SetDefault("backend_http_addr", ":8080")
 	v.SetDefault("backend_cors_origins", "http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000")
-	v.SetDefault("database_url", "sqlite://./tmp/anp.db")
+	// database_url 不设默认:开发/生产强制 PostgreSQL(禁 SQLite)。无 DATABASE_URL 或 sqlite:// → Load 报错。
 	v.SetDefault("agent_runtime_url", "http://127.0.0.1:8001") // 用 IPv4 直连，避免 Go 把 localhost 解析成 [::1] 而 agent-runtime 只监听 IPv4
 	v.SetDefault("opencode_config", "../opencode.json")        // 相对 backend cwd → platform/opencode.json
 	// git bash 路径仅 Windows 下 opencode 需要；Linux/macOS 留空。
@@ -67,6 +67,13 @@ func Load() (*Config, error) {
 	}
 	if cfg.HTTPAddr == "" {
 		return nil, fmt.Errorf("backend_http_addr must not be empty")
+	}
+	// 运行时强制 PG,禁 SQLite(开发/生产都不允许 sqlite 文件库;单测的 :memory: 不走 config.Open,不受影响)
+	if cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("database_url 必须配置(开发: postgres://anp:anp_dev_pwd@10.10.0.28:5432/anp_dev?sslmode=disable; 生产: anp PG)")
+	}
+	if strings.HasPrefix(cfg.DatabaseURL, "sqlite://") {
+		return nil, fmt.Errorf("运行时禁用 SQLite(仅允许 postgres://); 收到 %q(测试 :memory: 不受影响)", cfg.DatabaseURL)
 	}
 	return cfg, nil
 }
