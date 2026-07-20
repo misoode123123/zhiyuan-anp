@@ -176,7 +176,12 @@ func migrationsPG() (fs.FS, error) {
 }
 
 // Migrate 正向应用所有未应用迁移（幂等，每个迁移事务包裹）。保留签名不变。
+// SQLite 跳过：anp.db 表由历史 schema 建好，且 migrations/pg/*.sql 含 PG 专属语法（vector/IF NOT EXISTS），
+// SQLite 跑会失败——SQLite 模式不依赖迁移建表（仅 PG 模式走迁移）。
 func Migrate(ctx context.Context, db *sqlx.DB) error {
+	if db.DriverName() == "sqlite" {
+		return nil
+	}
 	fsys, err := migrationsPG()
 	if err != nil {
 		return err
@@ -186,6 +191,9 @@ func Migrate(ctx context.Context, db *sqlx.DB) error {
 
 // MigrateDown 回滚最新一个已应用迁移（一步，事务包裹）。供手动回滚用（make migrate-down）。
 func MigrateDown(ctx context.Context, db *sqlx.DB) error {
+	if db.DriverName() == "sqlite" {
+		return nil
+	}
 	fsys, err := migrationsPG()
 	if err != nil {
 		return err
