@@ -5,7 +5,7 @@ import "github.com/gin-gonic/gin"
 
 // Response 是统一响应体。
 type Response struct {
-	Code    int         `json:"code"`              // 0 表示成功，其余为业务错误码
+	Code    int         `json:"code"` // 0 表示成功，其余为业务错误码
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 	TraceID string      `json:"trace_id,omitempty"`

@@ -115,11 +115,11 @@ func TestDetectType_PriorityGoOverNode(t *testing.T) {
 // TestDefaultPortForType 各类型默认端口（未知类型/空 → 8080）。
 func TestDefaultPortForType(t *testing.T) {
 	cases := map[string]int{
-		"node":   3000,
-		"static": 80,
-		"go":     8080,
-		"python": 8080,
-		"":       8080,
+		"node":    3000,
+		"static":  80,
+		"go":      8080,
+		"python":  8080,
+		"":        8080,
 		"unknown": 8080,
 	}
 	for t_, want := range cases {

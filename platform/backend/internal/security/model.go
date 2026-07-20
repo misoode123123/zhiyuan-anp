@@ -18,7 +18,7 @@ import "time"
 type ScanResult struct {
 	ID             string    `json:"id" db:"id"`
 	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
-	ScanType       string    `json:"scan_type" db:"scan_type"` // secret/sast/prompt/full
+	ScanType       string    `json:"scan_type" db:"scan_type"`   // secret/sast/prompt/full
 	RiskLevel      string    `json:"risk_level" db:"risk_level"` // critical/high/medium/low/clean
 	TotalFindings  int       `json:"total_findings" db:"total_findings"`
 	CriticalCount  int       `json:"critical_count" db:"critical_count"`
@@ -67,7 +67,7 @@ type AuditLog struct {
 	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
 	ActorType      string    `json:"actor_type" db:"actor_type"` // agent/human/system
 	ActorID        string    `json:"actor_id" db:"actor_id"`
-	Action         string    `json:"action" db:"action"`         // scan/suppress/gate/leak_blocked
+	Action         string    `json:"action" db:"action"` // scan/suppress/gate/leak_blocked
 	ResourceType   string    `json:"resource_type" db:"resource_type"`
 	Detail         string    `json:"detail" db:"detail"`
 	PolicyDecision string    `json:"policy_decision" db:"policy_decision"` // allow/deny/mask

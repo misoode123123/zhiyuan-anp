@@ -13,7 +13,7 @@ func TestManagedRepoDir(t *testing.T) {
 		"snake":   filepath.Join(ManagedRepoBase, "snake"),
 		"MyApp":   filepath.Join(ManagedRepoBase, "myapp"), // 小写化
 		"foo bar": filepath.Join(ManagedRepoBase, "foo-bar"),
-		"应用中文":     filepath.Join(ManagedRepoBase, "----"), // 非 ASCII 字母数字→"-"（按 rune 计数，4 字符 = 4 dashes）
+		"应用中文":    filepath.Join(ManagedRepoBase, "----"), // 非 ASCII 字母数字→"-"（按 rune 计数，4 字符 = 4 dashes）
 	}
 	for name, want := range cases {
 		got := ManagedRepoDir(name)
@@ -33,7 +33,7 @@ func TestSanitizeID(t *testing.T) {
 		"Alice":    "alice",
 		"Bob_2024": "bob-2024", // _ 也被替换（仅 a-z0-9 通过）
 		"user@x.y": "user-x-y",
-		"中文":       "--", // 2 个 rune 各替换为 1 个 -
+		"中文":       "--",  // 2 个 rune 各替换为 1 个 -
 		"":         "dev", // 空兜底
 		"UPPER":    "upper",
 	}

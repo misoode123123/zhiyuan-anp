@@ -12,7 +12,7 @@ type AppDetail struct {
 	Requirements []AppReqItem    `json:"requirements"`
 	Changes      []AppChangeItem `json:"changes"`
 	Releases     []AppRelItem    `json:"releases"`
-	Commits      []CommitInfo    `json:"commits"`    // 托管 git 仓库的版本历史（= 应用代码版本）
+	Commits      []CommitInfo    `json:"commits"`   // 托管 git 仓库的版本历史（= 应用代码版本）
 	Instances    []AppInstance   `json:"instances"` // 各环境部署实例（test/prod）
 }
 
@@ -42,11 +42,11 @@ type AppChangeItem struct {
 
 // AppRelItem 发布条目。
 type AppRelItem struct {
-	ID        string    `json:"id" db:"id"`
-	Version   string    `json:"version" db:"version"`
-	Status    string    `json:"status" db:"status"`
-	ChangeID  string    `json:"change_id" db:"change_id"`
-	CreateAt  time.Time `json:"created_at" db:"created_at"`
+	ID       string    `json:"id" db:"id"`
+	Version  string    `json:"version" db:"version"`
+	Status   string    `json:"status" db:"status"`
+	ChangeID string    `json:"change_id" db:"change_id"`
+	CreateAt time.Time `json:"created_at" db:"created_at"`
 }
 
 // Detail 聚合某应用的研发全链路（需求→变更→发布）+ 应用本体。

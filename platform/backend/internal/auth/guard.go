@@ -28,18 +28,18 @@ var routeOps = map[string]string{
 	// 发布中心
 	"POST /api/v1/project-spaces/:id/releases": "release.create",
 	// 规则治理中心（规则 + 编码规范同属 rule_architect 治理）
-	"POST /api/v1/rules":                    "rule.manage",
-	"PUT /api/v1/rules/:id":                 "rule.manage",
-	"PATCH /api/v1/rules/:id/enabled":       "rule.manage",
-	"DELETE /api/v1/rules/:id":              "rule.manage",
-	"POST /api/v1/rules/check":              "rule.manage",
-	"POST /api/v1/standards":                "rule.manage",
-	"PUT /api/v1/standards/:id":             "rule.manage",
-	"PATCH /api/v1/standards/:id/enabled":   "rule.manage",
-	"DELETE /api/v1/standards/:id":          "rule.manage",
+	"POST /api/v1/rules":                        "rule.manage",
+	"PUT /api/v1/rules/:id":                     "rule.manage",
+	"PATCH /api/v1/rules/:id/enabled":           "rule.manage",
+	"DELETE /api/v1/rules/:id":                  "rule.manage",
+	"POST /api/v1/rules/check":                  "rule.manage",
+	"POST /api/v1/standards":                    "rule.manage",
+	"PUT /api/v1/standards/:id":                 "rule.manage",
+	"PATCH /api/v1/standards/:id/enabled":       "rule.manage",
+	"DELETE /api/v1/standards/:id":              "rule.manage",
 	"POST /api/v1/project-spaces/:id/standards": "rule.manage",
 	// 系统配置 + 成员管理（admin）
-	"PUT /api/v1/config/:key":               "config.manage",
+	"PUT /api/v1/config/:key":                 "config.manage",
 	"POST /api/v1/project-spaces/:id/members": "config.manage",
 }
 

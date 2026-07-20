@@ -24,8 +24,8 @@ func TestAllocFreePort(t *testing.T) {
 
 func TestHostPortRegex(t *testing.T) {
 	cases := map[string]int{
-		"0.0.0.0:9123->80/tcp":        9123,
-		"10.10.0.28:9150->8080/tcp":   9150,
+		"0.0.0.0:9123->80/tcp":                 9123,
+		"10.10.0.28:9150->8080/tcp":            9150,
 		"0.0.0.0:9101->3000/tcp, 9102->80/tcp": 9101,
 	}
 	for line, want := range cases {
@@ -97,8 +97,8 @@ func TestNewDeployer(t *testing.T) {
 func TestEnvPortRange(t *testing.T) {
 	d := NewDeployer("h")
 	cases := []struct {
-		env        string
-		min, max   int
+		env      string
+		min, max int
 	}{
 		{EnvTest, portTestMin, portTestMax},
 		{EnvProd, portProdMin, portProdMax},

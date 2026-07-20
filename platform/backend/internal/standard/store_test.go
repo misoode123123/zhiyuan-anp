@@ -42,10 +42,10 @@ func TestListEffective_MergesGlobalAndProject(t *testing.T) {
 	s := newTestStore(t)
 	ps := "ps_1"
 	mustCreate(t, s, nil, "G1", 100, true)          // 全局
-	mustCreate(t, s, &ps, "P1", 50, true)            // 项目级 ps_1
-	mustCreate(t, s, &ps, "P2-disabled", 10, false)  // 项目级但禁用 → 不出现
+	mustCreate(t, s, &ps, "P1", 50, true)           // 项目级 ps_1
+	mustCreate(t, s, &ps, "P2-disabled", 10, false) // 项目级但禁用 → 不出现
 	other := "ps_2"
-	mustCreate(t, s, &other, "P-other", 1, true)     // 别的空间 → 不出现
+	mustCreate(t, s, &other, "P-other", 1, true) // 别的空间 → 不出现
 
 	got, err := s.ListEffective(context.Background(), "ps_1")
 	if err != nil {

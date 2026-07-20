@@ -13,22 +13,22 @@ import "time"
 
 // Application 产出应用（可构建可部署的独立服务）。
 type Application struct {
-	ID             string    `json:"id" db:"id"`
-	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
-	Name           string    `json:"name" db:"name"`                 // 应用名（也是镜像/容器名前缀）
-	RepoDir        string    `json:"repo_dir" db:"repo_dir"`         // docker 守护进程可见的源码路径（含 Dockerfile）
-	InternalPort   int       `json:"internal_port" db:"internal_port"` // 应用容器内监听端口（Dockerfile EXPOSE）
-	Image          string    `json:"image" db:"image"`               // 镜像引用 appdeploy/<name>:v<n>
-	ContainerName  string    `json:"container_name" db:"container_name"`
-	HostPort       int       `json:"host_port" db:"host_port"`       // 分配的宿主端口
-	URL            string    `json:"url" db:"url"`                   // http://<host>:<host_port>
-	Version        int       `json:"version" db:"version"`           // 构建版本号
-	Status         string    `json:"status" db:"status"`             // registered/building/running/stopped/failed
-	LastError      string    `json:"last_error,omitempty" db:"last_error"`
-	BuildLog       string    `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
-	Instances      []AppInstance `json:"instances,omitempty" db:"-"` // 各环境部署实例（聚合展示，非列）
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID             string        `json:"id" db:"id"`
+	ProjectSpaceID string        `json:"project_space_id" db:"project_space_id"`
+	Name           string        `json:"name" db:"name"`                   // 应用名（也是镜像/容器名前缀）
+	RepoDir        string        `json:"repo_dir" db:"repo_dir"`           // docker 守护进程可见的源码路径（含 Dockerfile）
+	InternalPort   int           `json:"internal_port" db:"internal_port"` // 应用容器内监听端口（Dockerfile EXPOSE）
+	Image          string        `json:"image" db:"image"`                 // 镜像引用 appdeploy/<name>:v<n>
+	ContainerName  string        `json:"container_name" db:"container_name"`
+	HostPort       int           `json:"host_port" db:"host_port"` // 分配的宿主端口
+	URL            string        `json:"url" db:"url"`             // http://<host>:<host_port>
+	Version        int           `json:"version" db:"version"`     // 构建版本号
+	Status         string        `json:"status" db:"status"`       // registered/building/running/stopped/failed
+	LastError      string        `json:"last_error,omitempty" db:"last_error"`
+	BuildLog       string        `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
+	Instances      []AppInstance `json:"instances,omitempty" db:"-"`         // 各环境部署实例（聚合展示，非列）
+	CreatedAt      time.Time     `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at" db:"updated_at"`
 }
 
 // 环境常量：test=测试验证(prod 前)，prod=正式上线(用户访问)。
@@ -49,6 +49,7 @@ type EnvVar struct {
 	IsSecret  bool      `json:"is_secret" db:"is_secret"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
+
 // 发布→部署 test（验证）；「上线」→部署 prod（用户访问）。两环境独立镜像/容器/端口/版本。
 type AppInstance struct {
 	ID            string    `json:"id" db:"id"`
@@ -57,7 +58,7 @@ type AppInstance struct {
 	Image         string    `json:"image,omitempty" db:"image"`
 	ContainerName string    `json:"container_name,omitempty" db:"container_name"`
 	HostPort      int       `json:"host_port,omitempty" db:"host_port"`
-	URL           string     `json:"url,omitempty" db:"url"`
+	URL           string    `json:"url,omitempty" db:"url"`
 	Version       int       `json:"version,omitempty" db:"version"`
 	Status        string    `json:"status" db:"status"` // registered/building/running/stopped/failed
 	LastError     string    `json:"last_error,omitempty" db:"last_error"`

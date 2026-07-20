@@ -11,8 +11,8 @@ import (
 // Handler 需求工作台 HTTP 接口。
 type Handler struct {
 	svc       *Service
-	chgStore  *change.Store  // 变更(用于 my-tasks 聚合待审批/上线);nil=不聚合
-	authStore *auth.Store    // 用户角色(用于 my-tasks RBAC 过滤);nil=不过滤
+	chgStore  *change.Store // 变更(用于 my-tasks 聚合待审批/上线);nil=不聚合
+	authStore *auth.Store   // 用户角色(用于 my-tasks RBAC 过滤);nil=不过滤
 }
 
 // NewHandler 构造 Handler。chgStore/authStore 可为 nil。

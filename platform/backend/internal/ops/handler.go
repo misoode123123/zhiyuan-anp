@@ -102,9 +102,9 @@ func (h *Handler) Inspect(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, gin.H{
-		"overall":         OverallHealth(comps),
-		"components":      comps,
-		"alerts_created":  created,
+		"overall":           OverallHealth(comps),
+		"components":        comps,
+		"alerts_created":    created,
 		"alerts_suppressed": len(comps) - countHealthy(comps) - created,
 	})
 }
@@ -131,9 +131,9 @@ func (h *Handler) ListAlerts(c *gin.Context) {
 }
 
 type alertBody struct {
-	Source     string `json:"source"`
-	Severity   string `json:"severity" binding:"required"`
-	Title      string `json:"title" binding:"required"`
+	Source      string `json:"source"`
+	Severity    string `json:"severity" binding:"required"`
+	Title       string `json:"title" binding:"required"`
 	Description string `json:"description"`
 }
 

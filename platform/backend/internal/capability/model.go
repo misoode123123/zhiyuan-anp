@@ -17,13 +17,13 @@ import "time"
 type Skill struct {
 	ID              string    `json:"id" db:"id"`
 	ProjectSpaceID  string    `json:"project_space_id" db:"project_space_id"`
-	Code            string    `json:"code" db:"code"`           // 唯一编码 data-qa / report-gen
+	Code            string    `json:"code" db:"code"` // 唯一编码 data-qa / report-gen
 	Name            string    `json:"name" db:"name"`
 	Description     string    `json:"description" db:"description"`
-	Category        string    `json:"category" db:"category"`   // requirement/doc_gen/data_qa/approval/report/code/assistant
+	Category        string    `json:"category" db:"category"`               // requirement/doc_gen/data_qa/approval/report/code/assistant
 	PromptTemplate  string    `json:"prompt_template" db:"prompt_template"` // 提示模板（{input} 占位）
 	Version         string    `json:"version" db:"version"`
-	Status          string    `json:"status" db:"status"`       // draft/pending_review/active/offline
+	Status          string    `json:"status" db:"status"`         // draft/pending_review/active/offline
 	RiskLevel       string    `json:"risk_level" db:"risk_level"` // low/medium/high
 	IsPublic        bool      `json:"is_public" db:"is_public"`
 	DataAccessScope string    `json:"data_access_scope" db:"data_access_scope"`
@@ -36,11 +36,11 @@ type APIKey struct {
 	ID             string     `json:"id" db:"id"`
 	ProjectSpaceID string     `json:"project_space_id" db:"project_space_id"`
 	AppName        string     `json:"app_name" db:"app_name"`
-	KeyHash        string     `json:"-" db:"key_hash"`       // SHA256，不序列化
-	KeyPrefix      string     `json:"key_prefix" db:"key_prefix"` // 展示用前缀
+	KeyHash        string     `json:"-" db:"key_hash"`                    // SHA256，不序列化
+	KeyPrefix      string     `json:"key_prefix" db:"key_prefix"`         // 展示用前缀
 	AllowedSkills  string     `json:"allowed_skills" db:"allowed_skills"` // 逗号分隔 skill code，空=全部
-	Scope          string     `json:"scope" db:"scope"`       // read/write/admin
-	Status         string     `json:"status" db:"status"`     // active/revoked
+	Scope          string     `json:"scope" db:"scope"`                   // read/write/admin
+	Status         string     `json:"status" db:"status"`                 // active/revoked
 	ExpiresAt      *time.Time `json:"expires_at,omitempty" db:"expires_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 }
@@ -67,7 +67,7 @@ type DomainAgent struct {
 	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
 	Code           string    `json:"code" db:"code"`
 	Name           string    `json:"name" db:"name"`
-	Domain         string    `json:"domain" db:"domain"` // finance/hr/customer_service/operations/legal/custom
+	Domain         string    `json:"domain" db:"domain"`                   // finance/hr/customer_service/operations/legal/custom
 	ComposedSkills string    `json:"composed_skills" db:"composed_skills"` // 逗号分隔
 	Status         string    `json:"status" db:"status"`                   // draft/active/offline
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`

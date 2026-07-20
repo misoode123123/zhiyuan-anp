@@ -37,18 +37,18 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)
 	r.POST("/project-spaces/:id/apps", h.Create)
 	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
-	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)     // 部署到 test（默认）或指定 env
-	r.POST("/project-spaces/:id/apps/:aid/promote", h.Promote)   // 上线 = 部署到 prod
+	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)   // 部署到 test（默认）或指定 env
+	r.POST("/project-spaces/:id/apps/:aid/promote", h.Promote) // 上线 = 部署到 prod
 	r.POST("/project-spaces/:id/apps/:aid/deploy-commit", h.DeployCommit)
 	r.POST("/project-spaces/:id/apps/:aid/stop", h.Stop)
 	r.POST("/project-spaces/:id/apps/:aid/start", h.Start)
 	r.DELETE("/project-spaces/:id/apps/:aid", h.Delete)
-	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace)            // 启动交互编码工作台
-	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange)   // 登记交互编码变更为待审批（期2 闸门）
+	r.POST("/project-spaces/:id/apps/:aid/workspace", h.Workspace)                  // 启动交互编码工作台
+	r.POST("/project-spaces/:id/apps/:aid/register-change", h.RegisterChange)       // 登记交互编码变更为待审批（期2 闸门）
 	r.POST("/project-spaces/:id/apps/:aid/inject-requirement", h.InjectRequirement) // 把需求注入 opencode 会话(交互式编码)
 	r.POST("/project-spaces/:id/apps/:aid/submit", h.Submit)                        // 提交核对门禁(AI 核对代码 vs 需求,不匹配拦)
 	r.POST("/project-spaces/:id/apps/:aid/merge", h.Merge)                          // 合并 dev-<user> 到 main(上线前)
-	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)          // 应用运行时环境变量
+	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)                           // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
@@ -124,7 +124,7 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Note string `json:"note"`   // 可选:开发者补充说明
+		Note  string `json:"note"`   // 可选:开发者补充说明
 		ReqID string `json:"req_id"` // 可选:关联的需求(需求驱动开发时,变更归属该需求)
 	}
 	_ = c.ShouldBindJSON(&in)
@@ -204,7 +204,7 @@ func summarizeChange(ctx context.Context, apiKey, diff, conversation string) str
 		prompt += "【diff】\n" + truncateStr(diff, 2000)
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"model": "glm-5.1",
+		"model":    "glm-5.1",
 		"messages": []map[string]string{{"role": "user", "content": prompt}},
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", bytes.NewReader(body))

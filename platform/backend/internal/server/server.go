@@ -7,8 +7,8 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
-	"zhiyuan-anp/platform/backend/internal/config"
 	_ "zhiyuan-anp/platform/backend/docs" // swag 生成的 OpenAPI spec（副作用注册 SwaggerInfo）
+	"zhiyuan-anp/platform/backend/internal/config"
 )
 
 // New 构造 Gin 引擎，挂载全局中间件与基础路由。
@@ -45,8 +45,8 @@ func healthz(c *gin.Context) {
 
 func version(c *gin.Context) {
 	c.JSON(200, gin.H{
-		"name":    "zhiyuan-anp-backend",
-		"version": "0.1.0",
+		"name":     "zhiyuan-anp-backend",
+		"version":  "0.1.0",
 		"trace_id": c.GetString(CtxTraceID),
 	})
 }
