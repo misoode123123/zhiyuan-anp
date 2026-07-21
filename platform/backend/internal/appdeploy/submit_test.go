@@ -55,7 +55,7 @@ func setupSubmit(t *testing.T, ac, user string, makeWorktree bool, check checkFu
 	if _, err := db.Exec(`INSERT INTO requirement (id, project_space_id, application_id, title, description, user_story, acceptance_criteria, status) VALUES ('req_1', 'ps_1', 'app_1', '登录页', '', '', ?, 'developing')`, ac); err != nil {
 		t.Fatalf("insert req: %v", err)
 	}
-	h := NewHandler(NewStore(db), nil, nil, change.NewStore(db), nil, requirement.NewRepository(db))
+	h := NewHandler(NewStore(db), nil, nil, change.NewStore(db), nil, requirement.NewRepository(db), nil)
 	h.checkFn = check
 	return h, db
 }

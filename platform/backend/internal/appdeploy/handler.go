@@ -19,6 +19,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
 
@@ -30,6 +31,7 @@ type Handler struct {
 	changes  *change.Store           // 变更闸门（期2）；nil=未启用
 	cfg      *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
 	reqRepo  *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
+	provisioner *pgsupply.Provisioner // 应用库供给（Create 建库 / Delete 删库）
 	checkFn  checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
@@ -37,17 +39,17 @@ type Handler struct {
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
 type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
 
-// NewHandler 构造。codeWS/changes/cfg/reqRepo 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository) *Handler {
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo}
+// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner) *Handler {
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner}
 	h.checkFn = checkRequirement // 默认真 AI 核对
 	return h
 }
 
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository) *Handler {
-	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo)
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner) *Handler {
+	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner)
 	h.Register(r)
 	return h
 }
@@ -788,6 +790,12 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
+	// 供给独立库 + 注入 DATABASE_URL（失败不阻塞应用创建，仅记录；DATABASE_URL 缺失时应用自处理）
+	if h.provisioner != nil {
+		if _, perr := h.provisioner.Provision(c.Request.Context(), a.ProjectSpaceID, a.ID); perr != nil {
+			_ = perr // 后续接 ops 告警
+		}
+	}
 	httpx.Created(c, a)
 }
 
@@ -1052,6 +1060,10 @@ func (h *Handler) Start(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a != nil {
+		// 先删应用库（DropDatabase/Role；库记录在 Store.Delete 级联删 appdeploy_database 前先清）
+		if h.provisioner != nil {
+			_ = h.provisioner.Cleanup(c.Request.Context(), a.ID)
+		}
 		// 删除所有环境的容器
 		inss, _ := h.store.ListInstancesByApp(c.Request.Context(), a.ID)
 		for _, ins := range inss {

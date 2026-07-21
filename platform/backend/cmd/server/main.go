@@ -36,6 +36,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/docs"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
 	"zhiyuan-anp/platform/backend/internal/ops"
+	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/release"
 	"zhiyuan-anp/platform/backend/internal/requirement"
@@ -126,6 +127,12 @@ func main() {
 		logger.Fatal("seed coding_standard", zap.Error(err))
 	}
 	appDeployStore := appdeploy.NewStore(database)
+	// ---- 应用库供给（pgsupply）：每项目一个独立 PG 实例 + 应用库供给 ----
+	pgsupplyStore := pgsupply.NewStore(database)
+	pgAdmin := pgsupply.NewPGAdmin()
+	pgDocker := pgsupply.NewOSDocker()
+	instanceMgr := pgsupply.NewInstanceManager(pgsupplyStore, pgDocker, pgAdmin, cfg.AppDeployHost)
+	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore) // appDeployStore 满足 EnvWriter
 	qaStore := qa.NewStore(database)
 	opsStore := ops.NewStore(database)
 	if err := db.SeedDemoSOPs(context.Background(), database); err != nil {
@@ -156,7 +163,7 @@ func main() {
 	v1.Use(auth.AutoRequire(authStore))
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo)
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner)
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)
 	rule.Register(v1, ruleStore, v)
