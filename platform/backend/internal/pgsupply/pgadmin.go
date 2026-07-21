@@ -40,7 +40,8 @@ func (pgAdminClient) CreateDatabase(ctx context.Context, adminURL, dbName string
 		return err
 	}
 	defer db.Close()
-	// 标识符双引号；不存在才建（幂等）
+	// 标识符双引号。注意：PG 不支持 CREATE DATABASE IF NOT EXISTS，库已存在会报 error；
+	// 本供给流程每应用用新 dbName(app_<hex>)，不会重复，故无需捕获 already-exists。
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, dbName)); err != nil {
 		return fmt.Errorf("create database %s: %w", dbName, err)
 	}
