@@ -79,13 +79,22 @@ export default function TeamPage() {
 
   async function assign(rid: string, name: string) {
     if (!name) return;
+    if (
+      !confirm(
+        `确认把此任务指派给「${name}」？\n指派后 ${name} 可在首页「我的任务 → 开发中」看到。`
+      )
+    )
+      return;
     const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/assign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ assignee: name }),
     }).then((rr) => rr.json());
     if (r.code !== 0) alert(r.message);
-    else load(psID);
+    else {
+      alert(`✅ 已指派给 ${name},Ta 可在首页「我的任务」查看`);
+      load(psID);
+    }
   }
 
   const reqCard = (q: Req, claimable: boolean) => (

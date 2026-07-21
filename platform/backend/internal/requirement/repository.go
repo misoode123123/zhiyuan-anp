@@ -27,7 +27,7 @@ func (r *Repository) UpdateTasks(ctx context.Context, id, tasks string) error {
 // Assign 认领需求(互斥):已被他人认赖则返回错误(含当前认领人)。
 func (r *Repository) Assign(ctx context.Context, id, user string) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE requirement SET assignee = $1, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		`UPDATE requirement SET assignee = $1, assigned_at = CURRENT_TIMESTAMP, status = 'developing', updated_at = CURRENT_TIMESTAMP
 		 WHERE id = $2 AND (assignee IS NULL OR assignee = '' OR assignee = $3)`,
 		user, id, user)
 	if err != nil {
