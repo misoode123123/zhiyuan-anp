@@ -34,13 +34,14 @@ func (b *Backuper) Dump(ctx context.Context, appID string) (string, error) {
 		return "", fmt.Errorf("库所属实例不存在")
 	}
 	dir := filepath.Join(b.backupRoot, ad.ProjectSpaceID, appID)
-	out := filepath.Join(dir, time.Now().UTC().Format("20060102-150405")+".dump")
+	now := time.Now().UTC()
+	out := filepath.Join(dir, now.Format("20060102-150405")+".dump")
 	appDSN := dsnForDB(ins.AdminURLRef, ad.DBName)
 	cmd := exec.CommandContext(ctx, b.pgDumpBin, "--format=custom", "--file="+out, appDSN)
 	if combined, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("pg_dump: %w: %s", err, combined)
 	}
-	_ = b.store.SetAppDBBackup(ctx, ad.ID, time.Now().UTC())
+	_ = b.store.SetAppDBBackup(ctx, ad.ID, now)
 	return out, nil
 }
 
@@ -64,7 +65,7 @@ func (b *Backuper) Restore(ctx context.Context, appID, dumpFile string) error {
 
 // dsnForDB 把 adminURL（指向 /postgres）的库名段换成目标库。
 // adminURL 形如 postgres://u:p@h:port/postgres?sslmode=disable → /postgres 替为 /<dbName>。
-// 用 strings.Index 定位 /postgres，且确认其后是 '?' 或行尾（避免误匹配 /postgresql 等）。
+// 用 strings.LastIndex 定位 /postgres（避免命中 userinfo 段 //postgres:），且确认其后是 '?' 或行尾（避免误匹配 /postgresql 等）。
 func dsnForDB(adminURL, dbName string) string {
 	const marker = "/postgres"
 	idx := strings.LastIndex(adminURL, marker)
