@@ -81,3 +81,7 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
+
+// 模块加载即装拦截器(client),确保任何 effect 的 fetch 都带 token
+// (避免子组件 effect 先于父 Shell 装 interceptor,导致首个 fetch 401 误报"后端未连接")
+if (typeof window !== "undefined") installAuthInterceptor();

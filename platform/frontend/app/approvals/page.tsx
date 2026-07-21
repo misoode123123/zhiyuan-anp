@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
 import { FlowStepper } from "../_components/stepper";
+import { ChangeOutput } from "../_components/change-output";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type Change = {
@@ -119,11 +120,7 @@ export default function ApprovalsPage() {
               )}
               <span className="truncate">📁 {c.repo_dir}</span>
             </div>
-            {c.output && (
-              <pre className="mt-2 max-h-32 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
-                {c.output}
-              </pre>
-            )}
+            {c.output && <ChangeOutput output={c.output} />}
           </div>
         ))}
         {list.length === 0 && <div className="text-sm text-neutral-400">暂无变更</div>}
