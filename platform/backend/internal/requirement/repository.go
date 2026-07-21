@@ -16,7 +16,7 @@ type Repository struct {
 func NewRepository(db *sqlx.DB) *Repository { return &Repository{db: db} }
 
 // reqCols 显式列（application_id 可空，用 COALESCE 避免 NULL→string 扫描错误）。
-const reqCols = `id, project_space_id, COALESCE(application_id,'') AS application_id, title, description, user_story, acceptance_criteria, status, COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks, COALESCE(assignee,'') AS assignee, assigned_at, created_at, updated_at`
+const reqCols = `id, project_space_id, COALESCE(application_id,'') AS application_id, title, COALESCE(description,'') AS description, COALESCE(user_story,'') AS user_story, COALESCE(acceptance_criteria,'') AS acceptance_criteria, status, COALESCE(priority,'') AS priority, COALESCE(fixed_version,'') AS fixed_version, COALESCE(tasks,'') AS tasks, COALESCE(assignee,'') AS assignee, assigned_at, created_at, updated_at`
 
 // UpdateTasks 更新需求的子任务清单(JSON)。
 func (r *Repository) UpdateTasks(ctx context.Context, id, tasks string) error {
