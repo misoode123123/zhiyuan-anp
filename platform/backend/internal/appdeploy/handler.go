@@ -44,6 +44,14 @@ func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, change
 	return h
 }
 
+// Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
+// 返回 *Handler 供 release 模块（发布后自动部署）复用。
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository) *Handler {
+	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo)
+	h.Register(r)
+	return h
+}
+
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)

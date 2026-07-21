@@ -3,6 +3,7 @@ package docs
 import (
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -13,6 +14,12 @@ type Handler struct {
 
 // NewHandler 构造。
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+// store 用于内部 NewService(store)(读 docs_dir 配置)。
+func Register(r gin.IRouter, store *config.Store) {
+	NewHandler(NewService(store)).Register(r)
+}
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {

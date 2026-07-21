@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/requirement"
 )
 
 // Handler 对话式需求梳理 HTTP 接口。
@@ -16,6 +18,12 @@ type Handler struct {
 
 // NewHandler 构造。
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
+
+// Register 模块级装配：内部 NewStore(db)+NewService+NewHandler+Register。
+// reqRepo 由 main 传入（跨模块枢纽，qa/release 也要用）。
+func Register(r gin.IRouter, db *sqlx.DB, reqRepo *requirement.Repository, agentRuntimeURL string) {
+	NewHandler(NewService(NewStore(db), reqRepo, agentRuntimeURL)).Register(r)
+}
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {

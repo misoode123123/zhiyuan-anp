@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 
 	"zhiyuan-anp/platform/backend/internal/httpx"
 	"zhiyuan-anp/platform/backend/internal/requirement"
@@ -25,6 +26,12 @@ type Handler struct {
 // NewHandler 构造 Handler（reqRepo 读需求验收标准 + 解析归属应用；apps 解析应用运行 URL）。
 func NewHandler(svc *Service, reqRepo *requirement.Repository, apps AppURLResolver) *Handler {
 	return &Handler{svc: svc, reqRepo: reqRepo, apps: apps}
+}
+
+// Register 模块级装配：内部 NewStore(db)+NewService+NewHandler+Register。
+// apps 用本包 AppURLResolver interface（由 *appdeploy.Store 实现），避免 import appdeploy。
+func Register(r gin.IRouter, db *sqlx.DB, agentRuntimeURL string, reqRepo *requirement.Repository, apps AppURLResolver) {
+	NewHandler(NewService(NewStore(db), agentRuntimeURL), reqRepo, apps).Register(r)
 }
 
 // Register 注册路由。

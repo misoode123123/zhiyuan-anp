@@ -5,6 +5,8 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/compute"
+	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -18,6 +20,13 @@ type Handler struct {
 // NewHandler 构造 Handler。chgStore/authStore 可为 nil。
 func NewHandler(svc *Service, chgStore *change.Store, authStore *auth.Store) *Handler {
 	return &Handler{svc: svc, chgStore: chgStore, authStore: authStore}
+}
+
+// Register 模块级装配：内部 new Service/Handler + Register。
+// 跨模块枢纽(repo/devAgent)由 main 传入；appResolver 用本包 AppResolver interface，避免 import appdeploy。
+func Register(r gin.IRouter, repo *Repository, agentRuntimeURL string, devAgent *dev.CodingAgent, computeStore *compute.Store, appResolver AppResolver, changeStore *change.Store, authStore *auth.Store) {
+	svc := NewService(repo, agentRuntimeURL, devAgent, computeStore, appResolver)
+	NewHandler(svc, changeStore, authStore).Register(r)
 }
 
 // Register 注册路由。

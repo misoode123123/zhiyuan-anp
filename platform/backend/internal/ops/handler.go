@@ -19,6 +19,11 @@ func NewHandler(store *Store, agentRuntimeURL string, v *validator.Validate) *Ha
 	return &Handler{store: store, agentRuntimeURL: agentRuntimeURL, v: v}
 }
 
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+func Register(r gin.IRouter, store *Store, agentRuntimeURL string, v *validator.Validate) {
+	NewHandler(store, agentRuntimeURL, v).Register(r)
+}
+
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
 	// 看板与健康

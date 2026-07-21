@@ -20,6 +20,11 @@ func NewHandler(store *Store, gateway *Gateway) *Handler {
 	return &Handler{store: store, gateway: gateway}
 }
 
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+func Register(r gin.IRouter, store *Store, gateway *Gateway) {
+	NewHandler(store, gateway).Register(r)
+}
+
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
 	// 公共目录（浏览，无需 APIKey）

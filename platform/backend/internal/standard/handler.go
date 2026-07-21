@@ -18,6 +18,11 @@ func NewHandler(store *Store, v *validator.Validate) *Handler {
 	return &Handler{store: store, v: v}
 }
 
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+func Register(r gin.IRouter, store *Store, v *validator.Validate) {
+	NewHandler(store, v).Register(r)
+}
+
 // Register 注册路由：全局 /standards；项目级 /project-spaces/:id/standards[...]
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/standards", h.ListGlobal)

@@ -20,6 +20,11 @@ func NewHandler(svc *Service, v *validator.Validate) *Handler {
 	return &Handler{svc: svc, validate: v}
 }
 
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+func Register(r gin.IRouter, svc *Service, v *validator.Validate) {
+	NewHandler(svc, v).Register(r)
+}
+
 // Register 注册路由到给定 group（由 main 挂到 /api/v1）。
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces", h.CreateProjectSpace)

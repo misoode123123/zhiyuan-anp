@@ -14,6 +14,9 @@ type Handler struct {
 // NewHandler 构造 Handler。
 func NewHandler(agent *CodingAgent) *Handler { return &Handler{agent: agent} }
 
+// Register 模块级装配：内部 new + Register，供 main 直接调用。
+func Register(r gin.IRouter, agent *CodingAgent) { NewHandler(agent).Register(r) }
+
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/code", h.Code)

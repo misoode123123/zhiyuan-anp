@@ -17,6 +17,11 @@ type Handler struct {
 // NewHandler 构造 Handler。
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
+// Register 模块级装配:main 调用,内部 new handler + 注册路由(减少 main.go 集中 new)。
+func Register(r gin.IRouter, svc *Service) {
+	NewHandler(svc).Register(r)
+}
+
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/attendance", h.Submit)

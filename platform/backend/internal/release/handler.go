@@ -5,11 +5,13 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
 
@@ -31,6 +33,12 @@ type Handler struct {
 // NewHandler 构造 Handler。appDeploy/cfg/testGate 均可为 nil（不启用对应能力）。
 func NewHandler(store *Store, changes *change.Store, reqRepo *requirement.Repository, appDeploy *appdeploy.Handler, cfg *config.Store, testGate TestGate) *Handler {
 	return &Handler{store: store, changes: changes, reqRepo: reqRepo, appDeploy: appDeploy, cfg: cfg, testGate: testGate}
+}
+
+// Register 模块级装配：内部 NewStore(db)+NewHandler+Register。
+// appDeployHandler/qaStore 均为跨模块枢纽，由 main 传入（qaStore 实现 TestGate interface）。
+func Register(r gin.IRouter, db *sqlx.DB, changeStore *change.Store, reqRepo *requirement.Repository, appDeployHandler *appdeploy.Handler, configStore *config.Store, qaStore *qa.Store) {
+	NewHandler(NewStore(db), changeStore, reqRepo, appDeployHandler, configStore, qaStore).Register(r)
 }
 
 // testGateEnabled 发布测试门禁是否启用（开关 release_require_passed_test=true 且依赖已注入）。
