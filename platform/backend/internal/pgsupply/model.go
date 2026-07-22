@@ -62,3 +62,19 @@ type AppDatabase struct {
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 }
+
+// ActionLog 数据库操作审计日志（每次 SQL 执行记一笔）。
+type ActionLog struct {
+	ID             string    `json:"id" db:"id"`
+	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
+	AppID          string    `json:"app_id" db:"app_id"`
+	DBName         string    `json:"db_name" db:"db_name"`
+	Actor          string    `json:"actor" db:"actor"`
+	ActionType     string    `json:"action_type" db:"action_type"`
+	Statement      string    `json:"statement" db:"statement"`
+	RowCount       int       `json:"row_count" db:"row_count"`
+	Status         string    `json:"status" db:"status"`
+	Error          string    `json:"error,omitempty" db:"error"`
+	TraceID        string    `json:"trace_id,omitempty" db:"trace_id"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}

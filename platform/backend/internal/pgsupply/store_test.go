@@ -2,6 +2,7 @@ package pgsupply
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"zhiyuan-anp/platform/backend/internal/testutil"
@@ -16,7 +17,7 @@ func newTestStore(t *testing.T) *Store {
 	for _, ps := range []string{"ps_1", "ps_new", "ps_x"} {
 		db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('` + ps + `','测试空间','` + ps + `','active') ON CONFLICT (id) DO NOTHING`)
 	}
-	testutil.Truncate(t, db, "appdeploy_database", "pg_instance", "appdeploy_application")
+	testutil.Truncate(t, db, "db_action_log", "appdeploy_database", "pg_instance", "appdeploy_application")
 	// FK 前置：appdeploy_database.app_id → appdeploy_application（Truncate 后重建 app_1）
 	db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name, internal_port, status) VALUES ('app_1','ps_1','t',8080,'registered') ON CONFLICT DO NOTHING`)
 	return NewStore(db)
@@ -73,4 +74,118 @@ func TestStore_AppDBLifecycle(t *testing.T) {
 	if _, err := s.GetAppDBByApp(ctx, "app_1"); err == nil {
 		t.Fatal("删除后应查不到")
 	}
+}
+
+// newActionLog 构造测试用审计日志。
+func newActionLog(id, ps, app, db, actor, actionType, stmt, status string) *ActionLog {
+	return &ActionLog{
+		ID: id, ProjectSpaceID: ps, AppID: app, DBName: db,
+		Actor: actor, ActionType: actionType, Statement: stmt, Status: status,
+	}
+}
+
+func TestStore_ActionLogCRUD(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// CreateActionLog：写 success + failed 两条
+	if err := s.CreateActionLog(ctx, newActionLog("dal_1", "ps_1", "app_1", "app_x", "alice", "SELECT", "SELECT 1", "success")); err != nil {
+		t.Fatalf("create action log: %v", err)
+	}
+	failLog := newActionLog("dal_2", "ps_1", "app_1", "app_x", "bob", "DDL", "DROP TABLE t", "failed")
+	failLog.Error = "permission denied"
+	if err := s.CreateActionLog(ctx, failLog); err != nil {
+		t.Fatalf("create failed log: %v", err)
+	}
+
+	// ListActionLogs：按时间倒序，最新在前 → dal_2 在前
+	list, err := s.ListActionLogs(ctx, "app_1", 50)
+	if err != nil {
+		t.Fatalf("list action logs: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("应返回 2 条，得到 %d", len(list))
+	}
+	if list[0].ID != "dal_2" {
+		t.Fatalf("倒序首条应为 dal_2，得到 %s", list[0].ID)
+	}
+	// COALESCE：failed 条 error 应读回，success 条 error 空串
+	if list[0].Error != "permission denied" {
+		t.Fatalf("failed error 应读回，得到 %q", list[0].Error)
+	}
+	if list[1].Error != "" {
+		t.Fatalf("success error 应为空，得到 %q", list[1].Error)
+	}
+
+	// 按 appID 过滤
+	other, _ := s.ListActionLogs(ctx, "app_other", 50)
+	if len(other) != 0 {
+		t.Fatalf("app_other 应无日志，得到 %d", len(other))
+	}
+}
+
+func TestStore_ActionLogLimit(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// 写 5 条
+	for i := 0; i < 5; i++ {
+		// 用不同 id 避免主键冲突
+		al := newActionLog("dal_l"+itoa(i), "ps_1", "app_1", "app_x", "u", "SELECT", "SELECT 1", "success")
+		if err := s.CreateActionLog(ctx, al); err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+	}
+	// limit=3 → 只 3 条
+	list, _ := s.ListActionLogs(ctx, "app_1", 3)
+	if len(list) != 3 {
+		t.Fatalf("limit=3 应返回 3 条，得到 %d", len(list))
+	}
+	// limit=0 → 默认 50（>5 全取）
+	all, _ := s.ListActionLogs(ctx, "app_1", 0)
+	if len(all) != 5 {
+		t.Fatalf("limit=0 默认 50 应返回全部 5 条，得到 %d", len(all))
+	}
+	// limit>200 → 默认 50
+	big, _ := s.ListActionLogs(ctx, "app_1", 9999)
+	if len(big) != 5 {
+		t.Fatalf("limit>200 取默认 50 应返回全部 5 条，得到 %d", len(big))
+	}
+}
+
+func TestStore_ActionLogStatementTruncate(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// 超 5000 字符 → 截断到 5000
+	long := strings.Repeat("a", 6000)
+	al := newActionLog("dal_long", "ps_1", "app_1", "app_x", "u", "OTHER", long, "success")
+	if err := s.CreateActionLog(ctx, al); err != nil {
+		t.Fatalf("create long stmt: %v", err)
+	}
+	list, _ := s.ListActionLogs(ctx, "app_1", 50)
+	var got *ActionLog
+	for i := range list {
+		if list[i].ID == "dal_long" {
+			got = &list[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("找不到 dal_long")
+	}
+	if len(got.Statement) != actionLogStmtMax {
+		t.Fatalf("statement 应截断到 %d，得到 %d", actionLogStmtMax, len(got.Statement))
+	}
+}
+
+// itoa 简易整数转字符串（避免引入 strconv 仅此一处）。
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	buf := []byte{}
+	for n > 0 {
+		buf = append([]byte{byte('0' + n%10)}, buf...)
+		n /= 10
+	}
+	return string(buf)
 }

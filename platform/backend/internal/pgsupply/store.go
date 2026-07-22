@@ -122,3 +122,38 @@ func (s *Store) ListAppDBs(ctx context.Context, psID string) ([]AppDatabase, err
 		psID, StatusDeleted)
 	return list, err
 }
+
+// actionLogCols 显式列（COALESCE 处理可空 error/trace_id）。
+const actionLogCols = `id, project_space_id, app_id, db_name, actor, action_type, statement, row_count, status,
+	COALESCE(error,'') AS error, COALESCE(trace_id,'') AS trace_id, created_at`
+
+// actionLogStmtMax 单条 SQL 审计记录最大长度（截断防超长 TEXT 也防日志爆）。
+const actionLogStmtMax = 5000
+
+// CreateActionLog 写一条数据库操作审计日志。id 由调用方传（"dal_"+uuid）；
+// statement 超过 5000 字符截断。
+func (s *Store) CreateActionLog(ctx context.Context, al *ActionLog) error {
+	stmt := al.Statement
+	if len(stmt) > actionLogStmtMax {
+		stmt = stmt[:actionLogStmtMax]
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO db_action_log (id, project_space_id, app_id, db_name, actor, action_type, statement, row_count, status, error, trace_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		al.ID, al.ProjectSpaceID, al.AppID, al.DBName, al.Actor, al.ActionType, stmt,
+		al.RowCount, al.Status, al.Error, al.TraceID)
+	return err
+}
+
+// ListActionLogs 列某应用最近的 SQL 审计日志（按时间倒序）。
+// limit<=0 或 >200 取 50（防止前端一次拉爆）。
+func (s *Store) ListActionLogs(ctx context.Context, appID string, limit int) ([]ActionLog, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var list []ActionLog
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+actionLogCols+` FROM db_action_log WHERE app_id=$1 ORDER BY created_at DESC LIMIT $2`,
+		appID, limit)
+	return list, err
+}
