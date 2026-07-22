@@ -2,6 +2,8 @@ package standard
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -157,4 +159,127 @@ func TestBuildAgentsMarkdown_Sections(t *testing.T) {
 			t.Fatalf("AGENTS.md 缺少 %q, 输出:\n%s", want, md)
 		}
 	}
+}
+
+// createScopedPS 建一条带 psID 的分层规范（scope/module/ps 可空）。
+func createScopedPS(t *testing.T, s *Store, scope, module, name string, ps *string, prio int) Standard {
+	t.Helper()
+	st := &Standard{
+		Scope: scope, Module: module, ProjectSpaceID: ps,
+		Name: name, Category: "general", Content: name, Priority: prio, Enabled: true,
+	}
+	if err := s.Create(context.Background(), st); err != nil {
+		t.Fatalf("create scoped ps: %v", err)
+	}
+	return *st
+}
+
+func TestAggregateFor_FiltersByProjectSpace(t *testing.T) {
+	s := newTestStore(t)
+	ps1 := "ps_1"
+	ps2 := "ps_2"
+	// 全局 platform
+	createScopedPS(t, s, ScopePlatform, "", "G-plat", nil, 100)
+	// 全局 module api
+	createScopedPS(t, s, ScopeModule, ModuleAPI, "G-api", nil, 100)
+	// ps1 项目级 platform
+	createScopedPS(t, s, ScopePlatform, "", "P1-plat", &ps1, 50)
+	// ps1 项目级 module form
+	createScopedPS(t, s, ScopeModule, ModuleForm, "P1-form", &ps1, 50)
+	// ps2 项目级（不该出现）
+	createScopedPS(t, s, ScopePlatform, "", "P2-plat", &ps2, 10)
+
+	got, err := s.AggregateFor(context.Background(), ps1, "")
+	if err != nil {
+		t.Fatalf("AggregateFor: %v", err)
+	}
+	// 期望：G-plat, P1-plat (platform) + G-api (module api) + P1-form (module form)
+	// 不含 P2-plat
+	names := namesOf(got)
+	if len(got) != 4 {
+		t.Fatalf("应返回 4 条(全局plat+ps1plat+全局api+ps1form)，得到 %d: %+v", len(got), got)
+	}
+	for _, n := range []string{"G-plat", "P1-plat", "G-api", "P1-form"} {
+		if !contains(names, n) {
+			t.Fatalf("期望包含 %s，得到 %v", n, names)
+		}
+	}
+	if contains(names, "P2-plat") {
+		t.Fatalf("不应包含其他项目空间规范 P2-plat，得到 %v", names)
+	}
+}
+
+func TestAggregateFor_ModuleNonEmptyOnlyThatModule(t *testing.T) {
+	s := newTestStore(t)
+	createScopedPS(t, s, ScopePlatform, "", "P1", nil, 100)
+	createScopedPS(t, s, ScopeApp, "", "A1", nil, 100)
+	createScopedPS(t, s, ScopeModule, ModuleAPI, "M-api", nil, 100)
+	createScopedPS(t, s, ScopeModule, ModuleForm, "M-form", nil, 100)
+
+	got, err := s.AggregateFor(context.Background(), "", ModuleAPI)
+	if err != nil {
+		t.Fatalf("AggregateFor: %v", err)
+	}
+	names := namesOf(got)
+	if len(got) != 3 {
+		t.Fatalf("module=api 应只 platform+app+api=3 条，得到 %d: %+v", len(got), got)
+	}
+	if !contains(names, "M-api") || contains(names, "M-form") {
+		t.Fatalf("module=api 应含 M-api 不含 M-form，得到 %v", names)
+	}
+}
+
+func TestRefreshAgentsMD_WritesAggregateMarkdown(t *testing.T) {
+	s := newTestStore(t)
+	ps1 := "ps_1"
+	createScopedPS(t, s, ScopePlatform, "", "G-plat", nil, 100)
+	createScopedPS(t, s, ScopeModule, ModuleAPI, "G-api", nil, 100)
+	createScopedPS(t, s, ScopePlatform, "", "P1-plat", &ps1, 50)
+
+	repoDir := t.TempDir()
+	if err := s.RefreshAgentsMD(context.Background(), repoDir, ps1, ""); err != nil {
+		t.Fatalf("RefreshAgentsMD: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("读回 AGENTS.md: %v", err)
+	}
+	md := string(data)
+	for _, want := range []string{"# AGENTS.md", "### G-plat", "### P1-plat", "### G-api"} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("AGENTS.md 缺少 %q, 输出:\n%s", want, md)
+		}
+	}
+}
+
+func TestRefreshAgentsMD_CreatesRepoDirIfMissing(t *testing.T) {
+	s := newTestStore(t)
+	createScopedPS(t, s, ScopePlatform, "", "P1", nil, 100)
+
+	repoDir := filepath.Join(t.TempDir(), "nested", "repo")
+	if err := s.RefreshAgentsMD(context.Background(), repoDir, "", ""); err != nil {
+		t.Fatalf("RefreshAgentsMD 嵌套目录应自动创建: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "AGENTS.md")); err != nil {
+		t.Fatalf("AGENTS.md 未写入: %v", err)
+	}
+}
+
+// namesOf 收集规范名（断言用）。
+func namesOf(list []Standard) []string {
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+// contains 字符串切片包含判定（断言用）。
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

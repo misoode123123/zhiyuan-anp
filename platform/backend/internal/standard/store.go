@@ -3,6 +3,8 @@ package standard
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -138,4 +140,88 @@ func (s *Store) SetEnabled(ctx context.Context, id string, enabled bool) error {
 func (s *Store) Delete(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM coding_standard WHERE id=$1`, id)
 	return err
+}
+
+// allModules 全 module 子字段（RefreshAgentsMD module="" 时遍历聚合，生成最全规范）。
+var allModules = []string{ModuleAPI, ModuleForm, ModuleDB, ModuleCode, ModuleUI}
+
+// AggregateFor 按 psID 过滤的聚合（RefreshAgentsMD 用，dev/opencode 生成应用 AGENTS.md）。
+//   - psID="" 仅全局规范（project_space_id IS NULL）；
+//     psID 非空 → 全局 + 该项目空间的规范。
+//   - module 非空 → platform + app + 指定 module；
+//     module="" → platform + app + 全部 module（api/form/db/code/ui），生成最完整的开发规范。
+//
+// 与 Aggregate 区别：Aggregate 不带 psID（全局管理员预览用，看到全部）；
+// AggregateFor 按 psID 过滤项目级，避免应用 AGENTS.md 混入其他项目空间的规范。
+// 排序：scope 优先级(platform>app>module) → priority → created_at。
+func (s *Store) AggregateFor(ctx context.Context, psID, module string) ([]Standard, error) {
+	// platform + app（一次查询）
+	pa, err := s.aggregateLayer(ctx, psID, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Standard, 0, len(pa))
+	out = append(out, pa...)
+	// module 级：指定 module 单查；module="" 遍历全 module（每模块单查，避免 platform/app 重复）
+	mods := []string{module}
+	if module == "" {
+		mods = allModules
+	}
+	for _, m := range mods {
+		items, err := s.aggregateLayer(ctx, psID, m)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	return out, nil
+}
+
+// aggregateLayer 按 psID + module 过滤的单层聚合。
+//   - module="" → scope IN ('platform','app')（platform + app 一次查全）；
+//   - module 非空 → scope='module' AND module=?（只该 module 层，不含 platform/app ——
+//     AggregateFor 顶层已查 platform/app，此处避免重复）。
+//   - psID="" → project_space_id IS NULL；非空 → IS NULL OR =psID。
+func (s *Store) aggregateLayer(ctx context.Context, psID, module string) ([]Standard, error) {
+	var list []Standard
+	order := `CASE scope WHEN 'platform' THEN 0 WHEN 'app' THEN 1 ELSE 2 END, priority, created_at`
+
+	psFilter := `project_space_id IS NULL`
+	args := []any{}
+	if psID != "" {
+		psFilter = `(project_space_id IS NULL OR project_space_id=$1)`
+		args = append(args, psID)
+	}
+	var scopeClause string
+	if module == "" {
+		scopeClause = `scope IN ('platform','app')`
+	} else {
+		nextN := len(args) + 1
+		scopeClause = fmt.Sprintf(`scope='module' AND module=$%d`, nextN)
+		args = append(args, module)
+	}
+	q := `SELECT ` + cols + ` FROM coding_standard WHERE ` + psFilter + ` AND ` + scopeClause + ` ORDER BY ` + order
+	if err := s.db.SelectContext(ctx, &list, q, args...); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// RefreshAgentsMD 聚合规范（按 psID 过滤；module="" 时含全 module）→ 写进应用 repo 的 AGENTS.md。
+// dev 编码前 + opencode 工作台启动前都调它，保证 AGENTS.md 是最新的聚合规范。
+// repoDir 不存在则创建；写文件 0644。
+func (s *Store) RefreshAgentsMD(ctx context.Context, repoDir, psID, module string) error {
+	list, err := s.AggregateFor(ctx, psID, module)
+	if err != nil {
+		return fmt.Errorf("聚合规范失败: %w", err)
+	}
+	md := BuildAgentsMarkdown(list, module)
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		return fmt.Errorf("创建 repo 目录失败(%s): %w", repoDir, err)
+	}
+	path := filepath.Join(repoDir, "AGENTS.md")
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		return fmt.Errorf("写 AGENTS.md 失败(%s): %w", path, err)
+	}
+	return nil
 }
