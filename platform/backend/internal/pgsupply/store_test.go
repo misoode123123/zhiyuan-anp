@@ -4,44 +4,21 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 内存 SQLite + pg_instance/appdeploy_database 两表（仿 appdeploy/store_test.go）。
-// 类型映射：PG TIMESTAMP→DATETIME、BOOLEAN→INTEGER、INT/TEXT 原样。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清表隔离。
+// 替代 sqlite :memory:（sqlite 单测漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	db := testutil.TestDB(t)
+	// FK 前置：pg_instance.project_space_id → project_space（建测试用到的所有 psID，ON CONFLICT 幂等）
+	for _, ps := range []string{"ps_1", "ps_new", "ps_x"} {
+		db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('` + ps + `','测试空间','` + ps + `','active') ON CONFLICT (id) DO NOTHING`)
 	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE pg_instance (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  host             TEXT NOT NULL,
-  port             INTEGER NOT NULL DEFAULT 5432,
-  admin_url_ref    TEXT NOT NULL,
-  deploy_mode      TEXT NOT NULL DEFAULT 'managed',
-  status           TEXT NOT NULL DEFAULT 'active',
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE appdeploy_database (
-  id               TEXT PRIMARY KEY,
-  app_id           TEXT NOT NULL UNIQUE,
-  project_space_id TEXT NOT NULL,
-  db_name          TEXT NOT NULL UNIQUE,
-  db_role          TEXT NOT NULL,
-  pg_instance_id   TEXT NOT NULL,
-  db_host          TEXT NOT NULL,
-  db_port          INTEGER NOT NULL DEFAULT 5432,
-  status           TEXT NOT NULL DEFAULT 'provisioning',
-  last_error       TEXT,
-  backup_enabled   INTEGER NOT NULL DEFAULT 1,
-  last_backup_at   DATETIME,
-  schema_version   TEXT,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	testutil.Truncate(t, db, "appdeploy_database", "pg_instance", "appdeploy_application")
+	// FK 前置：appdeploy_database.app_id → appdeploy_application（Truncate 后重建 app_1）
+	db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name, internal_port, status) VALUES ('app_1','ps_1','t',8080,'registered') ON CONFLICT DO NOTHING`)
 	return NewStore(db)
 }
 
