@@ -42,6 +42,13 @@ func (r *Repository) ListProjectSpaces(ctx context.Context) ([]ProjectSpace, err
 	return list, err
 }
 
+// DeleteProjectSpace 按 id 删除项目空间。子表行由 FK ON DELETE CASCADE 自动级联清理
+// （pg_instance/appdeploy_database/membership/project/requirement 等）。
+func (r *Repository) DeleteProjectSpace(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM project_space WHERE id=$1`, id)
+	return err
+}
+
 func (r *Repository) CreateProject(ctx context.Context, p *Project) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO project (id, project_space_id, name, slug, status) VALUES ($1, $2, $3, $4, $5)`,

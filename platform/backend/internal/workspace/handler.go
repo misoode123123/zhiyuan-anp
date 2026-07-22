@@ -30,6 +30,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces", h.CreateProjectSpace)
 	r.GET("/project-spaces", h.ListProjectSpaces)
 	r.GET("/project-spaces/:id", h.GetProjectSpace)
+	r.DELETE("/project-spaces/:id", h.DeleteProjectSpace)
 	r.GET("/project-spaces/:id/overview", h.Overview)
 	r.POST("/project-spaces/:id/projects", h.CreateProject)
 	r.GET("/project-spaces/:id/projects", h.ListProjects)
@@ -102,6 +103,29 @@ func (h *Handler) GetProjectSpace(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, ps)
+}
+
+// DeleteProjectSpace 删除项目空间（admin）：先级联清理运行中的 PG 容器（pgsupply hook），
+// 再删 project_space 行（子表由 FK ON DELETE CASCADE 自动清）。
+//
+// @Summary      删除项目空间
+// @Tags         workspace
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "删除结果"
+// @Failure      404  {object}  map[string]interface{}  "project space not found"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id} [delete]
+func (h *Handler) DeleteProjectSpace(c *gin.Context) {
+	if err := h.svc.DeleteProjectSpace(c.Request.Context(), c.Param("id")); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			httpx.Err(c, 404, 40401, "project space not found")
+			return
+		}
+		httpx.Err(c, 500, 50001, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"id": c.Param("id"), "deleted": true})
 }
 
 // Overview 空间概览：元信息 + 成员/应用/需求/变更/发布计数。

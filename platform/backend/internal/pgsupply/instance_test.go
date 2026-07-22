@@ -15,6 +15,7 @@ type fakeDocker struct {
 	}
 	rmCalls []string
 	runErr  error
+	rmErr   error // RmForce 返回的错误（模拟 docker rm 失败）
 }
 
 func (f *fakeDocker) UsedPorts(context.Context) map[int]struct{} { return f.used }
@@ -27,7 +28,7 @@ func (f *fakeDocker) RunPGContainer(_ context.Context, name, pwd string, port in
 }
 func (f *fakeDocker) RmForce(_ context.Context, name string) error {
 	f.rmCalls = append(f.rmCalls, name)
-	return nil
+	return f.rmErr
 }
 
 // fakeAdmin Ping 可控，其余空实现。

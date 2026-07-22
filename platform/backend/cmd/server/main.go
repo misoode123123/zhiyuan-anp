@@ -137,6 +137,14 @@ func main() {
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore) // appDeployStore 满足 EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups")
+	// 删项目空间前级联清理 PG 容器（I2 资源泄漏修复）；FK CASCADE 只清行，运行中容器靠此钩子回收。
+	wsSvc.AddTeardownHook(func(ctx context.Context, psID string) error {
+		r := instanceMgr.TeardownForProject(ctx, psID)
+		logger.Info("project space teardown pg instances",
+			zap.String("ps_id", psID), zap.Int("total", r.Total),
+			zap.Int("removed", r.Removed), zap.Int("failed", r.Failed))
+		return nil
+	})
 	qaStore := qa.NewStore(database)
 	opsStore := ops.NewStore(database)
 	if err := db.SeedDemoSOPs(context.Background(), database); err != nil {

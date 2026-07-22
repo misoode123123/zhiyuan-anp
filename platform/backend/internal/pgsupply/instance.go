@@ -85,3 +85,43 @@ func waitForReady(ctx context.Context, admin PGAdmin, adminURL string) error {
 		}
 	}
 }
+
+// TeardownResult TeardownForProject 的累计结果（删项目级联清理用）。
+type TeardownResult struct {
+	Total       int      `json:"total"`         // 项目下 PG 实例数
+	Removed     int      `json:"removed"`       // 成功 docker rm 的容器数
+	NoContainer int      `json:"no_container"`  // 无 container_name（external 或老实例），仅删记录
+	Failed      int      `json:"failed"`        // 容器清理失败数
+	FailedIDs   []string `json:"failed_ids,omitempty"`
+}
+
+// TeardownForProject 删项目级联清理 PG 容器（I2 资源泄漏修复）。
+//
+// 场景：删 project_space 时，FK ON DELETE CASCADE 只删 pg_instance/appdeploy_database 记录，
+// 运行中的 PG 容器仍占着端口/内存（资源泄漏）。本方法在删 project_space 前调用，
+// 遍历该项目所有实例：managed+有 container_name → docker rm -f；external/无容器名 → 仅删记录。
+// 失败不中断（个别实例清理失败不阻塞删项目，failed 字段记录便于排障）。
+func (m *InstanceManager) TeardownForProject(ctx context.Context, psID string) TeardownResult {
+	list, err := m.store.ListInstancesByProject(ctx, psID)
+	if err != nil {
+		return TeardownResult{}
+	}
+	r := TeardownResult{Total: len(list)}
+	for _, ins := range list {
+		if ins.ContainerName == "" {
+			// external 模式或迁移 000005 前的老实例（无 container_name）：容器非平台纳管，仅删记录
+			r.NoContainer++
+			_ = m.store.DeleteInstance(ctx, ins.ID)
+			continue
+		}
+		if err := m.docker.RmForce(ctx, ins.ContainerName); err != nil {
+			r.Failed++
+			r.FailedIDs = append(r.FailedIDs, ins.ID)
+			continue // 容器没清掉保留记录，便于人工排查
+		}
+		// 容器清掉后再删实例记录（appdeploy_database 由 FK CASCADE）
+		_ = m.store.DeleteInstance(ctx, ins.ID)
+		r.Removed++
+	}
+	return r
+}
