@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // InstanceManager 每个项目空间取/建一个独立 PG 实例（managed: docker 起容器）。
@@ -34,6 +36,11 @@ func (m *InstanceManager) GetOrCreate(ctx context.Context, psID string) (*PGInst
 }
 
 // provision 起新 PG 容器并登记。
+//
+// 并发兜底（I5）：同项目并发建应用时，两 goroutine 都跑过 GetOrCreate 的「查无」分支，
+// 双方各起一个 PG 容器，CreateInstance 时 partial unique index（迁移 000005）让后到者冲突。
+// 本方法捕获 unique_violation → 清理自己刚起的容器 → 重查复用先到者建的实例；
+// 重查仍无（理论 race：先到者已删）→ 返回原冲突错误让上层决策。
 func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstance, error) {
 	name := InstanceName(psID) + "-" + genShortID()
 	pwd := genPassword()
@@ -60,10 +67,26 @@ func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstan
 		ContainerName:  name,
 	}
 	if err := m.store.CreateInstance(ctx, ins); err != nil {
-		_ = m.docker.RmForce(ctx, name)
+		_ = m.docker.RmForce(ctx, name) // 登记失败/冲突，回收自己的容器
+		// 并发兜底：partial unique 冲突 → 另一 goroutine 已建 active 实例 → 重查复用
+		if isUniqueViolation(err) {
+			if existing, e := m.store.GetInstanceByProject(ctx, psID); e == nil && existing != nil {
+				return existing, nil
+			}
+		}
 		return nil, fmt.Errorf("登记实例: %w", err)
 	}
 	return ins, nil
+}
+
+// isUniqueViolation 判断是否 PG 唯一约束冲突（错误码 23505）。
+// 用于 provision 并发兜底：partial unique index 命中时重查复用先到者建的实例。
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
 }
 
 // waitForReady 轮询 Ping 直到成功或 ctx 取消（由调用方传超时 ctx 控制时长）。
