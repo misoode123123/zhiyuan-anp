@@ -5,34 +5,16 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 change_request 表（自包含，仿 standard/store_test.go 模式）。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块涉及的 3 表隔离。
+// 涉及 change_request(主) + JOIN 依赖的 appdeploy_application/requirement（app_name 双路径）。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE change_request (
-  id TEXT PRIMARY KEY,
-  project_space_id TEXT,
-  kind TEXT,
-  source_id TEXT,
-  repo_dir TEXT,
-  prompt TEXT,
-  model TEXT,
-  output TEXT,
-  status TEXT,
-  reviewer TEXT,
-  reviewed_at DATETIME,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	// app_name JOIN 依赖的两张表(LEFT JOIN 需表存在;空表也容错)
-	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
-	db.MustExec(`CREATE TABLE requirement (id TEXT PRIMARY KEY, application_id TEXT)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "change_request", "requirement", "appdeploy_application")
 	return NewStore(db)
 }
 
@@ -121,9 +103,9 @@ func TestMarkReleased(t *testing.T) {
 // 各中心据此显示应用名而非 chg_xxx 随机 ID。
 func TestList_AppName(t *testing.T) {
 	s := newTestStore(t)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello-go')`)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_2', 'chat-app')`)
-	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_2', 'app_2')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_1', 'ps_1', 'hello-go')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_2', 'ps_1', 'chat-app')`)
+	s.db.MustExec(`INSERT INTO requirement (id, project_space_id, application_id, title) VALUES ('req_2', 'ps_1', 'app_2', 't')`)
 
 	c1 := mk("ps_1", "app_1")
 	_ = s.Create(context.Background(), c1)
@@ -155,8 +137,8 @@ func TestList_AppName(t *testing.T) {
 // 闸门三方法必须双路径,否则 req 派生的变更被漏判。
 func TestHasApproved_ViaRequirement(t *testing.T) {
 	s := newTestStore(t)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello')`)
-	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_1', 'ps_1', 'hello')`)
+	s.db.MustExec(`INSERT INTO requirement (id, project_space_id, application_id, title) VALUES ('req_1', 'ps_1', 'app_1', 't')`)
 	c := mk("ps_1", "req_1") // source_id=requirement_id
 	_ = s.Create(context.Background(), c)
 	_ = s.Decide(context.Background(), c.ID, "approved", "admin")
@@ -172,8 +154,8 @@ func TestHasApproved_ViaRequirement(t *testing.T) {
 // dogfooding 暴露:原仅 source_id=app_id,漏 req_id 派生 → 上线后变更不标 released(用户反馈"还显示")。
 func TestMarkReleased_ViaRequirement(t *testing.T) {
 	s := newTestStore(t)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello')`)
-	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_1', 'ps_1', 'hello')`)
+	s.db.MustExec(`INSERT INTO requirement (id, project_space_id, application_id, title) VALUES ('req_1', 'ps_1', 'app_1', 't')`)
 	c := mk("ps_1", "req_1")
 	_ = s.Create(context.Background(), c)
 	_ = s.Decide(context.Background(), c.ID, "approved", "admin")

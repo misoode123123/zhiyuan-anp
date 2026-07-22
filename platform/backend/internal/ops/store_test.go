@@ -4,38 +4,16 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + ops 表 + 看板聚合依赖的最小列。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块涉及的 7 表隔离。
+// 涉及 ops_alert/ops_sop(主) + 看板聚合依赖的 requirement/code_task/change_request/release_record/usage_record。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，如 BOOLEAN→INTEGER；见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	schema := `
-CREATE TABLE ops_alert (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'custom',
-	severity TEXT NOT NULL DEFAULT 'warning', status TEXT NOT NULL DEFAULT 'firing',
-	fingerprint TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
-	fired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at DATETIME,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE ops_sop (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL,
-	description TEXT, category TEXT NOT NULL DEFAULT 'restart', risk_level TEXT NOT NULL DEFAULT 'low',
-	steps TEXT, rollback TEXT, requires_approval INTEGER NOT NULL DEFAULT 0,
-	status TEXT NOT NULL DEFAULT 'draft', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (project_space_id, code));
-CREATE TABLE requirement (id TEXT PRIMARY KEY, project_space_id TEXT, status TEXT, title TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE code_task (id TEXT PRIMARY KEY, project_space_id TEXT, status TEXT, prompt TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE change_request (id TEXT PRIMARY KEY, project_space_id TEXT, status TEXT, prompt TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE release_record (id TEXT PRIMARY KEY, project_space_id TEXT, version TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE usage_record (id TEXT PRIMARY KEY, project_space_id TEXT, total_tokens INTEGER NOT NULL DEFAULT 0);
-CREATE INDEX idx_ops_alert_ps ON ops_alert(project_space_id, status);`
-	db.MustExec(schema)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "ops_alert", "ops_sop", "requirement", "code_task", "change_request", "release_record", "usage_record")
 	return NewStore(db)
 }
 
@@ -120,11 +98,11 @@ func TestDashboard_Aggregation(t *testing.T) {
 	db := s.db
 	ps := "ps1"
 	// 造数据：2 需求（draft/delivered）、1 编码任务（completed）、1 变更（pending）、1 发布、用量 1500
-	db.MustExec(`INSERT INTO requirement (id,project_space_id,status,title) VALUES ('r1',?,'draft','A'),('r2',?,'delivered','B')`, ps, ps)
-	db.MustExec(`INSERT INTO code_task (id,project_space_id,status,prompt) VALUES ('c1',?,'completed','p')`, ps)
-	db.MustExec(`INSERT INTO change_request (id,project_space_id,status,prompt) VALUES ('ch1',?,'pending','ch')`, ps)
-	db.MustExec(`INSERT INTO release_record (id,project_space_id,version) VALUES ('rl1',?,'v1')`, ps)
-	db.MustExec(`INSERT INTO usage_record (id,project_space_id,total_tokens) VALUES ('u1',?,1500)`, ps)
+	db.MustExec(`INSERT INTO requirement (id,project_space_id,status,title) VALUES ('r1',$1,'draft','A'),('r2',$1,'delivered','B')`, ps)
+	db.MustExec(`INSERT INTO code_task (id,project_space_id,status,prompt) VALUES ('c1',$1,'completed','p')`, ps)
+	db.MustExec(`INSERT INTO change_request (id,project_space_id,status,prompt) VALUES ('ch1',$1,'pending','ch')`, ps)
+	db.MustExec(`INSERT INTO release_record (id,project_space_id,version) VALUES ('rl1',$1,'v1')`, ps)
+	db.MustExec(`INSERT INTO usage_record (id,project_space_id,total_tokens) VALUES ('u1',$1,1500)`, ps)
 
 	st, err := s.Stats(ctx, ps)
 	if err != nil {

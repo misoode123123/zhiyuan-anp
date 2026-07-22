@@ -5,39 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块 4 表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，如 BOOLEAN→INTEGER 掩盖；见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`
-CREATE TABLE capability_skill (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL,
-	description TEXT, category TEXT NOT NULL DEFAULT 'assistant', prompt_template TEXT,
-	version TEXT NOT NULL DEFAULT '0.1.0', status TEXT NOT NULL DEFAULT 'draft', risk_level TEXT NOT NULL DEFAULT 'low',
-	is_public INTEGER NOT NULL DEFAULT 0, data_access_scope TEXT,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (project_space_id, code));
-CREATE TABLE capability_api_key (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, app_name TEXT NOT NULL, key_hash TEXT NOT NULL,
-	key_prefix TEXT NOT NULL, allowed_skills TEXT, scope TEXT NOT NULL DEFAULT 'write', status TEXT NOT NULL DEFAULT 'active',
-	expires_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE capability_usage (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, api_key_id TEXT, caller_app TEXT, skill_id TEXT,
-	input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, success INTEGER NOT NULL DEFAULT 0,
-	latency_ms INTEGER NOT NULL DEFAULT 0, render_hint TEXT, trace_id TEXT,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE capability_domain_agent (
-	id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL,
-	domain TEXT NOT NULL DEFAULT 'custom', composed_skills TEXT, status TEXT NOT NULL DEFAULT 'draft',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (project_space_id, code));`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "capability_skill", "capability_api_key", "capability_usage", "capability_domain_agent")
 	return NewStore(db)
 }
 

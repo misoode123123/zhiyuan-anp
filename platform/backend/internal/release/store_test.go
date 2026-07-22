@@ -6,32 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 release_record 表（自包含，仿 change/store_test.go 模式）。
-// schema 字段对齐 internal/db/migrations/pg/000001_init.up.sql 的 release_record，
-// 仅做 PG→SQLite 类型映射：TIMESTAMP→DATETIME，其余 TEXT 保持原样。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块涉及的 4 表隔离。
+// 涉及 release_record(主) + JOIN 依赖的 change_request/requirement/appdeploy_application（app_name 双路径）。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE release_record (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  change_id        TEXT,
-  application_id   TEXT,
-  version          TEXT NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'released',
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	// List JOIN 依赖:release→change→app(双路径)
-	db.MustExec(`CREATE TABLE change_request (id TEXT PRIMARY KEY, source_id TEXT, reviewer TEXT, prompt TEXT, output TEXT)`)
-	db.MustExec(`CREATE TABLE requirement (id TEXT PRIMARY KEY, application_id TEXT)`)
-	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "release_record", "change_request", "requirement", "appdeploy_application")
 	return NewStore(db)
 }
 
@@ -171,8 +155,8 @@ func TestCount_IsolatesByProjectSpace(t *testing.T) {
 // (release→change→source→app 双路径),供发布历史显示应用名+内容+提交人。
 func TestList_AppNameAndChangeInfo(t *testing.T) {
 	s := newTestStore(t)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello-go')`)
-	s.db.MustExec(`INSERT INTO requirement (id, application_id) VALUES ('req_1', 'app_1')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_1', 'ps_1', 'hello-go')`)
+	s.db.MustExec(`INSERT INTO requirement (id, project_space_id, application_id, title) VALUES ('req_1', 'ps_1', 'app_1', 't')`)
 	s.db.MustExec(`INSERT INTO change_request (id, source_id, reviewer, prompt, output) VALUES ('chg_1', 'req_1', 'alice', '实现登录', '【总结】登录页完成')`)
 	_ = s.Create(context.Background(), mkRelease("ps_1", "chg_1", "v1"))
 

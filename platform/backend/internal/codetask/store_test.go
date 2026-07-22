@@ -4,26 +4,16 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 内存 SQLite + code_task/requirement/change_request/appdeploy_application 四表(ListByProjectSpace JOIN 依赖)。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块涉及的 4 表隔离。
+// 涉及 code_task(主) + JOIN 依赖的 requirement/change_request/appdeploy_application。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	for _, ddl := range []string{
-		`CREATE TABLE code_task (id TEXT PRIMARY KEY, project_space_id TEXT, kind TEXT, source_id TEXT, repo_dir TEXT, prompt TEXT, model TEXT, status TEXT, output TEXT, change_id TEXT, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-		`CREATE TABLE requirement (id TEXT PRIMARY KEY, application_id TEXT, title TEXT)`,
-		`CREATE TABLE change_request (id TEXT PRIMARY KEY, source_id TEXT)`,
-		`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`,
-	} {
-		db.MustExec(ddl)
-	}
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "code_task", "change_request", "requirement", "appdeploy_application")
 	return NewStore(db)
 }
 
@@ -31,8 +21,8 @@ func newTestStore(t *testing.T) *Store {
 // dev 页据此显示"来自需求:登录页"而非 source_id 随机串。
 func TestListByProjectSpace_Join(t *testing.T) {
 	s := newTestStore(t)
-	s.db.MustExec(`INSERT INTO appdeploy_application (id, name) VALUES ('app_1', 'hello-go')`)
-	s.db.MustExec(`INSERT INTO requirement (id, application_id, title) VALUES ('req_1', 'app_1', '登录页')`)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_1', 'ps_1', 'hello-go')`)
+	s.db.MustExec(`INSERT INTO requirement (id, project_space_id, application_id, title) VALUES ('req_1', 'ps_1', 'app_1', '登录页')`)
 	s.db.MustExec(`INSERT INTO change_request (id, source_id) VALUES ('chg_1', 'app_1')`)
 
 	task := &Task{ID: "t_1", ProjectSpaceID: "ps_1", Kind: "dispatch", SourceID: "req_1", Prompt: "实现登录", Model: "glm-5.1"}

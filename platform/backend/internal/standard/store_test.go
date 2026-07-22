@@ -4,28 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 coding_standard 表（自包含，FK 默认不强制）。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 coding_standard 表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE coding_standard (
-  id TEXT PRIMARY KEY,
-  project_space_id TEXT,
-  name TEXT NOT NULL,
-  category TEXT NOT NULL DEFAULT 'general',
-  content TEXT NOT NULL,
-  priority INTEGER NOT NULL DEFAULT 100,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "coding_standard")
 	return NewStore(db)
 }
 

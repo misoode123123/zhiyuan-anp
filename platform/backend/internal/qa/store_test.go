@@ -5,35 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 test_case 表（自包含，仿 change/store_test.go 模式）。
-// 类型映射：PostgreSQL TIMESTAMP→DATETIME，其余 TEXT/INTEGER 同名兼容。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 test_case 表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE test_case (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  requirement_id   TEXT,
-  title            TEXT NOT NULL,
-  steps            TEXT,
-  expected         TEXT,
-  status           TEXT NOT NULL DEFAULT 'draft',
-  method           TEXT,
-  path             TEXT,
-  expected_status  INTEGER,
-  expected_body    TEXT,
-  actual_status    INTEGER,
-  actual_body      TEXT,
-  run_at           DATETIME,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "test_case")
 	return NewStore(db)
 }
 

@@ -4,32 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 rule 表（自包含，仿 change/store_test.go 模式）。
-// 类型映射对齐 pg 迁移：TIMESTAMP→DATETIME、BOOLEAN→INTEGER。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 rule 表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，如 BOOLEAN→INTEGER 掩盖；见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE rule (
-  id              TEXT PRIMARY KEY,
-  name            TEXT NOT NULL,
-  category        TEXT NOT NULL DEFAULT 'general',
-  type            TEXT NOT NULL DEFAULT 'mandatory',
-  condition       TEXT NOT NULL,
-  condition_field TEXT NOT NULL DEFAULT 'prompt',
-  action          TEXT NOT NULL DEFAULT 'block',
-  scope           TEXT NOT NULL DEFAULT 'all',
-  enabled         INTEGER NOT NULL DEFAULT 1,
-  description     TEXT,
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "rule")
 	return NewStore(db)
 }
 

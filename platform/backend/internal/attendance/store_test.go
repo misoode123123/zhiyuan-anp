@@ -9,32 +9,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + 仅 attendance_record 表（自包含，仿 change/store_test.go 模式）。
-// 类型映射：PG TIMESTAMP→SQLite DATETIME，其余 TEXT 保持。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 attendance_record 表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE attendance_record (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  user_id          TEXT NOT NULL,
-  status           TEXT NOT NULL,
-  start_time       DATETIME NOT NULL,
-  end_time         DATETIME NOT NULL,
-  reason           TEXT,
-  supervisor_id    TEXT NOT NULL,
-  approval_status  TEXT NOT NULL DEFAULT 'pending',
-  approver         TEXT,
-  approved_at      DATETIME,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "attendance_record")
 	return NewStore(db)
 }
 
