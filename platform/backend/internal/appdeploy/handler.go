@@ -25,6 +25,12 @@ import (
 	"zhiyuan-anp/platform/backend/internal/standard"
 )
 
+// AppQuotaChecker 应用数配额检查（由 quota.Service 实现，避免 appdeploy→quota 循环依赖）。
+// 超限返回的错误透传到前端（handler 识别 QuotaExceededError → 409）。
+type AppQuotaChecker interface {
+	CheckApps(ctx context.Context, psID string) error
+}
+
 // Handler 应用部署 HTTP 接口。
 type Handler struct {
 	store       *Store
@@ -36,6 +42,7 @@ type Handler struct {
 	provisioner *pgsupply.Provisioner    // 应用库供给（Create 建库 / Delete 删库）
 	routeWriter appgw.RouteWriter        // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
 	standards   *standard.Store          // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
+	quota       AppQuotaChecker          // 应用数配额检查；nil=不强制
 	checkFn     checkFunc                // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
@@ -43,17 +50,17 @@ type Handler struct {
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
 type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
 
-// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store) *Handler {
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards}
+// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota}
 	h.checkFn = checkRequirement // 默认真 AI 核对
 	return h
 }
 
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store) *Handler {
-	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner, routeWriter, standards)
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
+	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota)
 	h.Register(r)
 	return h
 }
@@ -761,6 +768,7 @@ func validateAppName(name string) string {
 }
 
 // Create 注册一个产出应用，并初始化其托管 git 仓库（代码归属确立：/data/repos/<name>）。
+// 配额强制：建应用前 CheckApps，超限 409 拦截；建库 Provision 配额失败写到 last_error 不阻塞应用创建。
 //
 // @Summary      创建应用
 // @Tags         appdeploy
@@ -770,6 +778,7 @@ func validateAppName(name string) string {
 // @Param        body  body  createBody  true  "应用(name+repo_dir+internal_port)"
 // @Success      200   {object}  map[string]interface{}  "创建的应用"
 // @Failure      400   {object}  map[string]interface{}  "invalid body"
+// @Failure      409   {object}  map[string]interface{}  "应用数配额超限"
 // @Failure      500   {object}  map[string]interface{}  "仓库初始化/创建失败"
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps [post]
@@ -782,6 +791,13 @@ func (h *Handler) Create(c *gin.Context) {
 	if msg := validateAppName(in.Name); msg != "" {
 		httpx.Err(c, 400, 40001, msg)
 		return
+	}
+	// 配额强制：建应用前查应用数（超限直接 409，不建仓库/记录）
+	if h.quota != nil {
+		if err := h.quota.CheckApps(c.Request.Context(), c.Param("id")); err != nil {
+			httpx.Err(c, 409, 40950, err.Error())
+			return
+		}
 	}
 	repoDir := in.RepoDir
 	if repoDir == "" {
@@ -801,9 +817,11 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	// 供给独立库 + 注入 DATABASE_URL（失败不阻塞应用创建，仅记录；DATABASE_URL 缺失时应用自处理）
+	// 配额超限（库数/库大小）→ Provision 在最前拦（不建任何库记录）；
+	// 此处把配额错误写到 application.last_error，前端应用列表能显示「库供给失败：配额超限」。
 	if h.provisioner != nil {
 		if _, perr := h.provisioner.Provision(c.Request.Context(), a.ProjectSpaceID, a.ID); perr != nil {
-			_ = perr // 后续接 ops 告警
+			_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, a.Status, perr.Error(), "")
 		}
 	}
 	httpx.Created(c, a)
