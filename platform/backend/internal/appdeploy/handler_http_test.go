@@ -26,7 +26,7 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 	)
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil)
 	return h, db
 }
 
@@ -616,13 +616,13 @@ func TestSyncOverviewIfProd_sync(t *testing.T) {
 	}
 }
 
-// TestHandler_NewHandlerDeps NewHandler 接受 nil 依赖（codeWS/changes/cfg/provisioner）。
+// TestHandler_NewHandlerDeps NewHandler 接受 nil 依赖（codeWS/changes/cfg/provisioner/standards）。
 func TestHandler_NewHandlerDeps(t *testing.T) {
-	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if h == nil {
 		t.Fatal("NewHandler 不应返回 nil")
 	}
-	if h.store != nil || h.deployer != nil || h.codeWS != nil || h.changes != nil || h.cfg != nil {
+	if h.store != nil || h.deployer != nil || h.codeWS != nil || h.changes != nil || h.cfg != nil || h.standards != nil {
 		t.Fatalf("全 nil 依赖应保留 nil： %+v", h)
 	}
 }

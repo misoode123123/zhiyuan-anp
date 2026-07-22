@@ -22,6 +22,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/httpx"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/requirement"
+	"zhiyuan-anp/platform/backend/internal/standard"
 )
 
 // Handler 应用部署 HTTP 接口。
@@ -34,6 +35,7 @@ type Handler struct {
 	reqRepo     *requirement.Repository  // 需求-代码核对门禁:读 requirement 的验收标准
 	provisioner *pgsupply.Provisioner    // 应用库供给（Create 建库 / Delete 删库）
 	routeWriter appgw.RouteWriter        // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
+	standards   *standard.Store          // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
 	checkFn     checkFunc                // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
@@ -41,17 +43,17 @@ type Handler struct {
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
 type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
 
-// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter) *Handler {
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter}
+// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store) *Handler {
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards}
 	h.checkFn = checkRequirement // 默认真 AI 核对
 	return h
 }
 
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter) *Handler {
-	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner, routeWriter)
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store) *Handler {
+	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner, routeWriter, standards)
 	h.Register(r)
 	return h
 }
@@ -149,6 +151,12 @@ func (h *Handler) Workspace(c *gin.Context) {
 	if err != nil || a == nil || a.ID == "" {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
+	}
+	// 启动 opencode 前刷新应用 AGENTS.md：opencode 工具自动读 repo 根 AGENTS.md，
+	// 故此处只负责把最新聚合规范写进去（规范单一载体 = AGENTS.md，dev 和 opencode 都基于它）。
+	// 失败不阻塞工作台启动（规范缺失不应让开发者无法编码）。
+	if h.standards != nil && a.RepoDir != "" {
+		_ = h.standards.RefreshAgentsMD(c.Request.Context(), a.RepoDir, psID, "")
 	}
 	var in struct {
 		Tool string `json:"tool"` // opencode(默认) / claude / codex ...
