@@ -7,24 +7,19 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newGuardTestStore 建内存 SQLite + 仅 membership 表（自包含）。
+// newGuardTestStore 连 anp_test PG + 清 membership 表。
+// FK 前置：membership.project_space_id REFERENCES project_space(id)（建 ps_default 供 AddMember）。
+// 替代 sqlite :memory:（sqlite FK 默认不强制掩盖真实约束；见 memory sqlite-test-pg-type-trap）。
 func newGuardTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE membership (
-		id TEXT PRIMARY KEY,
-		project_space_id TEXT NOT NULL,
-		user_id TEXT NOT NULL,
-		role TEXT NOT NULL,
-		UNIQUE (project_space_id, user_id))`)
+	db := testutil.TestDB(t)
+	// FK 前置：测试用 AddMember(project_space_id='ps_default')，需 ps_default 存在。
+	db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('ps_default','默认空间','ps_default','active') ON CONFLICT (id) DO NOTHING`)
+	testutil.Truncate(t, db, "membership")
 	return NewStore(db)
 }
 

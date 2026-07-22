@@ -10,51 +10,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newReqRepoWithChanges 同库内建 requirement + change_request 两表，便于 my-tasks 聚合测试。
+// newReqRepoWithChanges 连 anp_test PG + 清本测试涉及的 4 表（含 user/membership 供 roles 分支）。
+// 涉及 requirement/change_request(主) + change.Store JOIN 的 appdeploy_application。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newReqRepoWithChanges(t *testing.T) (*Repository, *change.Store) {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE requirement (
-  id                  TEXT PRIMARY KEY,
-  project_space_id    TEXT NOT NULL,
-  application_id      TEXT,
-  title               TEXT NOT NULL,
-  description         TEXT,
-  user_story          TEXT,
-  acceptance_criteria TEXT,
-  status              TEXT NOT NULL DEFAULT 'draft',
-  priority            TEXT,
-  fixed_version       TEXT,
-  tasks               TEXT,
-  assignee            TEXT,
-  assigned_at         DATETIME,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE change_request (
-  id              TEXT PRIMARY KEY,
-  project_space_id TEXT,
-  kind            TEXT,
-  source_id       TEXT,
-  repo_dir        TEXT,
-  prompt          TEXT,
-  model           TEXT,
-  output          TEXT,
-  status          TEXT,
-  reviewer        TEXT,
-  reviewed_at     DATETIME,
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	// change.Store.List LEFT JOIN appdeploy_application 出 app_name(2026-07-20 显示规范化),测试库需建该表
-	db.MustExec(`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, name TEXT)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "change_request", "requirement", "appdeploy_application", "membership", `"user"`)
 	return NewRepository(db), change.NewStore(db)
 }
 
@@ -343,14 +311,10 @@ func TestHandler_MyTasks_WithAuthStoreRoles(t *testing.T) {
 	repo, chg := newReqRepoWithChanges(t)
 	mustCreateRepo(t, repo, mkReq("req_r1", "ps_1"))
 
-	// 复用同一 sqlite 库，建 user / membership 表，构造 auth.Store
+	// PG 已由 testutil 建 user/membership 表（newReqRepoWithChanges 已 truncate）。
+	// 需先建 project_space ps_1（membership FK 引用），再插 user/membership。
 	db := repo.db
-	db.MustExec(`CREATE TABLE "user" (
-		id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, email TEXT,
-		status TEXT NOT NULL DEFAULT 'active', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE membership (
-		id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL,
-		UNIQUE (project_space_id, user_id))`)
+	db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('ps_1','测试空间','ps_1','active') ON CONFLICT (id) DO NOTHING`)
 	mustExec(t, db, `INSERT INTO "user" (id, name, status) VALUES ('usr_alice', 'alice', 'active')`)
 	mustExec(t, db, `INSERT INTO membership (id, project_space_id, user_id, role) VALUES ('mbr_1', 'ps_1', 'usr_alice', 'dev')`)
 

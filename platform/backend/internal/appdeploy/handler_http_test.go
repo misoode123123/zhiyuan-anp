@@ -10,53 +10,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newHTTPHandler 建一个完整 Handler（store=sqli 内存，deployer=空 host）。
+// newHTTPHandler 建一个完整 Handler（store=anp_test PG，deployer=空 host）。
 // 注：deployer 字段在多数 store-only 接口（List/Detail/Env/RepoDocs/RepoFile/Stats deployed=false）
 // 上不会被调用，因此即使指向真实 Deployer 也不会触发 docker。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，如 is_secret BOOLEAN→INTEGER；见 memory sqlite-test-pg-type-trap）。
 func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE appdeploy_application (
-  id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, name TEXT NOT NULL,
-  repo_dir TEXT, internal_port INTEGER NOT NULL DEFAULT 80, image TEXT, container_name TEXT,
-  host_port INTEGER NOT NULL DEFAULT 0, url TEXT, version INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'registered', last_error TEXT, build_log TEXT,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (project_space_id, name))`)
-	db.MustExec(`CREATE TABLE appdeploy_instance (
-  id TEXT PRIMARY KEY, app_id TEXT NOT NULL, env TEXT NOT NULL, image TEXT, container_name TEXT,
-  host_port INTEGER NOT NULL DEFAULT 0, url TEXT, version INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'registered', last_error TEXT, build_log TEXT,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (app_id, env))`)
-	db.MustExec(`CREATE TABLE appdeploy_env (
-  id TEXT PRIMARY KEY, app_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT,
-  is_secret INTEGER NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (app_id, key))`)
-	// Detail 联表（需求/变更/发布）
-	db.MustExec(`CREATE TABLE requirement (
-  id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, application_id TEXT, title TEXT NOT NULL,
-  description TEXT, user_story TEXT, acceptance_criteria TEXT, status TEXT NOT NULL DEFAULT 'draft',
-  priority TEXT, fixed_version TEXT, tasks TEXT, assignee TEXT, assigned_at DATETIME,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE change_request (
-  id TEXT PRIMARY KEY, project_space_id TEXT, kind TEXT, source_id TEXT, application_id TEXT,
-  repo_dir TEXT, prompt TEXT, model TEXT, output TEXT, status TEXT, reviewer TEXT,
-  reviewed_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE release_record (
-  id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, change_id TEXT, application_id TEXT,
-  version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'released',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db,
+		"release_record", "change_request", "requirement",
+		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil)
 	return h, db
@@ -468,10 +436,10 @@ func TestStore_Detail_Aggregation(t *testing.T) {
 	a := seedApp(t, h, "ps_1", "snake", "/tmp/no-git")
 	// 需求（application_id 关联）
 	_, _ = db.ExecContext(ctx, `INSERT INTO requirement (id, project_space_id, application_id, title, status, priority)
-		VALUES ('req_1', 'ps_1', ?, '需求1', 'specified', 'P0')`, a.ID)
+		VALUES ('req_1', 'ps_1', $1, '需求1', 'specified', 'P0')`, a.ID)
 	// 变更 1：source_id 直接 = appID
 	_, _ = db.ExecContext(ctx, `INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
-		VALUES ('chg_1', 'ps_1', ?, 'code', 'diff1', 'pending')`, a.ID)
+		VALUES ('chg_1', 'ps_1', $1, 'code', 'diff1', 'pending')`, a.ID)
 	// 变更 2：source_id = 需求 ID（属同 app，应被聚合）
 	_, _ = db.ExecContext(ctx, `INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
 		VALUES ('chg_2', 'ps_1', 'req_1', 'code', 'diff2', 'approved')`)

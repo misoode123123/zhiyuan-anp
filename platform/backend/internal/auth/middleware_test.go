@@ -6,20 +6,16 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newAuthTestStore 内存 SQLite + user + auth_session 表(AuthUser 的 ValidToken 查 auth_session)。
+// newAuthTestStore 连 anp_test PG + 清 auth_session 表（AuthUser 的 ValidToken 查 auth_session）。
+// user/auth_session 均无 FK 约束，无需前置。替代 sqlite :memory:（见 memory sqlite-test-pg-type-trap）。
 func newAuthTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, status TEXT, password_hash TEXT, created_at DATETIME)`)
-	db.MustExec(`CREATE TABLE auth_session (token TEXT PRIMARY KEY, user_id TEXT, user_name TEXT, expires_at DATETIME)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "auth_session")
 	return NewStore(db)
 }
 
@@ -70,7 +66,7 @@ func TestAuthUser_PublicLoginWhitelist(t *testing.T) {
 // TestAuthUser_ValidTokenPass 有效 Bearer token → 放行并注入 user_id。
 func TestAuthUser_ValidTokenPass(t *testing.T) {
 	store := newAuthTestStore(t)
-	store.db.MustExec(`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ('tok_test', 'usr_1', 'alice', datetime('now','+1 day'))`)
+	store.db.MustExec(`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ('tok_test', 'usr_1', 'alice', NOW() + INTERVAL '1 day')`)
 	r := authEngine(store)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret", nil)
 	req.Header.Set("Authorization", "Bearer tok_test")
@@ -87,7 +83,7 @@ func TestAuthUser_ValidTokenPass(t *testing.T) {
 // TestAuthUser_ExpiredToken_401 过期 token → 401。
 func TestAuthUser_ExpiredToken_401(t *testing.T) {
 	store := newAuthTestStore(t)
-	store.db.MustExec(`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ('tok_old', 'usr_1', 'alice', datetime('now','-1 day'))`)
+	store.db.MustExec(`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ('tok_old', 'usr_1', 'alice', NOW() - INTERVAL '1 day')`)
 	r := authEngine(store)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret", nil)
 	req.Header.Set("Authorization", "Bearer tok_old")

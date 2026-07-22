@@ -11,28 +11,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/requirement"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newSubmitDB 内存 SQLite + appdeploy_application/requirement/change_request 三表(测试自包含)。
+// newSubmitDB 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 submit/merge 测试涉及的 3 表。
+// 替代 sqlite :memory:（sqlite SetMaxOpenConns(1) 保同库；PG 连接池天然共享库，无需限制）。
 func newSubmitDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1) // :memory: 每连接独立库,强制单连接确保 INSERT/Get/Create 同库
-	t.Cleanup(func() { _ = db.Close() })
-	for _, ddl := range []string{
-		`CREATE TABLE appdeploy_application (id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, name TEXT NOT NULL, repo_dir TEXT, internal_port INTEGER NOT NULL DEFAULT 80, image TEXT, container_name TEXT, host_port INTEGER NOT NULL DEFAULT 0, url TEXT, version INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'registered', last_error TEXT, build_log TEXT, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-		`CREATE TABLE requirement (id TEXT PRIMARY KEY, project_space_id TEXT NOT NULL, application_id TEXT, title TEXT NOT NULL, description TEXT, user_story TEXT, acceptance_criteria TEXT, status TEXT NOT NULL DEFAULT 'draft', priority TEXT, fixed_version TEXT, tasks TEXT, assignee TEXT, assigned_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-		`CREATE TABLE change_request (id TEXT PRIMARY KEY, project_space_id TEXT, kind TEXT NOT NULL DEFAULT 'code', source_id TEXT, repo_dir TEXT, prompt TEXT, model TEXT, output TEXT, status TEXT NOT NULL DEFAULT 'pending', reviewer TEXT, reviewed_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-	} {
-		db.MustExec(ddl)
-	}
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "change_request", "requirement", "appdeploy_application")
 	return db
 }
 
@@ -49,10 +39,10 @@ func setupSubmit(t *testing.T, ac, user string, makeWorktree bool, check checkFu
 		}
 		_ = os.WriteFile(filepath.Join(wt, "main.go"), []byte("package main\n"), 0o644)
 	}
-	if _, err := db.Exec(`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, status) VALUES ('app_1', 'ps_1', 'demo', ?, 'registered')`, repoDir); err != nil {
+	if _, err := db.Exec(`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, status) VALUES ('app_1', 'ps_1', 'demo', $1, 'registered')`, repoDir); err != nil {
 		t.Fatalf("insert app: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO requirement (id, project_space_id, application_id, title, description, user_story, acceptance_criteria, status) VALUES ('req_1', 'ps_1', 'app_1', '登录页', '', '', ?, 'developing')`, ac); err != nil {
+	if _, err := db.Exec(`INSERT INTO requirement (id, project_space_id, application_id, title, description, user_story, acceptance_criteria, status) VALUES ('req_1', 'ps_1', 'app_1', '登录页', '', '', $1, 'developing')`, ac); err != nil {
 		t.Fatalf("insert req: %v", err)
 	}
 	h := NewHandler(NewStore(db), nil, nil, change.NewStore(db), nil, requirement.NewRepository(db), nil)

@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 
 	"zhiyuan-anp/platform/backend/internal/config"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
 // fakeTestGate TestGate 接口的桩实现，返回预设的 count/err。
@@ -24,21 +24,13 @@ func (f *fakeTestGate) PassedCountByRequirement(_ context.Context, reqID string)
 	return f.count, f.err
 }
 
-// newCfgStore 建内存 SQLite + system_config 表，返回装填好缓存的 config.Store。
+// newCfgStore 连 anp_test PG + 清 system_config 表，返回装填好缓存的 config.Store。
 // 用于驱动 Handler.testGateEnabled() 读 release_require_passed_test 开关。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newCfgStore(t *testing.T, kv map[string]string) *config.Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE system_config (
-  key         TEXT PRIMARY KEY,
-  value       TEXT,
-  category    TEXT NOT NULL DEFAULT 'general',
-  description TEXT,
-  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	var db *sqlx.DB = testutil.TestDB(t)
+	testutil.Truncate(t, db, "system_config")
 	cs := config.NewStore(db)
 	for k, v := range kv {
 		if err := cs.Set(context.Background(), k, v, "general", ""); err != nil {

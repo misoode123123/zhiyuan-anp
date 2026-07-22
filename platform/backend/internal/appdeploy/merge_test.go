@@ -9,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/requirement"
@@ -41,16 +40,15 @@ func gitInit(t *testing.T, makeWorktree bool) string {
 func setupMerge(t *testing.T, approved, makeWorktree bool) (*Handler, *sqlx.DB) {
 	t.Helper()
 	db := newSubmitDB(t) // 复用三表(appdeploy_application/requirement/change_request)
-	db.SetMaxOpenConns(1)
 	repoDir := gitInit(t, makeWorktree)
-	if _, err := db.Exec(`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, status) VALUES ('app_1', 'ps_1', 'demo', ?, 'registered')`, repoDir); err != nil {
+	if _, err := db.Exec(`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, status) VALUES ('app_1', 'ps_1', 'demo', $1, 'registered')`, repoDir); err != nil {
 		t.Fatalf("insert app: %v", err)
 	}
 	chgStatus := "pending"
 	if approved {
 		chgStatus = "approved"
 	}
-	if _, err := db.Exec(`INSERT INTO change_request (id, project_space_id, kind, source_id, status) VALUES ('chg_1', 'ps_1', 'code', 'app_1', ?)`, chgStatus); err != nil {
+	if _, err := db.Exec(`INSERT INTO change_request (id, project_space_id, kind, source_id, status) VALUES ('chg_1', 'ps_1', 'code', 'app_1', $1)`, chgStatus); err != nil {
 		t.Fatalf("insert change: %v", err)
 	}
 	if _, err := db.Exec(`INSERT INTO requirement (id, project_space_id, application_id, title, description, user_story, acceptance_criteria, status, assignee) VALUES ('req_1', 'ps_1', 'app_1', '登录页', '', '', '["标准"]', 'developing', 'alice')`); err != nil {
