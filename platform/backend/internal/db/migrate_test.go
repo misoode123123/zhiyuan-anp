@@ -2,25 +2,56 @@ package db
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 	"testing/fstest"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// newTestDB 内存 SQLite（迁移核心逻辑与方言无关，SQLite 足以验证版本记录/事务/down）。
+// newTestDB 连 anp_test PG，但每测试独占一个 schema，隔离 testutil 预跑的平台迁移
+// （public schema 中 schema_migrations 已记录 000001~000004，与本测试的合成 0001/0002 冲突）。
+// 替代 sqlite :memory:（迁移核心逻辑与方言无关，但 PG 模式下需避免污染共享库）。
 func newTestDB(t *testing.T) *sqlx.DB {
 	t.Helper()
-	database, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	url := os.Getenv("ANP_TEST_DATABASE_URL")
+	if url == "" {
+		url = "postgres://anp:anp_dev_pwd@10.10.0.28:5432/anp_test?sslmode=disable"
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	database, err := sqlx.Connect("pgx", url)
+	if err != nil {
+		t.Fatalf("connect pg: %v", err)
+	}
+	// 独占 schema（每次测试一个）；search_path 限定到本 schema，建表/查 schema_migrations 都在此。
+	schema := fmt.Sprintf("test_migrate_%s", sanitizeSchema(t.Name()))
+	database.MustExec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+	database.MustExec(fmt.Sprintf("CREATE SCHEMA %s", schema))
+	database.MustExec(fmt.Sprintf("SET search_path TO %s", schema))
+	t.Cleanup(func() {
+		_, _ = database.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+		_ = database.Close()
+	})
 	return database
 }
 
-// testMigrations 两版本迁移（含 up/down），SQLite 兼容。
+// sanitizeSchema 把测试名中的非 [a-z0-9_] 字符替换为 _，作为 PG schema 名。
+// PG schema 名不允许 "/" 等字符（t.Name() 在子测试中含 "/"）。
+func sanitizeSchema(name string) string {
+	out := make([]byte, 0, len(name))
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			out = append(out, c)
+		} else {
+			out = append(out, '_')
+		}
+	}
+	return string(out)
+}
+
+// testMigrations 两版本迁移（含 up/down），PG/SQLite 兼容（用 INTEGER 防 PG 严格类型问题）。
 func testMigrations() fstest.MapFS {
 	return fstest.MapFS{
 		"0001.up.sql":   {Data: []byte("CREATE TABLE a (id INTEGER)")},
