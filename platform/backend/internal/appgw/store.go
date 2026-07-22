@@ -73,3 +73,37 @@ func (s *Store) SetRouteStatus(ctx context.Context, appID, env, status string) e
 		status, appID, env)
 	return err
 }
+
+// accessLogCols 显式列（COALESCE 处理 caller/trace_id 可空）。
+const accessLogCols = `id, project_space_id, app_id, app_code, env,
+	COALESCE(caller,'') AS caller, method, path, status, latency_ms,
+	COALESCE(trace_id,'') AS trace_id, created_at`
+
+// LogAccess 写一条 appgw 调用日志。
+// gateway.ReverseProxy 在 ModifyResponse / ErrorHandler 调用；id 内部生成（"al_"+uuid）。
+// 记日志失败不阻塞请求 —— gateway 用异步 goroutine + ignore error 调本方法。
+func (s *Store) LogAccess(ctx context.Context, al *AccessLog) error {
+	if al.ID == "" {
+		al.ID = "al_" + uuid.NewString()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO appgw_access_log
+		 (id, project_space_id, app_id, app_code, env, caller, method, path, status, latency_ms, trace_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		al.ID, al.ProjectSpaceID, al.AppID, al.AppCode, al.Env, al.Caller,
+		al.Method, al.Path, al.Status, al.LatencyMs, al.TraceID)
+	return err
+}
+
+// ListAccessLogs 列某应用最近的 appgw 调用日志（按时间倒序）。
+// limit<=0 或 >500 取 50（防前端一次拉爆）。
+func (s *Store) ListAccessLogs(ctx context.Context, appID string, limit int) ([]AccessLog, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	var list []AccessLog
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+accessLogCols+` FROM appgw_access_log WHERE app_id=$1 ORDER BY created_at DESC LIMIT $2`,
+		appID, limit)
+	return list, err
+}

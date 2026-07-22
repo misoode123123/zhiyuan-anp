@@ -207,8 +207,11 @@ func main() {
 	// ---- appgw 路由组：/apps/*path 反代到应用容器（不在 /api/v1 下，不挂 AuthUser 全局）----
 	// appgw.ReverseProxy 内部按 route.auth_required 决定是否验 JWT。
 	// authStore 满足 appgw.TokenVerifier（ValidToken）；挂到 root engine（与 /api/v1 平级）。
-	appgwGateway := appgw.NewGateway(appgwStore, authStore, logger)
+	// 3b：appgwStore 同时作 AccessLogger，反代时异步记 appgw_access_log（计量数据源）。
+	appgwGateway := appgw.NewGateway(appgwStore, authStore, logger, appgwStore)
 	srv.Any("/apps/*path", appgwGateway.ReverseProxy)
+	// appgw 调用日志查询 API（3c 看板 / 应用库详情用；挂在 v1 下走全局鉴权）。
+	appgw.Register(v1, appgwStore)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

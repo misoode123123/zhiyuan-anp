@@ -11,7 +11,7 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	db := testutil.TestDB(t)
-	testutil.Truncate(t, db, "appdeploy_route", "appdeploy_application")
+	testutil.Truncate(t, db, "appgw_access_log", "appdeploy_route", "appdeploy_application")
 	// FK 前置：插入 appdeploy_application 行供 route 引用
 	db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name, internal_port, status)
 		VALUES ('app_1','ps_1','t-app',8080,'registered') ON CONFLICT DO NOTHING`)
@@ -102,5 +102,78 @@ func TestStore_SetRouteStatus(t *testing.T) {
 	r, _ := s.GetRoute(ctx, "app_1", "prod")
 	if r == nil || r.Status != StatusInactive {
 		t.Fatalf("状态应置 inactive: %+v", r)
+	}
+}
+
+// LogAccess 写入 + ListAccessLogs 倒序 + limit 截断。
+func TestStore_LogAndListAccessLogs(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// 写 3 条（同 app，不同 status），验证顺序倒序 + 字段落库
+	logs := []*AccessLog{
+		{ProjectSpaceID: "ps_1", AppID: "app_1", AppCode: "app_1", Env: "prod",
+			Caller: "alice", Method: "GET", Path: "/apps/app_1/api/q", Status: 200, LatencyMs: 12, TraceID: "t1"},
+		{ProjectSpaceID: "ps_1", AppID: "app_1", AppCode: "app_1", Env: "prod",
+			Caller: "bob", Method: "POST", Path: "/apps/app_1/api/create", Status: 500, LatencyMs: 340, TraceID: "t2"},
+		{ProjectSpaceID: "ps_1", AppID: "app_1", AppCode: "app_1", Env: "prod",
+			Caller: "anonymous", Method: "GET", Path: "/apps/app_1/health", Status: 200, LatencyMs: 3},
+	}
+	for _, al := range logs {
+		if err := s.LogAccess(ctx, al); err != nil {
+			t.Fatalf("LogAccess: %v", err)
+		}
+	}
+
+	// ListAccessLogs 默认 limit=50，应返回 3 条
+	got, err := s.ListAccessLogs(ctx, "app_1", 0)
+	if err != nil {
+		t.Fatalf("ListAccessLogs: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("应返回 3 条，得到 %d", len(got))
+	}
+	// 倒序：最后写的应在最前
+	if got[0].Caller != "anonymous" || got[2].Caller != "alice" {
+		t.Fatalf("顺序应为倒序，得到 %+v", got)
+	}
+	// 字段：第 2 条（POST 500，带 trace_id）
+	mid := got[1]
+	if mid.Method != "POST" || mid.Status != 500 || mid.LatencyMs != 340 || mid.TraceID != "t2" {
+		t.Fatalf("字段不符: %+v", mid)
+	}
+	// id 自动生成
+	if mid.ID == "" {
+		t.Fatalf("id 应自动生成: %+v", mid)
+	}
+
+	// limit=2 截断
+	got2, _ := s.ListAccessLogs(ctx, "app_1", 2)
+	if len(got2) != 2 {
+		t.Fatalf("limit=2 应返回 2 条，得到 %d", len(got2))
+	}
+
+	// 不存在的 app → 空列表
+	got3, _ := s.ListAccessLogs(ctx, "app_nope", 0)
+	if len(got3) != 0 {
+		t.Fatalf("不存在的 app 应返回空，得到 %d", len(got3))
+	}
+}
+
+// caller 可空（anonymous 也写空串）；trace_id 可空 —— 验证 NOT NULL 列不报错。
+func TestStore_LogAccessNullableCaller(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	al := &AccessLog{
+		ProjectSpaceID: "ps_1", AppID: "app_1", AppCode: "app_1", Env: "prod",
+		Method: "GET", Path: "/apps/app_1/", Status: 200, LatencyMs: 1,
+		// Caller / TraceID 留空
+	}
+	if err := s.LogAccess(ctx, al); err != nil {
+		t.Fatalf("LogAccess 空 caller/trace_id 应成功: %v", err)
+	}
+	got, _ := s.ListAccessLogs(ctx, "app_1", 1)
+	if len(got) != 1 || got[0].Caller != "" || got[0].TraceID != "" {
+		t.Fatalf("空字段应落库为空串: %+v", got)
 	}
 }

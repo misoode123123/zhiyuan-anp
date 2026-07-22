@@ -39,3 +39,20 @@ const (
 
 // 默认环境：URL 形态 /apps/<code>/ → prod；/apps/<code>~test/ → test。
 const DefaultEnv = "prod"
+
+// AccessLog appgw_access_log 表的一行：一次 /apps/<code>/ 反代的调用记录。
+// 3c 看板「应用 API 调用量」数据源；本阶段只采集 + 原始 API。
+type AccessLog struct {
+	ID             string    `json:"id" db:"id"`
+	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
+	AppID          string    `json:"app_id" db:"app_id"`
+	AppCode        string    `json:"app_code" db:"app_code"`
+	Env            string    `json:"env" db:"env"`
+	Caller         string    `json:"caller,omitempty" db:"caller"` // 鉴权用户 / apikey:<id前缀> / anonymous
+	Method         string    `json:"method" db:"method"`
+	Path           string    `json:"path" db:"path"`
+	Status         int       `json:"status" db:"status"`
+	LatencyMs      int       `json:"latency_ms" db:"latency_ms"`
+	TraceID        string    `json:"trace_id,omitempty" db:"trace_id"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}
