@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
 
 type Envelope<T> = { code: number; data: T; message?: string };
-type ProjectSpace = { id: string; name: string; slug: string };
 type Rule = {
   id: string;
   name: string;
@@ -95,27 +94,13 @@ const empty = {
 };
 
 export default function GovernancePage() {
-  const [tab, setTab] = useState<"rules" | "standards" | "devstd">("rules");
+  const [tab, setTab] = useState<"rules" | "devstd">("rules");
 
   // 规则（RaC）
   const [rules, setRules] = useState<Rule[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...empty });
   const [msg, setMsg] = useState("");
-
-  // 编码规范
-  const [spaces, setSpaces] = useState<ProjectSpace[]>([]);
-  const [psID, setPsID] = useState("");
-  const [globalStds, setGlobalStds] = useState<Std[]>([]);
-  const [projStds, setProjStds] = useState<Std[]>([]);
-  const [stdForm, setStdForm] = useState({
-    name: "",
-    category: "general",
-    content: "",
-    priority: 100,
-  });
-  const [stdScope, setStdScope] = useState<"global" | "project">("global");
-  const [effPreview, setEffPreview] = useState<string | null>(null);
 
   // 开发规范分层（platform/app/module）
   const [devNode, setDevNode] = useState<TreeNode>({
@@ -146,28 +131,6 @@ export default function GovernancePage() {
   useEffect(() => {
     load();
   }, []);
-
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/project-spaces`)
-      .then((r) => r.json())
-      .then((r: Envelope<ProjectSpace[]>) => {
-        setSpaces(r.data ?? []);
-        if (r.data?.[0]) setPsID(r.data[0].id);
-      });
-  }, []);
-
-  const loadStds = () => {
-    fetch(`${API_BASE_URL}/standards`)
-      .then((r) => r.json())
-      .then((r: Envelope<Std[]>) => setGlobalStds(r.data ?? []));
-    if (psID)
-      fetch(`${API_BASE_URL}/project-spaces/${psID}/standards`)
-        .then((r) => r.json())
-        .then((r: Envelope<Std[]>) => setProjStds(r.data ?? []));
-  };
-  useEffect(() => {
-    loadStds();
-  }, [psID]);
 
   async function create() {
     if (!form.name || !form.condition) {
@@ -201,50 +164,6 @@ export default function GovernancePage() {
     if (!confirm("删除该规则？")) return;
     const res = await fetch(`${API_BASE_URL}/rules/${id}`, { method: "DELETE" });
     if ((await res.json()).code === 0) load();
-  }
-
-  async function submitStd() {
-    if (!stdForm.name || !stdForm.content) {
-      setMsg("名称和正文必填");
-      return;
-    }
-    const url =
-      stdScope === "global"
-        ? `${API_BASE_URL}/standards`
-        : `${API_BASE_URL}/project-spaces/${psID}/standards`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(stdForm),
-    });
-    const r = await res.json();
-    setMsg(r.code === 0 ? "✓ 规范已创建" : `✗ ${r.message}`);
-    if (r.code === 0) {
-      setStdForm({ name: "", category: "general", content: "", priority: 100 });
-      loadStds();
-    }
-  }
-
-  async function toggleStd(s: Std) {
-    await fetch(`${API_BASE_URL}/standards/${s.id}/enabled`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !s.enabled }),
-    });
-    loadStds();
-  }
-
-  async function deleteStd(id: string) {
-    if (!confirm("删除该规范？")) return;
-    await fetch(`${API_BASE_URL}/standards/${id}`, { method: "DELETE" });
-    loadStds();
-  }
-
-  async function previewEffective() {
-    if (!psID) return;
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/standards/effective`);
-    const r = await res.json();
-    setEffPreview(r.data?.prompt_section ?? "");
   }
 
   // ---- 开发规范分层 ----
@@ -398,44 +317,6 @@ export default function GovernancePage() {
     </select>
   );
 
-  const stdList = (title: string, list: Std[]) => (
-    <div className="mb-5">
-      <div className="mb-2 text-sm font-semibold text-neutral-700">
-        {title}（{list.length}）
-      </div>
-      <div className="space-y-2">
-        {list.map((s) => (
-          <div
-            key={s.id}
-            className={`rounded-md border border-neutral-200 bg-white p-3 text-sm ${s.enabled ? "" : "opacity-50"}`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${STD_CAT_COLOR[s.category] ?? STD_CAT_COLOR.general}`}
-                >
-                  {s.category}
-                </span>
-                <span className="font-medium">{s.name}</span>
-                <span className="text-xs text-neutral-400">prio {s.priority}</span>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => toggleStd(s)} className="text-xs text-blue-600">
-                  {s.enabled ? "禁用" : "启用"}
-                </button>
-                <button onClick={() => deleteStd(s.id)} className="text-xs text-red-600">
-                  删除
-                </button>
-              </div>
-            </div>
-            <div className="mt-1 text-xs text-neutral-600">{s.content}</div>
-          </div>
-        ))}
-        {list.length === 0 && <div className="text-sm text-neutral-400">暂无</div>}
-      </div>
-    </div>
-  );
-
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">⭐ 规则治理中心</h1>
@@ -447,16 +328,10 @@ export default function GovernancePage() {
           规则 (RaC)
         </button>
         <button
-          onClick={() => setTab("standards")}
-          className={`rounded-md px-3 py-1.5 text-sm ${tab === "standards" ? "bg-blue-600 text-white" : "bg-neutral-200 text-neutral-700"}`}
-        >
-          编码规范
-        </button>
-        <button
           onClick={() => setTab("devstd")}
           className={`rounded-md px-3 py-1.5 text-sm ${tab === "devstd" ? "bg-blue-600 text-white" : "bg-neutral-200 text-neutral-700"}`}
         >
-          开发规范（分层）
+          开发规范
         </button>
       </div>
       {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
@@ -556,95 +431,6 @@ export default function GovernancePage() {
           ))}
           {rules.length === 0 && <div className="text-sm text-neutral-400">暂无规则</div>}
         </>
-      )}
-
-      {tab === "standards" && (
-        <div>
-          <p className="mb-3 text-sm text-neutral-600">
-            编码规范 = <b>注入式生成指导</b>：编码时拼进 prompt 告诉 AI「怎么写」（全局 +
-            项目级叠加）；与 RaC 规则（硬约束/block）互补。
-          </p>
-
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <label className="text-xs text-neutral-500">项目空间</label>
-            <select
-              value={psID}
-              onChange={(e) => setPsID(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-            >
-              {spaces.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.slug})
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={previewEffective}
-              className="rounded-md bg-neutral-700 px-3 py-1 text-xs text-white"
-            >
-              预览生效规范
-            </button>
-          </div>
-
-          {effPreview !== null && (
-            <pre className="mb-4 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-3 text-xs text-green-300">
-              {effPreview || "(无生效规范)"}
-            </pre>
-          )}
-
-          <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3">
-            <div className="mb-2 flex flex-wrap gap-2 text-sm">
-              <select
-                value={stdScope}
-                onChange={(e) => setStdScope(e.target.value as "global" | "project")}
-                className="rounded border border-neutral-300 px-2 py-1"
-              >
-                <option value="global">全局</option>
-                <option value="project">项目级(当前空间)</option>
-              </select>
-              <input
-                placeholder="规范名"
-                value={stdForm.name}
-                onChange={(e) => setStdForm({ ...stdForm, name: e.target.value })}
-                className="flex-1 rounded border border-neutral-300 px-2 py-1"
-              />
-              <select
-                value={stdForm.category}
-                onChange={(e) => setStdForm({ ...stdForm, category: e.target.value })}
-                className="rounded border border-neutral-300 px-2 py-1"
-              >
-                {["general", "language", "framework", "security", "testing"].map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                value={stdForm.priority}
-                onChange={(e) => setStdForm({ ...stdForm, priority: Number(e.target.value) })}
-                className="w-20 rounded border border-neutral-300 px-2 py-1"
-                title="priority"
-              />
-            </div>
-            <textarea
-              placeholder="规范正文（自然语言/Markdown）"
-              value={stdForm.content}
-              onChange={(e) => setStdForm({ ...stdForm, content: e.target.value })}
-              rows={2}
-              className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
-            />
-            <button
-              onClick={submitStd}
-              className="mt-2 rounded bg-blue-600 px-3 py-1 text-sm text-white"
-            >
-              新建规范
-            </button>
-          </div>
-
-          {stdList("全局规范", globalStds)}
-          {stdList("项目级规范（当前空间）", projStds)}
-        </div>
       )}
 
       {tab === "devstd" && (
@@ -787,7 +573,7 @@ export default function GovernancePage() {
                     placeholder="规范名"
                     value={devForm.name}
                     onChange={(e) => setDevForm({ ...devForm, name: e.target.value })}
-                    className="flex-1 min-w-[160px] rounded border border-neutral-300 px-2 py-1"
+                    className="min-w-[160px] flex-1 rounded border border-neutral-300 px-2 py-1"
                   />
                   <select
                     value={devForm.category}
@@ -867,9 +653,7 @@ export default function GovernancePage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-xs ${SCOPE_COLOR[devNode.scope]}`}
-                        >
+                        <span className={`rounded px-1.5 py-0.5 text-xs ${SCOPE_COLOR[devNode.scope]}`}>
                           {SCOPE_LABEL[devNode.scope]}
                         </span>
                         {s.module && (
