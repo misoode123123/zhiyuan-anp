@@ -3,6 +3,7 @@ package pgsupply
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // 驱动名 "pgx"
@@ -64,16 +65,53 @@ func (pgAdminClient) CreateRole(ctx context.Context, adminURL, role, password st
 }
 
 func (pgAdminClient) GrantAll(ctx context.Context, adminURL, dbName, role string) error {
+	// 1) 库级权限（连 adminURL=postgres 维护库）：CONNECT/TEMP 等。
 	db, err := connect(ctx, adminURL)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 	if _, err := db.ExecContext(ctx,
 		fmt.Sprintf(`GRANT ALL ON DATABASE "%s" TO "%s"`, dbName, role)); err != nil {
-		return fmt.Errorf("grant %s to %s: %w", dbName, role, err)
+		db.Close()
+		return fmt.Errorf("grant db %s to %s: %w", dbName, role, err)
+	}
+	db.Close()
+	// 2) schema 级权限（必须连到目标库，schema public 在应用库里）：
+	//    PG 15+ 不再默认给 public schema CREATE，应用 role 不授权则建不了表。
+	//    改造为连应用库（adminURL 替换 dbname）执行 GRANT ON SCHEMA + ALL TABLES。
+	appDBURL, err := adminURLForDB(adminURL, dbName)
+	if err != nil {
+		return fmt.Errorf("derive app admin url: %w", err)
+	}
+	adb, err := connect(ctx, appDBURL)
+	if err != nil {
+		return fmt.Errorf("connect app db for grant: %w", err)
+	}
+	defer adb.Close()
+	escRole := strings.ReplaceAll(role, `"`, `""`)
+	stmts := []string{
+		fmt.Sprintf(`GRANT ALL ON SCHEMA public TO "%s"`, escRole),
+		fmt.Sprintf(`GRANT ALL ON ALL TABLES IN SCHEMA public TO "%s"`, escRole),
+		// 让后续由 admin 跑的迁移建的表也自动授权给应用 role（应用自己建的表本就归自己）
+		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "%s"`, escRole),
+	}
+	for _, s := range stmts {
+		if _, err := adb.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("grant schema public to %s: %w (stmt=%s)", role, err, s)
+		}
 	}
 	return nil
+}
+
+// adminURLForDB 把 adminURL（指向 postgres 维护库）改成指向 dbName 的 admin 连接串。
+// 解析 URL 替换 path 段；解析失败时回退字符串替换 path 末段。
+func adminURLForDB(adminURL, dbName string) (string, error) {
+	u, err := url.Parse(adminURL)
+	if err != nil {
+		return "", err
+	}
+	u.Path = "/" + dbName
+	return u.String(), nil
 }
 
 func (pgAdminClient) DropDatabase(ctx context.Context, adminURL, dbName string) error {

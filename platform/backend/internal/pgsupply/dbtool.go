@@ -19,11 +19,11 @@ type TableInfo struct {
 
 // ColumnInfo 表的列信息（information_schema.columns + 列注释）。
 type ColumnInfo struct {
-	Name       string `json:"name"`
-	DataType   string `json:"data_type"`
-	IsNullable string `json:"is_nullable"`
-	Default    string `json:"column_default"`
-	Comment    string `json:"comment"`
+	Name       string `json:"name" db:"name"`
+	DataType   string `json:"data_type" db:"data_type"`
+	IsNullable string `json:"is_nullable" db:"is_nullable"`
+	Default    string `json:"column_default" db:"column_default"`
+	Comment    string `json:"comment" db:"comment"`
 }
 
 // QueryResult SQL 执行结果。
