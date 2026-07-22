@@ -19,6 +19,9 @@ type PGAdmin interface {
 	DropDatabase(ctx context.Context, adminURL, dbName string) error
 	DropRole(ctx context.Context, adminURL, role string) error
 	Ping(ctx context.Context, adminURL string) error
+	// DatabaseSizes 连 adminURL，查给定库列表的每库字节大小（不存在的库不出现在返回 map）。
+	// 用于配额强制（quota.CheckDBSize）。
+	DatabaseSizes(ctx context.Context, adminURL string, dbNames []string) (map[string]int64, error)
 }
 
 // pgAdminClient 默认实现：每次连 adminURL 执行一条 DDL。
@@ -150,4 +153,60 @@ func (pgAdminClient) Ping(ctx context.Context, adminURL string) error {
 	}
 	defer db.Close()
 	return db.PingContext(ctx)
+}
+
+// DatabaseSizes 连 adminURL（postgres 维护库），按 dbNames 查每库字节。
+// 用 pg_database_size(datname)，返回 map[datname]bytes；不存在的库 PG 返回 NULL → 跳过。
+func (pgAdminClient) DatabaseSizes(ctx context.Context, adminURL string, dbNames []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(dbNames))
+	if len(dbNames) == 0 {
+		return out, nil
+	}
+	db, err := connect(ctx, adminURL)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	// 用 ANY($1) 传 text[] 避免 SQL 拼接；COALESCE 把 NULL（库不存在）变 0 便于 SELECT 出来
+	rows, err := db.QueryxContext(ctx,
+		`SELECT datname, pg_database_size(datname) AS bytes
+		 FROM pg_database WHERE datname = ANY($1)`, pqArray(dbNames))
+	if err != nil {
+		return nil, fmt.Errorf("query database sizes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var bytes int64
+		if err := rows.Scan(&name, &bytes); err != nil {
+			return nil, err
+		}
+		out[name] = bytes
+	}
+	return out, rows.Err()
+}
+
+// pqArray 把 []string 转为 PG text[] 字面量 '{a,b,c}'（避免引 pgx 数组编码依赖）。
+// 元素含逗号/引号时用双引号包并转义内部双引号；空数组返回 '{}'。
+func pqArray(items []string) string {
+	if len(items) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, s := range items {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		// 含特殊字符需双引号包裹（PG 数组字面量语法）
+		if strings.ContainsAny(s, `,"\ {}`) {
+			b.WriteByte('"')
+			b.WriteString(strings.ReplaceAll(s, `"`, `\"`))
+			b.WriteByte('"')
+		} else {
+			b.WriteString(s)
+		}
+	}
+	b.WriteByte('}')
+	return b.String()
 }

@@ -35,7 +35,7 @@ func TestProvisioner_Provision(t *testing.T) {
 	ins := mkInstance("ps_1")
 	_ = s.CreateInstance(ctx, ins)
 	env := &fakeEnvWriter{}
-	p := NewProvisioner(recordingInstance{ins: ins}, s, fakeAdmin{}, env)
+	p := NewProvisioner(recordingInstance{ins: ins}, s, fakeAdmin{}, env, nil)
 	ad, err := p.Provision(ctx, "ps_1", "app_1")
 	if err != nil {
 		t.Fatalf("provision: %v", err)
@@ -64,7 +64,7 @@ func TestProvisioner_Cleanup(t *testing.T) {
 	ins := mkInstance("ps_1")
 	_ = s.CreateInstance(ctx, ins)
 	env := &fakeEnvWriter{}
-	p := NewProvisioner(recordingInstance{ins: ins}, s, fakeAdmin{}, env)
+	p := NewProvisioner(recordingInstance{ins: ins}, s, fakeAdmin{}, env, nil)
 	ad, _ := p.Provision(ctx, "ps_1", "app_1")
 	_ = ad
 	// cleanup 删库记录（status=deleted）

@@ -40,6 +40,9 @@ func (fakeAdmin) GrantAll(context.Context, string, string, string) error   { ret
 func (fakeAdmin) DropDatabase(context.Context, string, string) error       { return nil }
 func (fakeAdmin) DropRole(context.Context, string, string) error           { return nil }
 func (f fakeAdmin) Ping(context.Context, string) error                     { return f.pingErr }
+func (fakeAdmin) DatabaseSizes(context.Context, string, []string) (map[string]int64, error) {
+	return nil, nil
+}
 
 func TestInstanceManager_GetOrCreate_Reuse(t *testing.T) {
 	s := newTestStore(t)
