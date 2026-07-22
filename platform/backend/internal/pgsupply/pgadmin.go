@@ -3,6 +3,7 @@ package pgsupply
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // 驱动名 "pgx"
 	"github.com/jmoiron/sqlx"
@@ -54,8 +55,9 @@ func (pgAdminClient) CreateRole(ctx context.Context, adminURL, role, password st
 		return err
 	}
 	defer db.Close()
+	escPwd := strings.ReplaceAll(password, "'", "''")
 	if _, err := db.ExecContext(ctx,
-		fmt.Sprintf(`CREATE ROLE "%s" WITH LOGIN PASSWORD '%s'`, role, password)); err != nil {
+		fmt.Sprintf(`CREATE ROLE "%s" WITH LOGIN PASSWORD '%s'`, role, escPwd)); err != nil {
 		return fmt.Errorf("create role %s: %w", role, err)
 	}
 	return nil
@@ -81,8 +83,9 @@ func (pgAdminClient) DropDatabase(ctx context.Context, adminURL, dbName string) 
 	}
 	defer db.Close()
 	// 先断开该库连接（避免 DROP 被 active 连接阻塞）
+	escDB := strings.ReplaceAll(dbName, "'", "''")
 	_, _ = db.ExecContext(ctx, fmt.Sprintf(
-		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='%s' AND pid<>pg_backend_pid()`, dbName))
+		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='%s' AND pid<>pg_backend_pid()`, escDB))
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, dbName)); err != nil {
 		return fmt.Errorf("drop database %s: %w", dbName, err)
 	}
