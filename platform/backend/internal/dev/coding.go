@@ -77,14 +77,10 @@ func (a *CodingAgent) run(taskID string) {
 		return
 	}
 	prompt := t.Prompt
+	// 规范单一载体：编码前刷新应用 AGENTS.md。dev 调 opencode 编码，opencode 自动读 repo 的
+	// AGENTS.md，所以这里只刷新（保证最新），不把 AGENTS.md 拼进 prompt（拼了和 opencode 自读重复）。
 	if a.standards != nil && t.RepoDir != "" {
-		// 规范单一载体：编码前刷新应用 AGENTS.md（聚合 platform+app+全 module，按 psID 过滤），
-		// 再读回 AGENTS.md 拼进 prompt。dev 的规范来源 = AGENTS.md，与 opencode 工作台一致。
-		if err := a.standards.RefreshAgentsMD(ctx, t.RepoDir, t.ProjectSpaceID, ""); err == nil {
-			if md, rerr := os.ReadFile(filepath.Join(t.RepoDir, "AGENTS.md")); rerr == nil {
-				prompt = prompt + "\n\n【AGENTS.md 开发规范·必须遵循】\n" + string(md)
-			}
-		}
+		_ = a.standards.RefreshAgentsMD(ctx, t.RepoDir, t.ProjectSpaceID, "")
 	}
 	out, err := a.opencodeRun(ctx, t.RepoDir, prompt, t.Model)
 	if err != nil {
