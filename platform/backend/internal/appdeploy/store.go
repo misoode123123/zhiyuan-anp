@@ -150,16 +150,13 @@ func (s *Store) ListEnv(ctx context.Context, appID string) ([]EnvVar, error) {
 }
 
 // UpsertEnv 新增或更新环境变量（按 app_id+key 唯一）。
+// is_secret 直接传 bool（PG BOOLEAN 列不接受 int；sqlite 驱动自动 bool↔INTEGER）。
 func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool) error {
 	id := "env_" + uuid.NewString()[:20]
-	sec := 0
-	if isSecret {
-		sec = 1
-	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret) VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT(app_id, key) DO UPDATE SET value=excluded.value, is_secret=excluded.is_secret`,
-		id, appID, key, value, sec)
+		id, appID, key, value, isSecret)
 	return err
 }
 
