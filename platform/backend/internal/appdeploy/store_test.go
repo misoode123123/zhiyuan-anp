@@ -5,59 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + appdeploy 三表（自包含，仿 change/store_test.go 模式）。
-// 类型映射：PG TIMESTAMP→DATETIME、BOOLEAN→INTEGER、INTEGER/TEXT 原样。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 appdeploy 三表隔离。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，如 is_secret bool/int；见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE appdeploy_application (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  name             TEXT NOT NULL,
-  repo_dir         TEXT,
-  internal_port    INTEGER NOT NULL DEFAULT 80,
-  image            TEXT,
-  container_name   TEXT,
-  host_port        INTEGER NOT NULL DEFAULT 0,
-  url              TEXT,
-  version          INTEGER NOT NULL DEFAULT 0,
-  status           TEXT NOT NULL DEFAULT 'registered',
-  last_error       TEXT,
-  build_log        TEXT,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (project_space_id, name))`)
-	db.MustExec(`CREATE TABLE appdeploy_instance (
-  id             TEXT PRIMARY KEY,
-  app_id         TEXT NOT NULL,
-  env            TEXT NOT NULL,
-  image          TEXT,
-  container_name TEXT,
-  host_port      INTEGER NOT NULL DEFAULT 0,
-  url            TEXT,
-  version        INTEGER NOT NULL DEFAULT 0,
-  status         TEXT NOT NULL DEFAULT 'registered',
-  last_error     TEXT,
-  build_log      TEXT,
-  created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (app_id, env))`)
-	db.MustExec(`CREATE TABLE appdeploy_env (
-  id         TEXT PRIMARY KEY,
-  app_id     TEXT NOT NULL,
-  key        TEXT NOT NULL,
-  value      TEXT,
-  is_secret  INTEGER NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (app_id, key))`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "appdeploy_env", "appdeploy_instance", "appdeploy_application")
 	return NewStore(db)
 }
 
