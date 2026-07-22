@@ -28,6 +28,7 @@ type AppDatabase = {
   status: string;
   backup_enabled: boolean;
   last_backup_at?: string;
+  size_bytes: number; // 3b：库大小定时采集（0=未采）
   created_at: string;
   updated_at: string;
 };
@@ -80,6 +81,19 @@ const ACTION_COLOR: Record<string, string> = {
   DDL: "bg-purple-100 text-purple-700",
   OTHER: "bg-neutral-100 text-neutral-500",
 };
+
+// formatBytes 字节 → 自适应单位（KB/MB/GB），保留 2 位小数；0 显示「—」。
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
+}
 
 export default function DatabasesPage() {
   const [instances, setInstances] = useState<PGInstance[]>([]);
@@ -206,7 +220,8 @@ export default function DatabasesPage() {
                 </span>
               </button>
               <div className="mt-1 text-xs text-neutral-500">
-                应用 {db.app_id} · 项目 {db.project_space_id} · {db.db_host}:{db.db_port} ·{" "}
+                应用 {db.app_id} · 项目 {db.project_space_id} · {db.db_host}:{db.db_port} · 大小{" "}
+                {formatBytes(db.size_bytes)} ·{" "}
                 {db.last_backup_at ? `备份 ${db.last_backup_at}` : "未备份"}
               </div>
               {detailFor === db.app_id && (
