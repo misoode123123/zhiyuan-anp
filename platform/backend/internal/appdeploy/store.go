@@ -224,3 +224,13 @@ func (s *Store) Delete(ctx context.Context, psID, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_application WHERE id=$1 AND project_space_id=$2`, id, psID)
 	return err
 }
+
+// GetEnvValue 取应用某 env key 的明文值（不存在返回空串，不报错）。
+// 供 pgsupply 读 DATABASE_URL 做 mask 展示（跨模块只读 appdeploy_env）。
+func (s *Store) GetEnvValue(ctx context.Context, appID, key string) (string, error) {
+	var v string
+	err := s.db.GetContext(ctx, &v,
+		`SELECT COALESCE((SELECT value FROM appdeploy_env WHERE app_id=$1 AND key=$2),'')`,
+		appID, key)
+	return v, err
+}

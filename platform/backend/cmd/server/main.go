@@ -164,6 +164,7 @@ func main() {
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
 	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner)
+	pgsupply.Register(v1, pgsupplyStore, appDeployStore) // 数据库管理只读查询（appDeployStore 满足 EnvValueReader）
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)
 	rule.Register(v1, ruleStore, v)

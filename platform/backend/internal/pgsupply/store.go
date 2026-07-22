@@ -99,3 +99,26 @@ func (s *Store) SetAppDBBackup(ctx context.Context, id string, at time.Time) err
 		at, id)
 	return err
 }
+
+// ListInstances 列所有 PG 实例（按创建时间倒序）。
+func (s *Store) ListInstances(ctx context.Context) ([]PGInstance, error) {
+	var list []PGInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+instanceCols+` FROM pg_instance ORDER BY created_at DESC`)
+	return list, err
+}
+
+// ListAppDBs 列应用库；psID 非空则按项目过滤，否则全部（排除已删除，按创建时间倒序）。
+func (s *Store) ListAppDBs(ctx context.Context, psID string) ([]AppDatabase, error) {
+	var list []AppDatabase
+	if psID == "" {
+		err := s.db.SelectContext(ctx, &list,
+			`SELECT `+appDBCols+` FROM appdeploy_database WHERE status<>$1 ORDER BY created_at DESC`,
+			StatusDeleted)
+		return list, err
+	}
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+appDBCols+` FROM appdeploy_database WHERE project_space_id=$1 AND status<>$2 ORDER BY created_at DESC`,
+		psID, StatusDeleted)
+	return list, err
+}
