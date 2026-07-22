@@ -31,20 +31,38 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.PATCH("/standards/:id/enabled", h.SetEnabled)
 	r.DELETE("/standards/:id", h.Delete)
 
+	// 分层管理（scope/module）+ 聚合 / 导出 AGENTS.md
+	r.GET("/standards/aggregate", h.Aggregate)
+	r.GET("/standards/agents-md", h.AgentsMD)
+
 	r.GET("/project-spaces/:id/standards", h.ListByPS)
 	r.POST("/project-spaces/:id/standards", h.CreateByPS)
 	r.GET("/project-spaces/:id/standards/effective", h.Effective)
 }
 
-// ListGlobal 全局规范。
+// ListGlobal 全局规范（兼容旧前端：可选 ?scope=&module= 切到分层查询）。
 //
-// @Summary      列出全局规范
+// @Summary      列出全局规范 / 按层级列
 // @Tags         standard
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "全局规范列表"
+// @Param        scope    query  string  false  "platform/app/module"
+// @Param        module   query  string  false  "scope=module 时：api/form/db/code/ui"
+// @Success      200  {object}  map[string]interface{}  "规范列表"
 // @Security     BearerAuth
 // @Router       /standards [get]
 func (h *Handler) ListGlobal(c *gin.Context) {
+	scope := c.Query("scope")
+	module := c.Query("module")
+	// 带了 scope 或 module 参数 → 分层查询；无参数 → 旧行为（全部全局规范）
+	if scope != "" || module != "" {
+		list, err := h.store.ListByScope(c.Request.Context(), scope, module)
+		if err != nil {
+			httpx.Err(c, 500, 50007, err.Error())
+			return
+		}
+		httpx.OK(c, list)
+		return
+	}
 	list, err := h.store.ListGlobal(c.Request.Context())
 	if err != nil {
 		httpx.Err(c, 500, 50007, err.Error())
@@ -59,6 +77,8 @@ type createBody struct {
 	Content  string `json:"content" binding:"required"`
 	Priority int    `json:"priority"`
 	Enabled  bool   `json:"enabled"`
+	Scope    string `json:"scope"`  // platform/app/module（默认 platform）
+	Module   string `json:"module"` // scope=module 时：api/form/db/code/ui
 }
 
 func (b *createBody) defaults() {
@@ -68,6 +88,9 @@ func (b *createBody) defaults() {
 	if b.Priority == 0 {
 		b.Priority = 100
 	}
+	if b.Scope == "" {
+		b.Scope = ScopePlatform
+	}
 }
 
 // CreateGlobal 新建全局规范（强制 project_space_id=nil）。
@@ -76,7 +99,7 @@ func (b *createBody) defaults() {
 // @Tags         standard
 // @Accept       json
 // @Produce      json
-// @Param        body  body  createBody  true  "规范(name/content 等)"
+// @Param        body  body  createBody  true  "规范(name/content/scope/module 等)"
 // @Success      200  {object}  map[string]interface{}  "创建的规范"
 // @Failure      400  {object}  map[string]interface{}  "invalid body"
 // @Security     BearerAuth
@@ -88,7 +111,7 @@ func (h *Handler) CreateGlobal(c *gin.Context) {
 		return
 	}
 	in.defaults()
-	st := &Standard{Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: true}
+	st := &Standard{Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: true, Scope: in.Scope, Module: in.Module}
 	if err := h.store.Create(c.Request.Context(), st); err != nil {
 		httpx.Err(c, 500, 50007, err.Error())
 		return
@@ -116,7 +139,7 @@ func (h *Handler) CreateByPS(c *gin.Context) {
 	}
 	in.defaults()
 	psID := c.Param("id")
-	st := &Standard{ProjectSpaceID: &psID, Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: true}
+	st := &Standard{ProjectSpaceID: &psID, Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: true, Scope: in.Scope, Module: in.Module}
 	if err := h.store.Create(c.Request.Context(), st); err != nil {
 		httpx.Err(c, 500, 50007, err.Error())
 		return
@@ -160,15 +183,54 @@ func (h *Handler) Effective(c *gin.Context) {
 	httpx.OK(c, gin.H{"standards": list, "prompt_section": BuildPromptSection(list)})
 }
 
+// Aggregate 聚合平台级 + 应用级 + 指定模块级规范（AI 编码注入/导出用）。
+//
+// @Summary      聚合规范（分层合并）
+// @Tags         standard
+// @Produce      json
+// @Param        module  query  string  false  "api/form/db/code/ui（空=不附模块级）"
+// @Success      200  {object}  map[string]interface{}  "聚合规范列表"
+// @Security     BearerAuth
+// @Router       /standards/aggregate [get]
+func (h *Handler) Aggregate(c *gin.Context) {
+	list, err := h.store.Aggregate(c.Request.Context(), c.Query("module"))
+	if err != nil {
+		httpx.Err(c, 500, 50007, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"standards": list, "module": c.Query("module"), "count": len(list)})
+}
+
+// AgentsMD 生成应用 AGENTS.md 文本（聚合规范 → markdown，按层级分节）。
+// 返回 {markdown: "..."}，前端复制/下载，作为应用根 AGENTS.md 供 AI 编码用。
+//
+// @Summary      导出 AGENTS.md（markdown）
+// @Tags         standard
+// @Produce      json
+// @Param        module  query  string  false  "api/form/db/code/ui（空=仅平台+应用）"
+// @Success      200  {object}  map[string]interface{}  "markdown"
+// @Security     BearerAuth
+// @Router       /standards/agents-md [get]
+func (h *Handler) AgentsMD(c *gin.Context) {
+	module := c.Query("module")
+	list, err := h.store.Aggregate(c.Request.Context(), module)
+	if err != nil {
+		httpx.Err(c, 500, 50007, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"markdown": BuildAgentsMarkdown(list, module), "count": len(list)})
+}
+
 type updateBody struct {
 	Name     string `json:"name" binding:"required"`
 	Category string `json:"category"`
 	Content  string `json:"content" binding:"required"`
 	Priority int    `json:"priority"`
 	Enabled  bool   `json:"enabled"`
+	Module   string `json:"module"` // scope=module 时可调子模块
 }
 
-// Update 改（层级不可改）。
+// Update 改（project_space_id/scope 不可改；module 仅 scope=module 时有意义）。
 //
 // @Summary      更新规范
 // @Tags         standard
@@ -186,7 +248,7 @@ func (h *Handler) Update(c *gin.Context) {
 		httpx.Err(c, 400, 40001, err.Error())
 		return
 	}
-	st := &Standard{ID: c.Param("id"), Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: in.Enabled}
+	st := &Standard{ID: c.Param("id"), Name: in.Name, Category: in.Category, Content: in.Content, Priority: in.Priority, Enabled: in.Enabled, Module: in.Module}
 	if err := h.store.Update(c.Request.Context(), st); err != nil {
 		httpx.Err(c, 500, 50007, err.Error())
 		return
