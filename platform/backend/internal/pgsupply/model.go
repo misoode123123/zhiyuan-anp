@@ -41,6 +41,7 @@ type PGInstance struct {
 	AdminURLRef    string    `json:"-" db:"admin_url_ref"` // superuser 连接串(含密码)，不序列化
 	DeployMode     string    `json:"deploy_mode" db:"deploy_mode"`
 	Status         string    `json:"status" db:"status"`
+	ContainerName  string    `json:"container_name,omitempty" db:"container_name"` // managed 模式的 PG 容器名（备份 docker exec + 删项目级联清理）
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 

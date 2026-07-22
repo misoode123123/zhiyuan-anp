@@ -16,6 +16,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -133,6 +135,8 @@ func main() {
 	pgDocker := pgsupply.NewOSDocker()
 	instanceMgr := pgsupply.NewInstanceManager(pgsupplyStore, pgDocker, pgAdmin, cfg.AppDeployHost)
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore) // appDeployStore 满足 EnvWriter
+	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
+	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups")
 	qaStore := qa.NewStore(database)
 	opsStore := ops.NewStore(database)
 	if err := db.SeedDemoSOPs(context.Background(), database); err != nil {
@@ -164,7 +168,7 @@ func main() {
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
 	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner)
-	pgsupply.Register(v1, pgsupplyStore, appDeployStore) // 数据库管理只读查询（appDeployStore 满足 EnvValueReader）
+	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)
 	rule.Register(v1, ruleStore, v)
@@ -186,6 +190,11 @@ func main() {
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),
 		zap.Bool("zhipu_key_set", cfg.ZhipuAPIKey != ""))
+
+	// ---- 应用库定时备份（默认每 24h；BACKUP_INTERVAL_HOURS=0 关闭；负数忽略）----
+	backupCtx, backupCancel := context.WithCancel(context.Background())
+	defer backupCancel()
+	go runBackupTicker(backupCtx, logger, backuper)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -211,6 +220,46 @@ func main() {
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", zap.Error(err))
 	}
+}
+
+// runBackupTicker 后台定时跑 BackupAll。
+// 间隔由 env BACKUP_INTERVAL_HOURS 控制：默认 24h；0=关闭；非法值回落默认。
+// ctx.Done 即优雅关闭（main 收到 SIGINT/SIGTERM 后 backupCancel）。
+func runBackupTicker(ctx context.Context, logger *zap.Logger, b *pgsupply.Backuper) {
+	hours := parseBackupInterval(os.Getenv("BACKUP_INTERVAL_HOURS"), 24)
+	if hours <= 0 {
+		logger.Info("backup ticker disabled (BACKUP_INTERVAL_HOURS=0)")
+		return
+	}
+	interval := time.Duration(hours) * time.Hour
+	logger.Info("backup ticker started", zap.Float64("interval_hours", float64(hours)))
+	// 进程启动后等一个 tick 再首次执行（避免启动峰叠加；想立刻备份走 HTTP POST /database/backup）
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("backup ticker stopped")
+			return
+		case <-t.C:
+			r := b.BackupAll(ctx)
+			logger.Info("backup tick done",
+				zap.Int("total", r.Total), zap.Int("success", r.Success), zap.Int("failed", r.Failed))
+		}
+	}
+}
+
+// parseBackupInterval 解析 BACKUP_INTERVAL_HOURS（小时整数）。
+// 非法/空 → def；负数原样返回（调用方判 <=0 关闭）。
+func parseBackupInterval(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // runMigrateCmd 处理 migrate-up / migrate-down 子命令：只跑迁移（不启 server）。

@@ -41,6 +41,10 @@ var routeOps = map[string]string{
 	// 系统配置 + 成员管理（admin）
 	"PUT /api/v1/config/:key":                 "config.manage",
 	"POST /api/v1/project-spaces/:id/members": "config.manage",
+	// 应用库备份触发（admin；列备份读取类放行）
+	"POST /api/v1/project-spaces/:id/apps/:aid/database/backup": "config.manage",
+	// 删项目空间（admin；级联清理 PG 容器，高风险）
+	"DELETE /api/v1/project-spaces/:id": "config.manage",
 }
 
 // RouteOp 返回某「方法+路由模板」对应的操作；未登记返回空串（不强制）。

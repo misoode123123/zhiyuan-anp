@@ -20,27 +20,30 @@ type EnvValueReader interface {
 	GetEnvValue(ctx context.Context, appID, key string) (string, error)
 }
 
-// Handler 数据库管理只读查询 + SQL 执行。
+// Handler 数据库管理只读查询 + SQL 执行 + 备份触发。
 type Handler struct {
-	store *Store
-	env   EnvValueReader
+	store    *Store
+	env      EnvValueReader
+	backuper *Backuper
 }
 
-// NewHandler 构造。env 传 appdeploy.Store（满足 EnvValueReader）。
-func NewHandler(store *Store, env EnvValueReader) *Handler {
-	return &Handler{store: store, env: env}
+// NewHandler 构造。env 传 appdeploy.Store（满足 EnvValueReader）；backuper 可为 nil（未启用备份）。
+func NewHandler(store *Store, env EnvValueReader, backuper *Backuper) *Handler {
+	return &Handler{store: store, env: env, backuper: backuper}
 }
 
 // Register 注册数据库管理路由，返回 Handler。
-func Register(r gin.IRouter, store *Store, env EnvValueReader) *Handler {
-	h := NewHandler(store, env)
+func Register(r gin.IRouter, store *Store, env EnvValueReader, backuper *Backuper) *Handler {
+	h := NewHandler(store, env, backuper)
 	r.GET("/pgsupply/instances", h.ListInstances)
 	r.GET("/pgsupply/databases", h.ListDatabases)
+	r.GET("/pgsupply/backups", h.ListBackups)
 	r.GET("/project-spaces/:id/apps/:aid/database", h.GetDatabase)
 	// 数据库工具（类 DBeaver）：表/列/SQL 执行/操作日志
 	r.GET("/project-spaces/:id/apps/:aid/database/tables", h.ListTables)
 	r.GET("/project-spaces/:id/apps/:aid/database/tables/:table/columns", h.ListColumns)
 	r.POST("/project-spaces/:id/apps/:aid/database/query", h.ExecSQL)
+	r.POST("/project-spaces/:id/apps/:aid/database/backup", h.TriggerBackup)
 	r.GET("/project-spaces/:id/apps/:aid/database/actions", h.ListActions)
 	return h
 }
@@ -189,6 +192,37 @@ func (h *Handler) ListActions(c *gin.Context) {
 	list, err := h.store.ListActionLogs(c.Request.Context(), aid, 50)
 	if err != nil {
 		httpx.Err(c, 500, 50031, "查操作日志失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, list)
+}
+
+// TriggerBackup 手动触发某应用库 pg_dump（admin 操作；定时任务也走同一路径）。
+// 返回产物路径 + 累计 last_backup_at（库记录已更新）。
+func (h *Handler) TriggerBackup(c *gin.Context) {
+	if h.backuper == nil {
+		httpx.Err(c, 500, 50031, "备份未启用（Backuper 未装配）")
+		return
+	}
+	aid := c.Param("aid")
+	out, err := h.backuper.Dump(c.Request.Context(), aid)
+	if err != nil {
+		httpx.Err(c, 500, 50032, "备份失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"app_id": aid, "path": out, "backuped": true})
+}
+
+// ListBackups 列所有备份产物（扫 backupRoot，按 app_id 聚合，最近在前）。
+// 无 backupRoot/无文件返回空列表（非错误）。
+func (h *Handler) ListBackups(c *gin.Context) {
+	if h.backuper == nil {
+		httpx.OK(c, []BackupFile{})
+		return
+	}
+	list, err := h.backuper.ListBackups()
+	if err != nil {
+		httpx.Err(c, 500, 50031, "列备份失败: "+err.Error())
 		return
 	}
 	httpx.OK(c, list)

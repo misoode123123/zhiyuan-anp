@@ -57,6 +57,7 @@ func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstan
 		AdminURLRef:    adminURL,
 		DeployMode:     DeployManaged,
 		Status:         StatusActive,
+		ContainerName:  name,
 	}
 	if err := m.store.CreateInstance(ctx, ins); err != nil {
 		_ = m.docker.RmForce(ctx, name)

@@ -13,15 +13,33 @@ type Store struct{ db *sqlx.DB }
 // NewStore 构造。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
-// instanceCols 显式列（COALESCE 处理可空）。
-const instanceCols = `id, project_space_id, host, port, admin_url_ref, deploy_mode, status, created_at`
+// instanceCols 显式列（COALESCE 处理可空；container_name 迁移 000005 加，历史行可能 NULL → 空串）。
+const instanceCols = `id, project_space_id, host, port, admin_url_ref, deploy_mode, status,
+	COALESCE(container_name,'') AS container_name, created_at`
 
-// CreateInstance 写一条实例记录。
+// CreateInstance 写一条实例记录。partial unique index uq_pginstance_ps_active
+// 在同项目已有 active 实例时冲突（错误码 23505）——上层 InstanceManager.GetOrCreate 捕获后重查复用。
 func (s *Store) CreateInstance(ctx context.Context, ins *PGInstance) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO pg_instance (id, project_space_id, host, port, admin_url_ref, deploy_mode, status)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		ins.ID, ins.ProjectSpaceID, ins.Host, ins.Port, ins.AdminURLRef, ins.DeployMode, ins.Status)
+		`INSERT INTO pg_instance (id, project_space_id, host, port, admin_url_ref, deploy_mode, status, container_name)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		ins.ID, ins.ProjectSpaceID, ins.Host, ins.Port, ins.AdminURLRef, ins.DeployMode, ins.Status, ins.ContainerName)
+	return err
+}
+
+// ListInstancesByProject 列某项目的全部实例（任意状态，按创建倒序）。
+// 删项目级联清理用：TeardownForProject 遍历逐个 docker rm + 删记录。
+func (s *Store) ListInstancesByProject(ctx context.Context, psID string) ([]PGInstance, error) {
+	var list []PGInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+instanceCols+` FROM pg_instance WHERE project_space_id=$1 ORDER BY created_at DESC`,
+		psID)
+	return list, err
+}
+
+// DeleteInstance 按 id 删实例记录（级联删 appdeploy_database 由 FK ON DELETE CASCADE 兜底；本方法只删 pg_instance）。
+func (s *Store) DeleteInstance(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM pg_instance WHERE id=$1`, id)
 	return err
 }
 
