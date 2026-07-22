@@ -6,39 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestRepo 建内存 SQLite + requirement 表（自包含，仿 change/store_test.go 模式）。
-//
-// DDL 对齐 internal/db/migrations/pg/000001_init.up.sql 的 requirement 表，
-// 类型映射 TIMESTAMP→DATETIME、JSONB/TEXT→TEXT。
-// 补齐 model 实际使用的 application_id/priority/fixed_version 列
-// （迁移文件中遗漏，详见 TestRepository_CreateAndGet 的注释）。
+// newTestRepo 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 requirement 表隔离。
+// requirement.project_space_id 在 PG schema 中 NOT NULL 但无 FK 约束，无需前置。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestRepo(t *testing.T) *Repository {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE requirement (
-  id                  TEXT PRIMARY KEY,
-  project_space_id    TEXT NOT NULL,
-  application_id      TEXT,
-  title               TEXT NOT NULL,
-  description         TEXT,
-  user_story          TEXT,
-  acceptance_criteria TEXT,
-  status              TEXT NOT NULL DEFAULT 'draft',
-  priority            TEXT,
-  fixed_version       TEXT,
-  tasks               TEXT,
-  assignee            TEXT,
-  assigned_at         DATETIME,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "requirement")
 	return NewRepository(db)
 }
 

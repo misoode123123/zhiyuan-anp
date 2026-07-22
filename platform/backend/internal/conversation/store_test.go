@@ -6,35 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestStore 建内存 SQLite + conversation/message 两表（自包含，仿 change/store_test.go 模式）。
-// 类型映射：PG TIMESTAMP→SQLite DATETIME，TEXT→TEXT；默认值与 PG schema 对齐。
-// 两张表 DDL 对齐 internal/db/migrations/pg/000001_init.up.sql。
+// newTestStore 连 anp_test PG（testutil 跑迁移建平台全表）+ 清本模块 2 表隔离。
+// FK 前置：conversation.project_space_id → project_space（建测试用到的所有 psID，ON CONFLICT 幂等）。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug，见 memory sqlite-test-pg-type-trap）。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	db := testutil.TestDB(t)
+	// FK 前置：conversation.project_space_id REFERENCES project_space(id)。
+	for _, ps := range []string{"ps_1", "ps_2", "ps_empty"} {
+		db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('` + ps + `','测试空间','` + ps + `','active') ON CONFLICT (id) DO NOTHING`)
 	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.MustExec(`CREATE TABLE conversation (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'active',
-  title            TEXT,
-  requirement_id   TEXT,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-	db.MustExec(`CREATE TABLE message (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversation(id),
-  role            TEXT NOT NULL,
-  content         TEXT NOT NULL,
-  media_kind      TEXT NOT NULL DEFAULT 'text',
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	testutil.Truncate(t, db, "message", "conversation")
 	return NewStore(db)
 }
 
@@ -59,12 +44,12 @@ func mustAddMsg(t *testing.T, s *Store, cid, role, content string) *Message {
 }
 
 // setCreatedAt 显式覆盖 created_at。
-// 原因：sqlite CURRENT_TIMESTAMP 精度到秒，连续 INSERT 会拿到同值，
+// 原因：PG TIMESTAMP DEFAULT CURRENT_TIMESTAMP 精度到秒，连续 INSERT 会拿到同值，
 // 导致 ORDER BY created_at 顺序不确定；测试中需要稳定的排序断言。
 func setCreatedAt(t *testing.T, s *Store, table, id string, ts time.Time) {
 	t.Helper()
 	res, err := s.db.ExecContext(context.Background(),
-		`UPDATE `+table+` SET created_at=? WHERE id=?`,
+		`UPDATE `+table+` SET created_at=$1 WHERE id=$2`,
 		ts.Format("2006-01-02 15:04:05"), id)
 	if err != nil {
 		t.Fatalf("set created_at: %v", err)
@@ -260,18 +245,18 @@ func TestListMessages_EmptyAndIsolated(t *testing.T) {
 	}
 }
 
-// TestAddMessage_ConversationNotFound message→conversation 的关联：
-// 由于 sqlite 默认 PRAGMA foreign_keys=OFF，这里不期望 FK 报错，
-// 但语义上 AddMessage 一个不存在的 cid 会写入孤儿行。
-// 用例仅断言：插入不报错、能被 ListMessages 查到（覆盖 INSERT 路径）。
+// TestAddMessage_ConversationNotFound message→conversation FK 强制：
+// PG schema 中 message.conversation_id REFERENCES conversation(id)，
+// 插入不存在的 cid 会触发 FK 违反（与 sqlite 默认 FK 关闭相反）。
+// 用例断言：AddMessage 对不存在会话返回 error，且不会写入孤儿行。
 func TestAddMessage_ConversationNotFound(t *testing.T) {
 	s := newTestStore(t)
 	m := &Message{ConversationID: "conv_orphan", Role: "user", Content: "{}", MediaKind: "text"}
-	if err := s.AddMessage(context.Background(), m); err != nil {
-		t.Fatalf("AddMessage 不应因 cid 不存在而报错（默认 FK 关闭），得到 %v", err)
+	if err := s.AddMessage(context.Background(), m); err == nil {
+		t.Fatal("PG FK 强制：AddMessage 对不存在会话应返回 error")
 	}
 	got, _ := s.ListMessages(context.Background(), "conv_orphan")
-	if len(got) != 1 || got[0].ID != m.ID {
-		t.Fatalf("应能查到孤儿消息，得到 %+v", got)
+	if len(got) != 0 {
+		t.Fatalf("FK 强制下不应写入孤儿消息，得到 %+v", got)
 	}
 }

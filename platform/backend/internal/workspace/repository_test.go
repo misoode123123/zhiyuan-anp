@@ -5,64 +5,20 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestRepo 建内存 SQLite + project_space/project/membership 三张核心表，
-// 并附带 Overview 聚合查询所需的辅助表（appdeploy_application/requirement/change_request/release_record），
-// 使 Overview 的 COUNT 查询能真正命中表而非被静默吞错返回 0。
-// DDL 由 internal/db/migrations/pg/000001_init.up.sql 映射而来：
-// TIMESTAMP→DATETIME、UNIQUE/INDEX 保持一致、FK 在 SQLite 默认不强制（与 change/standard 测试一致）。
+// newTestRepo 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 Overview 聚合涉及的 7 表隔离。
+// 涉及 project_space(根)/project/membership(FK→ps) + Overview COUNT 引用的
+// appdeploy_application/requirement/change_request/release_record。
+// 替代 sqlite :memory:（sqlite 漏 PG 类型 bug + FK 默认不强制；见 memory sqlite-test-pg-type-trap）。
 func newTestRepo(t *testing.T) *Repository {
 	t.Helper()
-	db, err := sqlx.Connect("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	db.MustExec(`CREATE TABLE project_space (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  slug       TEXT NOT NULL UNIQUE,
-  status     TEXT NOT NULL DEFAULT 'active',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
-
-	db.MustExec(`CREATE TABLE project (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL REFERENCES project_space(id),
-  name             TEXT NOT NULL,
-  slug             TEXT NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'active',
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (project_space_id, slug))`)
-
-	db.MustExec(`CREATE TABLE membership (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL REFERENCES project_space(id),
-  user_id          TEXT NOT NULL,
-  role             TEXT NOT NULL,
-  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (project_space_id, user_id))`)
-
-	// Overview 聚合所引用的跨上下文表，列对齐迁移文件（仅保留 COUNT 所需列 + status 过滤列）。
-	db.MustExec(`CREATE TABLE appdeploy_application (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'registered')`)
-	db.MustExec(`CREATE TABLE requirement (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL)`)
-	db.MustExec(`CREATE TABLE change_request (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT)`)
-	db.MustExec(`CREATE TABLE release_record (
-  id               TEXT PRIMARY KEY,
-  project_space_id TEXT NOT NULL)`)
-
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db,
+		"release_record", "change_request", "requirement", "appdeploy_application",
+		"membership", "project", "project_space",
+	)
 	return NewRepository(db)
 }
 
@@ -149,8 +105,7 @@ func TestRepository_ListProjectSpaces(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("期望 3 条，得到 %d", len(list))
 	}
-	// SQLite CURRENT_TIMESTAMP 精度到秒，三条若同一秒插入则顺序不稳定；
-	// 这里只校验集合，不强制严格顺序（避免时序 flake）。
+	// PG CURRENT_TIMESTAMP 精度到微秒，三条若同一秒插入顺序仍稳定；只校验集合避免边界 flake。
 	gotIDs := map[string]bool{}
 	for _, ps := range list {
 		gotIDs[ps.ID] = true
@@ -282,8 +237,8 @@ func TestRepository_Overview_Aggregation(t *testing.T) {
 		{"app_4", "failed"},
 	} {
 		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO appdeploy_application (id, project_space_id, status) VALUES ($1, $2, $3)`,
-			app.id, ps.ID, app.status); err != nil {
+			`INSERT INTO appdeploy_application (id, project_space_id, name, status) VALUES ($1, $2, $3, $4)`,
+			app.id, ps.ID, app.id, app.status); err != nil {
 			t.Fatalf("seed app #%d: %v", i, err)
 		}
 	}
@@ -291,7 +246,7 @@ func TestRepository_Overview_Aggregation(t *testing.T) {
 	// 需求 2 条。
 	for _, id := range []string{"req_1", "req_2"} {
 		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO requirement (id, project_space_id) VALUES ($1, $2)`, id, ps.ID); err != nil {
+			`INSERT INTO requirement (id, project_space_id, title) VALUES ($1, $2, $3)`, id, ps.ID, id); err != nil {
 			t.Fatalf("seed requirement %s: %v", id, err)
 		}
 	}
@@ -305,7 +260,7 @@ func TestRepository_Overview_Aggregation(t *testing.T) {
 	}
 	// 发布 1 条。
 	if _, err := r.db.ExecContext(ctx,
-		`INSERT INTO release_record (id, project_space_id) VALUES ($1, $2)`, "rel_1", ps.ID); err != nil {
+		`INSERT INTO release_record (id, project_space_id, version) VALUES ($1, $2, $3)`, "rel_1", ps.ID, "v1"); err != nil {
 		t.Fatalf("seed release: %v", err)
 	}
 
@@ -347,8 +302,8 @@ func TestRepository_Overview_DeployedApps_StatusFilter(t *testing.T) {
 	statuses := []string{"running", "registered", "failed", "stopped", "running"}
 	for i, st := range statuses {
 		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO appdeploy_application (id, project_space_id, status) VALUES ($1, $2, $3)`,
-			"app_"+string(rune('A'+i)), ps.ID, st); err != nil {
+			`INSERT INTO appdeploy_application (id, project_space_id, name, status) VALUES ($1, $2, $3, $4)`,
+			"app_"+string(rune('A'+i)), ps.ID, "app_"+string(rune('A'+i)), st); err != nil {
 			t.Fatalf("seed #%d: %v", i, err)
 		}
 	}
