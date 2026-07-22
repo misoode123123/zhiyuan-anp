@@ -41,6 +41,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
+	"zhiyuan-anp/platform/backend/internal/quota"
 	"zhiyuan-anp/platform/backend/internal/release"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/rule"
@@ -138,7 +139,10 @@ func main() {
 	pgAdmin := pgsupply.NewPGAdmin()
 	pgDocker := pgsupply.NewOSDocker()
 	instanceMgr := pgsupply.NewInstanceManager(pgsupplyStore, pgDocker, pgAdmin, cfg.AppDeployHost)
-	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore) // appDeployStore 满足 EnvWriter
+	// 配额强制（阶段3a）：4 维度 check + 管理 API。先建 quota service 以便注入 pgsupply/appdeploy/capability。
+	quotaStore := quota.NewStore(database)
+	quotaSvc := quota.NewService(quotaStore, pgsupply.NewQuotaAdapter(pgsupplyStore), pgAdmin)
+	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore, quotaSvc) // appDeployStore 满足 EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups")
 	// 删项目空间前级联清理 PG 容器（I2 资源泄漏修复）；FK CASCADE 只清行，运行中容器靠此钩子回收。
@@ -159,7 +163,7 @@ func main() {
 	if err := db.SeedDemoSkills(context.Background(), database); err != nil {
 		logger.Fatal("seed capability_skill", zap.Error(err))
 	}
-	capabilityGateway := capability.NewGateway(capabilityStore, cfg.AgentRuntimeURL, "")
+	capabilityGateway := capability.NewGateway(capabilityStore, cfg.AgentRuntimeURL, "", quotaSvc)
 	attendanceSvc := attendance.NewService(attendance.NewStore(database))
 
 	// ---- 跨模块枢纽（main 构造，多模块共用：reqRepo/devAgent/appDeployHandler）----
@@ -179,8 +183,9 @@ func main() {
 	v1.Use(auth.AutoRequire(authStore))
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore)
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc)
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
+	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)
 	rule.Register(v1, ruleStore, v)
