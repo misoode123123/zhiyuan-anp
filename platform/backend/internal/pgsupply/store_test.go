@@ -17,7 +17,7 @@ func newTestStore(t *testing.T) *Store {
 	for _, ps := range []string{"ps_1", "ps_new", "ps_x"} {
 		db.MustExec(`INSERT INTO project_space (id, name, slug, status) VALUES ('` + ps + `','测试空间','` + ps + `','active') ON CONFLICT (id) DO NOTHING`)
 	}
-	testutil.Truncate(t, db, "db_action_log", "appdeploy_database", "pg_instance", "appdeploy_application")
+	testutil.Truncate(t, db, "db_action_log", "appdeploy_database", "pg_instance", "appdeploy_application", "project_quota")
 	// FK 前置：appdeploy_database.app_id → appdeploy_application（Truncate 后重建 app_1）
 	db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name, internal_port, status) VALUES ('app_1','ps_1','t',8080,'registered') ON CONFLICT DO NOTHING`)
 	return NewStore(db)

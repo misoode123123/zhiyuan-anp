@@ -60,6 +60,7 @@ type AppDatabase struct {
 	BackupEnabled  bool       `json:"backup_enabled" db:"backup_enabled"`
 	LastBackupAt   *time.Time `json:"last_backup_at,omitempty" db:"last_backup_at"`
 	SchemaVersion  string     `json:"schema_version,omitempty" db:"schema_version"`
+	SizeBytes      int64      `json:"size_bytes" db:"size_bytes"` // 3b：库大小定时采集（CollectDBSizes 写，0=未采）
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 }

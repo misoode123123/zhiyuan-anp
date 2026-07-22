@@ -2,6 +2,7 @@ package pgsupply
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -69,7 +70,7 @@ func (s *Store) GetInstance(ctx context.Context, id string) (*PGInstance, error)
 // appDBCols 显式列。
 const appDBCols = `id, app_id, project_space_id, db_name, db_role, pg_instance_id, db_host, db_port, status,
 	COALESCE(last_error,'') AS last_error, backup_enabled, last_backup_at,
-	COALESCE(schema_version,'') AS schema_version, created_at, updated_at`
+	COALESCE(schema_version,'') AS schema_version, size_bytes, created_at, updated_at`
 
 // CreateAppDB 写一条应用库记录。
 func (s *Store) CreateAppDB(ctx context.Context, ad *AppDatabase) error {
@@ -139,6 +140,57 @@ func (s *Store) ListAppDBs(ctx context.Context, psID string) ([]AppDatabase, err
 		`SELECT `+appDBCols+` FROM appdeploy_database WHERE project_space_id=$1 AND status<>$2 ORDER BY created_at DESC`,
 		psID, StatusDeleted)
 	return list, err
+}
+
+// ListAppDBsByInstance 按实例列应用库（排除已删除）。CollectDBSizes 按实例分组查 size 用。
+func (s *Store) ListAppDBsByInstance(ctx context.Context, instanceID string) ([]AppDatabase, error) {
+	var list []AppDatabase
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+appDBCols+` FROM appdeploy_database WHERE pg_instance_id=$1 AND status<>$2 ORDER BY created_at DESC`,
+		instanceID, StatusDeleted)
+	return list, err
+}
+
+// UpdateAppDBSize 更新库大小字节（CollectDBSizes 每 tick 调）。
+func (s *Store) UpdateAppDBSize(ctx context.Context, id string, sizeBytes int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_database SET size_bytes=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`,
+		sizeBytes, id)
+	return err
+}
+
+// ListActiveInstances 列所有 active 实例（CollectDBSizes 遍历用）。
+func (s *Store) ListActiveInstances(ctx context.Context) ([]PGInstance, error) {
+	var list []PGInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+instanceCols+` FROM pg_instance WHERE status=$1 ORDER BY created_at DESC`,
+		StatusActive)
+	return list, err
+}
+
+// ProjectTotalSizeMb 按项目聚合所有非 deleted 库的 size_bytes 总和（折 MB 向上取整）。
+// CollectDBSizes 告警用：直接读 size_bytes 列（已采），不连实例。
+func (s *Store) ProjectTotalSizeMb(ctx context.Context, psID string) (int64, error) {
+	var bytes int64
+	err := s.db.GetContext(ctx, &bytes,
+		`SELECT COALESCE(SUM(size_bytes),0) FROM appdeploy_database WHERE project_space_id=$1 AND status<>$2`,
+		psID, StatusDeleted)
+	if err != nil {
+		return 0, err
+	}
+	const mb = 1024 * 1024
+	return (bytes + mb - 1) / mb, nil
+}
+
+// MaxTotalDBMb 取项目的库总大小上限。行不存在 → 0（调用方按「无配额」处理，不告警）。
+func (s *Store) MaxTotalDBMb(ctx context.Context, psID string) (int, error) {
+	var mb int
+	err := s.db.GetContext(ctx, &mb,
+		`SELECT max_total_db_mb FROM project_quota WHERE project_space_id=$1`, psID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return mb, err
 }
 
 // actionLogCols 显式列（COALESCE 处理可空 error/trace_id）。

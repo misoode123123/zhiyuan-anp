@@ -145,6 +145,8 @@ func main() {
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore, quotaSvc) // appDeployStore 满足 EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups")
+	// Collector：定时采 appdeploy_database.size_bytes + 库超限告警（DBSIZE_INTERVAL_HOURS 控制，0=关闭，默认 1h）
+	dbSizeCollector := pgsupply.NewCollector(pgsupplyStore, pgAdmin, logger)
 	// 删项目空间前级联清理 PG 容器（I2 资源泄漏修复）；FK CASCADE 只清行，运行中容器靠此钩子回收。
 	wsSvc.AddTeardownHook(func(ctx context.Context, psID string) error {
 		r := instanceMgr.TeardownForProject(ctx, psID)
@@ -222,6 +224,9 @@ func main() {
 	defer backupCancel()
 	go runBackupTicker(backupCtx, logger, backuper)
 
+	// ---- 库大小定时采集（默认每 1h；DBSIZE_INTERVAL_HOURS=0 关闭；启动后先跑一次再 tick）----
+	go runDBSizeTicker(backupCtx, logger, dbSizeCollector)
+
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv,
@@ -286,6 +291,40 @@ func parseBackupInterval(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// runDBSizeTicker 后台定时跑 CollectDBSizes（库大小采集 + 超限告警）。
+// 间隔由 env DBSIZE_INTERVAL_HOURS 控制：默认 1h；0=关闭；非法值回落默认。
+// 与 backup ticker 不同：启动后先立即跑一次（首次部署立即采到当前 size，不必等 tick）。
+func runDBSizeTicker(ctx context.Context, logger *zap.Logger, c *pgsupply.Collector) {
+	hours := parseBackupInterval(os.Getenv("DBSIZE_INTERVAL_HOURS"), 1)
+	if hours <= 0 {
+		logger.Info("db size collector disabled (DBSIZE_INTERVAL_HOURS=0)")
+		return
+	}
+	interval := time.Duration(hours) * time.Hour
+	logger.Info("db size collector started", zap.Float64("interval_hours", float64(hours)))
+
+	// 启动后立即跑一次（不等首个 tick；想看 size 立刻有数据）
+	r := c.CollectDBSizes(ctx)
+	logger.Info("db size collect (startup) done",
+		zap.Int("instances", r.Instances), zap.Int("total", r.Total),
+		zap.Int("updated", r.Updated), zap.Int("failed", r.Failed), zap.Int("alerts", len(r.Alerts)))
+
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("db size collector stopped")
+			return
+		case <-t.C:
+			r := c.CollectDBSizes(ctx)
+			logger.Info("db size collect tick done",
+				zap.Int("instances", r.Instances), zap.Int("total", r.Total),
+				zap.Int("updated", r.Updated), zap.Int("failed", r.Failed), zap.Int("alerts", len(r.Alerts)))
+		}
+	}
 }
 
 // runMigrateCmd 处理 migrate-up / migrate-down 子命令：只跑迁移（不启 server）。
