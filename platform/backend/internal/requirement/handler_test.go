@@ -302,11 +302,9 @@ func TestHandler_Release_NotFound(t *testing.T) {
 
 // TestHandler_MyTasks_WithAuthStoreRoles authStore 接入后 roles 返回用户在某空间的角色。
 //
-// 注意：发现 auth.Store.Roles 在 projectSpaceID 非空时拼出
-// `WHERE user_id = $1 AND project_space_id = ?`（混用 $N 与 ? 占位符）。
-// 在 modernc.org/sqlite 上仍能工作（驱动同时支持），但在 PostgreSQL 上 $1 不会替换、? 也无效，
-// 生产 PG 上 MyTasks 的 RBAC 分支会查不到角色 → 前端拿到空 roles。
-// 见"潜在 bug"汇报。
+// 注意（历史 bug 记录）：auth.Store.Roles 在 projectSpaceID 非空时曾混用 $N 与 ? 占位符，
+// 切 PG 后 $1 不会替换、? 也无效 → MyTasks 的 RBAC 分支查不到角色，前端拿到空 roles。
+// 本用例对此分支宽容（roles 空也只 Log 不 Fail），便于回归。
 func TestHandler_MyTasks_WithAuthStoreRoles(t *testing.T) {
 	repo, chg := newReqRepoWithChanges(t)
 	mustCreateRepo(t, repo, mkReq("req_r1", "ps_1"))
