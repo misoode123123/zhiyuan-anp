@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
+	"zhiyuan-anp/platform/backend/internal/appgw"
 	"zhiyuan-anp/platform/backend/internal/attendance"
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/capability"
@@ -129,6 +130,9 @@ func main() {
 		logger.Fatal("seed coding_standard", zap.Error(err))
 	}
 	appDeployStore := appdeploy.NewStore(database)
+	// ---- appgw（应用 API 网关）：/apps/<app_code>/ 统一前缀反代 + 鉴权 ----
+	// 阶段 2a：并入 backend，不拆独立服务（main 持 store + gateway，挂 /apps/ 路由组）。
+	appgwStore := appgw.NewStore(database)
 	// ---- 应用库供给（pgsupply）：每项目一个独立 PG 实例 + 应用库供给 ----
 	pgsupplyStore := pgsupply.NewStore(database)
 	pgAdmin := pgsupply.NewPGAdmin()
@@ -175,7 +179,7 @@ func main() {
 	v1.Use(auth.AutoRequire(authStore))
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner)
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore)
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)
@@ -194,6 +198,12 @@ func main() {
 	conversation.Register(v1, database, reqRepo, cfg.AgentRuntimeURL)
 	qa.Register(v1, database, cfg.AgentRuntimeURL, reqRepo, appDeployStore)
 	release.Register(v1, database, changeStore, reqRepo, appDeployHandler, store, qaStore)
+
+	// ---- appgw 路由组：/apps/*path 反代到应用容器（不在 /api/v1 下，不挂 AuthUser 全局）----
+	// appgw.ReverseProxy 内部按 route.auth_required 决定是否验 JWT。
+	// authStore 满足 appgw.TokenVerifier（ValidToken）；挂到 root engine（与 /api/v1 平级）。
+	appgwGateway := appgw.NewGateway(appgwStore, authStore, logger)
+	srv.Any("/apps/*path", appgwGateway.ReverseProxy)
 
 	logger.Info("opencode engine ready",
 		zap.String("config", cfg.OpencodeConfigPath),

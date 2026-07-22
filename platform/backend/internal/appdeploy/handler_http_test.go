@@ -26,7 +26,7 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 	)
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil)
 	return h, db
 }
 
@@ -618,7 +618,7 @@ func TestSyncOverviewIfProd_sync(t *testing.T) {
 
 // TestHandler_NewHandlerDeps NewHandler 接受 nil 依赖（codeWS/changes/cfg/provisioner）。
 func TestHandler_NewHandlerDeps(t *testing.T) {
-	h := NewHandler(nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil)
 	if h == nil {
 		t.Fatal("NewHandler 不应返回 nil")
 	}

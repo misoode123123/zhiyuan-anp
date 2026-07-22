@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/appgw"
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/codews"
@@ -25,31 +26,32 @@ import (
 
 // Handler 应用部署 HTTP 接口。
 type Handler struct {
-	store    *Store
-	deployer *Deployer
-	codeWS   *codews.Manager         // 交互编码工作台（opencode serve）；nil=未启用
-	changes  *change.Store           // 变更闸门（期2）；nil=未启用
-	cfg      *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
-	reqRepo  *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
-	provisioner *pgsupply.Provisioner // 应用库供给（Create 建库 / Delete 删库）
-	checkFn  checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
+	store       *Store
+	deployer    *Deployer
+	codeWS      *codews.Manager          // 交互编码工作台（opencode serve）；nil=未启用
+	changes     *change.Store            // 变更闸门（期2）；nil=未启用
+	cfg         *config.Store            // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
+	reqRepo     *requirement.Repository  // 需求-代码核对门禁:读 requirement 的验收标准
+	provisioner *pgsupply.Provisioner    // 应用库供给（Create 建库 / Delete 删库）
+	routeWriter appgw.RouteWriter        // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
+	checkFn     checkFunc                // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
 // checkFunc 需求-代码核对的函数签名(便于测试 mock)。
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
 type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
 
-// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner) *Handler {
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner}
+// NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter 可为 nil（不启用对应能力）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter) *Handler {
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter}
 	h.checkFn = checkRequirement // 默认真 AI 核对
 	return h
 }
 
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner) *Handler {
-	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner)
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter) *Handler {
+	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost), changeStore, configStore, reqRepo, provisioner, routeWriter)
 	h.Register(r)
 	return h
 }
@@ -959,6 +961,15 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 	ins.LastError = ""
 	ins.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateInstance(ctx, ins)
+	// 写 appgw 路由表：部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
+	// 失败不阻塞部署（应用仍可裸端口访问）；routeWriter nil = 未启用 appgw。
+	if h.routeWriter != nil {
+		if err := h.routeWriter.UpsertRoute(ctx, a.ID, a.ProjectSpaceID, env, h.deployer.host, ins.HostPort); err != nil {
+			// 路由表写入失败仅记录到 instance.LastError，不影响部署成功态
+			ins.LastError = "部署成功但 appgw 路由表写入失败: " + err.Error()
+			_ = h.store.UpdateInstance(ctx, ins)
+		}
+	}
 	h.syncOverviewIfProd(ctx, a, env)
 }
 
@@ -1063,6 +1074,10 @@ func (h *Handler) Delete(c *gin.Context) {
 		// 先删应用库（DropDatabase/Role；库记录在 Store.Delete 级联删 appdeploy_database 前先清）
 		if h.provisioner != nil {
 			_ = h.provisioner.Cleanup(c.Request.Context(), a.ID)
+		}
+		// 显式清 appgw 路由（不依赖 FK CASCADE；routeWriter nil = 未启用 appgw）
+		if h.routeWriter != nil {
+			_ = h.routeWriter.DeleteRouteByApp(c.Request.Context(), a.ID)
 		}
 		// 删除所有环境的容器
 		inss, _ := h.store.ListInstancesByApp(c.Request.Context(), a.ID)
