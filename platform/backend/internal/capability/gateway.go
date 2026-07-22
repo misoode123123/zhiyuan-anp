@@ -10,19 +10,27 @@ import (
 	"time"
 )
 
+// CapabilityQuotaChecker 每日 AI 调用配额检查（由 quota.Service 实现，避免 capability→quota 循环依赖）。
+// 超限返回的错误透传到 handler（识别后 → 429）。
+type CapabilityQuotaChecker interface {
+	CheckCapabilityToday(ctx context.Context, psID string) error
+}
+
 // Gateway 统一调用网关：APIKey 鉴权 → 技能校验 → 调 agent-runtime → 记用量。
 type Gateway struct {
 	store           *Store
 	agentRuntimeURL string
 	defaultModel    string
 	client          *http.Client
+	quota           CapabilityQuotaChecker // 每日调用配额；nil=不强制
 }
 
-// NewGateway 构造。
-func NewGateway(store *Store, agentRuntimeURL, defaultModel string) *Gateway {
+// NewGateway 构造。quota 可为 nil（不强制）。
+func NewGateway(store *Store, agentRuntimeURL, defaultModel string, quota CapabilityQuotaChecker) *Gateway {
 	return &Gateway{
 		store: store, agentRuntimeURL: agentRuntimeURL, defaultModel: defaultModel,
 		client: &http.Client{Timeout: 60 * time.Second},
+		quota:  quota,
 	}
 }
 
@@ -57,6 +65,13 @@ func (g *Gateway) Invoke(ctx context.Context, apiKey, skillCode, input, renderHi
 		allowed := splitCSV(key.AllowedSkills)
 		if !contains(allowed, skillCode) {
 			return nil, ErrNotAllowed
+		}
+	}
+
+	// 2.5 配额强制：今日 AI 调用次数（鉴权 + 技能校验通过后才查；用 key.ProjectSpaceID）
+	if g.quota != nil {
+		if qerr := g.quota.CheckCapabilityToday(ctx, key.ProjectSpaceID); qerr != nil {
+			return nil, fmt.Errorf("%w: %v", ErrQuotaExceeded, qerr)
 		}
 	}
 
@@ -135,6 +150,7 @@ var (
 	ErrAuth             = fmt.Errorf("APIKey 无效或已失效")
 	ErrSkillUnavailable = fmt.Errorf("技能不存在或未上架")
 	ErrNotAllowed       = fmt.Errorf("该 APIKey 未被授权调用此技能")
+	ErrQuotaExceeded    = fmt.Errorf("今日 AI 调用次数已达上限") // 配额超限（含维度详情由 quota.QuotaExceededError 描述）
 )
 
 func splitCSV(s string) []string {

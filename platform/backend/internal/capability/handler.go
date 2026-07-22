@@ -135,6 +135,8 @@ func (h *Handler) Invoke(c *gin.Context) {
 			httpx.Err(c, 404, 40409, err.Error())
 		case errors.Is(err, ErrNotAllowed):
 			httpx.Err(c, 403, 40309, err.Error())
+		case errors.Is(err, ErrQuotaExceeded):
+			httpx.Err(c, 429, 42950, err.Error())
 		default:
 			httpx.Err(c, 502, 50209, err.Error())
 		}
