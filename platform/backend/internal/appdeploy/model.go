@@ -26,10 +26,20 @@ type Application struct {
 	Status         string        `json:"status" db:"status"`       // registered/building/running/stopped/failed
 	LastError      string        `json:"last_error,omitempty" db:"last_error"`
 	BuildLog       string        `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
+	DeployMode     string        `json:"deploy_mode" db:"deploy_mode"`       // managed(A类) / external(B类纳管外部)
+	ExternalURL    string        `json:"external_url" db:"external_url"`     // external 模式时外部应用访问地址
 	Instances      []AppInstance `json:"instances,omitempty" db:"-"`         // 各环境部署实例（聚合展示，非列）
 	CreatedAt      time.Time     `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at" db:"updated_at"`
 }
+
+// 应用接入模式常量（deploy_mode 列）。
+// AppManaged（A 类，默认）：平台托管 —— 建 git 仓 + AI 编码 + 部署容器 + 供给库。
+// AppExternal（B 类 ① 轻接入）：纳管外部已在运行的应用 —— 仅注册 + appgw 统一入口 + ops 按 external_url 探活；不动代码。
+const (
+	AppManaged  = "managed"
+	AppExternal = "external"
+)
 
 // 环境常量：test=测试验证(prod 前)，prod=正式上线(用户访问)。
 const (

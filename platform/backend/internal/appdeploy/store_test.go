@@ -22,6 +22,59 @@ func mkApp(ps, name string) *Application {
 	return &Application{ProjectSpaceID: ps, Name: name, RepoDir: "/data/repos/" + name, InternalPort: 8080}
 }
 
+// mkExternalApp 构造一条 external 应用（B 类轻接入：无 repo/端口，外部地址直填）。
+func mkExternalApp(ps, name, extURL string) *Application {
+	return &Application{
+		ProjectSpaceID: ps, Name: name,
+		DeployMode: AppExternal, ExternalURL: extURL,
+		Status: "running",
+	}
+}
+
+// TestStore_CreateExternal external 应用落库后读回，deploy_mode/external_url/status 正确。
+// 覆盖 B 类轻接入：Create 不再只写 managed 列，要支持 external 分支字段。
+func TestStore_CreateExternal(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := mkExternalApp("ps_1", "存量ERP", "http://10.10.0.28:8088")
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create external: %v", err)
+	}
+	if !strings.HasPrefix(a.ID, "app_") {
+		t.Fatalf("ID 应以 app_ 开头，得到 %s", a.ID)
+	}
+	got, err := s.GetByAppID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.DeployMode != AppExternal {
+		t.Fatalf("deploy_mode 应 external，得到 %s", got.DeployMode)
+	}
+	if got.ExternalURL != "http://10.10.0.28:8088" {
+		t.Fatalf("external_url 不匹配: %s", got.ExternalURL)
+	}
+	if got.Status != "running" {
+		t.Fatalf("external 应用 status 应 running，得到 %s", got.Status)
+	}
+}
+
+// TestStore_CreateManagedDefault 不指定 deploy_mode 时默认 managed（向后兼容）。
+func TestStore_CreateManagedDefault(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := mkApp("ps_1", "snake")
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, _ := s.GetByAppID(ctx, a.ID)
+	if got.DeployMode != AppManaged {
+		t.Fatalf("未指定 deploy_mode 应默认 managed，得到 %s", got.DeployMode)
+	}
+	if got.ExternalURL != "" {
+		t.Fatalf("managed 应用 external_url 应空，得到 %s", got.ExternalURL)
+	}
+}
+
 // TestStore_CreateDefaults 新建应用应自动补 ID 和 registered 状态。
 func TestStore_CreateDefaults(t *testing.T) {
 	s := newTestStore(t)
