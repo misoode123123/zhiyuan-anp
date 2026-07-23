@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 )
 
 // InstanceLookup 取项目 PG 实例的 admin_url（superuser 连接串）。
@@ -127,6 +128,91 @@ func (s *Service) Usage(ctx context.Context, psID string) (*Usage, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+// ---------------- 3c 用量趋势 ----------------
+
+// 趋势查询天数上下界：<=0 或 >90 夹到 30（前端 days 选择器只给 7/30/90，仍兜底防越界）。
+const (
+	trendDaysDefault = 30
+	trendDaysMax     = 90
+)
+
+func clampDays(days int) int {
+	if days <= 0 || days > trendDaysMax {
+		return trendDaysDefault
+	}
+	return days
+}
+
+// UsageTrend 取用量趋势：AI 调用 / 应用 API 调用 / 库大小 三条日级趋势 + 当前用量（复用 3a）。
+// days 控制时间窗（now()-N days 到 now）。空数据返回空切片（前端按空趋势渲染）。
+func (s *Service) UsageTrend(ctx context.Context, psID string, days int) (*UsageTrend, error) {
+	days = clampDays(days)
+	t := &UsageTrend{Days: days, AITrend: []AITrendPoint{}, APITrend: []APITrendPoint{}, DBSizeTrend: []DBSizeTrendPoint{}}
+
+	// AI 调用趋势（capability_usage by day）
+	if err := s.store.db.SelectContext(ctx, &t.AITrend,
+		`SELECT created_at::date AS day,
+		        COUNT(*) AS calls,
+		        COALESCE(SUM(input_tokens),0) AS input_tokens,
+		        COALESCE(SUM(output_tokens),0) AS output_tokens,
+		        COALESCE(AVG(latency_ms),0)::int AS avg_latency_ms,
+		        CASE WHEN COUNT(*)>0 THEN SUM(CASE WHEN success THEN 1 ELSE 0 END)::float8/COUNT(*) ELSE 0 END AS success_rate
+		 FROM capability_usage
+		 WHERE project_space_id=$1 AND created_at >= now() - make_interval(days => $2)
+		 GROUP BY created_at::date
+		 ORDER BY created_at::date ASC`, psID, days); err != nil {
+		return nil, err
+	}
+
+	// 应用 API 调用趋势（appgw_access_log by day）
+	if err := s.store.db.SelectContext(ctx, &t.APITrend,
+		`SELECT created_at::date AS day,
+		        COUNT(*) AS calls,
+		        COALESCE(AVG(latency_ms),0)::int AS avg_latency_ms,
+		        CASE WHEN COUNT(*)>0 THEN SUM(CASE WHEN status<400 THEN 1 ELSE 0 END)::float8/COUNT(*) ELSE 0 END AS success_rate,
+		        SUM(CASE WHEN status>=400 THEN 1 ELSE 0 END) AS error_count
+		 FROM appgw_access_log
+		 WHERE project_space_id=$1 AND created_at >= now() - make_interval(days => $2)
+		 GROUP BY created_at::date
+		 ORDER BY created_at::date ASC`, psID, days); err != nil {
+		return nil, err
+	}
+
+	// 库大小趋势（db_size_snapshot 当日末值 by day）
+	var raw []struct {
+		Day       time.Time `db:"day"`
+		SizeBytes int64     `db:"size_bytes"`
+	}
+	if err := s.store.db.SelectContext(ctx, &raw,
+		`SELECT created_at::date AS day, total_size_bytes AS size_bytes FROM (
+		   SELECT DISTINCT ON (created_at::date) created_at, total_size_bytes
+		   FROM db_size_snapshot
+		   WHERE project_space_id=$1 AND created_at >= now() - make_interval(days => $2)
+		   ORDER BY created_at::date ASC, created_at DESC
+		 ) t
+		 ORDER BY created_at ASC`, psID, days); err != nil {
+		return nil, err
+	}
+	for _, r := range raw {
+		t.DBSizeTrend = append(t.DBSizeTrend, DBSizeTrendPoint{
+			Day: r.Day, SizeBytes: r.SizeBytes, SizeMB: bytesToMb(r.SizeBytes),
+		})
+	}
+
+	// 当前总大小 + 当前用量（复用 3a）
+	cur, err := s.calcTotalDBSizeMb(ctx, psID)
+	if err != nil {
+		return nil, err
+	}
+	t.DBSizeCurrentMB = cur
+	u, err := s.Usage(ctx, psID)
+	if err != nil {
+		return nil, err
+	}
+	t.Usage = u
+	return t, nil
 }
 
 // Set 更新配额（admin 通过管理 UI 调；不存在则 GetOrCreate 后再 Set）。

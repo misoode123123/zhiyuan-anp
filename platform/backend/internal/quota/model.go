@@ -35,6 +35,47 @@ type Usage struct {
 	UsedCapabilityToday int   `json:"used_capability_today"`
 }
 
+// ---------------- 3c 用量趋势 ----------------
+
+// AITrendPoint AI 调用单日聚合（capability_usage by day）。
+type AITrendPoint struct {
+	Day          time.Time `json:"day" db:"day"` // 当日 00:00 (created_at::date)
+	Calls        int       `json:"calls" db:"calls"`
+	InputTokens  int       `json:"input_tokens" db:"input_tokens"`
+	OutputTokens int       `json:"output_tokens" db:"output_tokens"`
+	AvgLatencyMs int       `json:"avg_latency_ms" db:"avg_latency_ms"`
+	SuccessRate  float64   `json:"success_rate" db:"success_rate"` // 0-1
+}
+
+// TokensTotal 输入+输出 tokens 合计（前端摘要直接调）。
+func (p AITrendPoint) TokensTotal() int { return p.InputTokens + p.OutputTokens }
+
+// APITrendPoint 应用 API 调用单日聚合（appgw_access_log by day）。
+type APITrendPoint struct {
+	Day          time.Time `json:"day" db:"day"`
+	Calls        int       `json:"calls" db:"calls"`
+	AvgLatencyMs int       `json:"avg_latency_ms" db:"avg_latency_ms"`
+	SuccessRate  float64   `json:"success_rate" db:"success_rate"` // status<400 占比
+	ErrorCount   int       `json:"error_count" db:"error_count"`   // status>=400 次数
+}
+
+// DBSizeTrendPoint 库总大小单日趋势（db_size_snapshot 当日末值折 MB）。
+type DBSizeTrendPoint struct {
+	Day       time.Time `json:"day" db:"day"`
+	SizeBytes int64     `json:"size_bytes" db:"size_bytes"`
+	SizeMB    int       `json:"size_mb" db:"size_mb"` // 向上取整 MB
+}
+
+// UsageTrend 用量趋势响应（3c 看板数据源）：AI/API/库大小 三条日级趋势 + 当前用量。
+type UsageTrend struct {
+	Days            int                `json:"days"`
+	AITrend         []AITrendPoint     `json:"ai_trend"`
+	APITrend        []APITrendPoint    `json:"api_trend"`
+	DBSizeTrend     []DBSizeTrendPoint `json:"db_size_trend"`
+	DBSizeCurrentMB int                `json:"db_size_current_mb"` // 当前总大小（MB）
+	Usage           *Usage             `json:"usage"`              // 复用 3a 当前用量（4 维度）
+}
+
 // 配额维度常量（ErrQuotaExceeded.Dimension 用）。
 const (
 	DimensionApps            = "apps"

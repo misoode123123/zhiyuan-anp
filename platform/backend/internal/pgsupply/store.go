@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -191,6 +192,47 @@ func (s *Store) MaxTotalDBMb(ctx context.Context, psID string) (int, error) {
 		return 0, nil
 	}
 	return mb, err
+}
+
+// ---------------- 库大小历史快照（3c 看板趋势数据源） ----------------
+
+// DBSizeSnapshot 库大小历史快照一行：某时刻某项目所有非 deleted 库的 size_bytes 总和。
+// Collector 每 tick（默认 1h）采完库大小，按项目插一条；3c 看板按日聚合画「库大小增长」。
+type DBSizeSnapshot struct {
+	ID             string    `json:"id" db:"id"`
+	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
+	TotalSizeBytes int64     `json:"total_size_bytes" db:"total_size_bytes"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}
+
+// AddDBSizeSnapshot 插一条项目库总大小快照。id 内部生成（"dss_"+uuid）。
+// Collector.CollectDBSizes 采完每项目调一次（totalBytes 即本轮累计的 psBytes[psID]）。
+func (s *Store) AddDBSizeSnapshot(ctx context.Context, psID string, totalBytes int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO db_size_snapshot (id, project_space_id, total_size_bytes)
+		 VALUES ($1, $2, $3)`,
+		"dss_"+uuid.NewString()[:20], psID, totalBytes)
+	return err
+}
+
+// DBSizeTrendByDay 库大小日级趋势：取每天最后一条快照（当日末值，最能代表当日存量）。
+// 无快照返回空切片（调用方按空趋势渲染）。days<=0 或 >180 夹到 30。
+func (s *Store) DBSizeTrendByDay(ctx context.Context, psID string, days int) ([]DBSizeSnapshot, error) {
+	if days <= 0 || days > 180 {
+		days = 30
+	}
+	var list []DBSizeSnapshot
+	// DISTINCT ON 取每组首行；内层 ORDER BY day ASC, created_at DESC → 每天最大 created_at（当日末值）。
+	// 外层再按 created_at ASC 保证前端按时间正序画折线。
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT id, project_space_id, total_size_bytes, created_at FROM (
+		   SELECT DISTINCT ON (created_at::date) id, project_space_id, total_size_bytes, created_at
+		   FROM db_size_snapshot
+		   WHERE project_space_id=$1 AND created_at >= now() - make_interval(days => $2)
+		   ORDER BY created_at::date ASC, created_at DESC
+		 ) t
+		 ORDER BY created_at ASC`, psID, days)
+	return list, err
 }
 
 // actionLogCols 显式列（COALESCE 处理可空 error/trace_id）。

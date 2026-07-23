@@ -29,11 +29,12 @@ func NewCollector(store *Store, pg PGAdmin, logger *zap.Logger) *Collector {
 
 // CollectResult CollectDBSizes 的累计结果。
 type CollectResult struct {
-	Instances int         `json:"instances"` // 处理的 active 实例数
-	Total     int         `json:"total"`     // 待采库数
-	Updated   int         `json:"updated"`   // 成功更新 size_bytes 的库数
-	Failed    int         `json:"failed"`    // 查询失败的库数
-	Alerts    []AlertInfo `json:"alerts"`    // 超 max_total_db_mb 的项目
+	Instances  int         `json:"instances"`  // 处理的 active 实例数
+	Total      int         `json:"total"`      // 待采库数
+	Updated    int         `json:"updated"`    // 成功更新 size_bytes 的库数
+	Failed     int         `json:"failed"`     // 查询失败的库数
+	Snapshots  int         `json:"snapshots"`  // 写入 db_size_snapshot 的项目数（3c 趋势数据源）
+	Alerts     []AlertInfo `json:"alerts"`     // 超 max_total_db_mb 的项目
 }
 
 // AlertInfo 单个项目库大小超限告警信息。
@@ -103,8 +104,15 @@ func (c *Collector) CollectDBSizes(ctx context.Context) CollectResult {
 		}
 	}
 
-	// 告警：按项目比对 max_total_db_mb
+	// 告警：按项目比对 max_total_db_mb；同时插一条 db_size_snapshot（3c 趋势数据源）。
 	for psID, bytes := range psBytes {
+		// 先写快照（无论是否超限，都留历史；3c 看板按日画增长）。
+		if err := c.store.AddDBSizeSnapshot(ctx, psID, bytes); err != nil {
+			c.logger.Warn("CollectDBSizes 写 db_size_snapshot 失败",
+				zap.String("ps_id", psID), zap.Error(err))
+		} else {
+			r.Snapshots++
+		}
 		limit, err := c.store.MaxTotalDBMb(ctx, psID)
 		if err != nil {
 			c.logger.Warn("CollectDBSizes 查 max_total_db_mb 失败",

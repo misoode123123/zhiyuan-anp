@@ -2,6 +2,7 @@ package quota
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -29,6 +30,7 @@ func Register(r gin.IRouter, svc *Service, v *validator.Validate) {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/quota", h.GetQuota)
 	r.PUT("/project-spaces/:id/quota", h.UpdateQuota)
+	r.GET("/project-spaces/:id/usage/trend", h.GetUsageTrend)
 }
 
 // GetQuota 取配额 + 当前用量（管理 UI / 看板用）。
@@ -48,6 +50,35 @@ func (h *Handler) GetQuota(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, u)
+}
+
+// GetUsageTrend 取用量趋势（3c 看板）：AI 调用 / 应用 API 调用 / 库大小 三条日级趋势 + 当前用量。
+//
+// @Summary      项目用量趋势
+// @Tags         quota
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        days  query int     false "趋势天数（默认30，上限90）"
+// @Success      200   {object}  map[string]interface{}  "ai_trend / api_trend / db_size_trend / db_size_current_mb / usage"
+// @Failure      500   {object}  map[string]interface{}  "内部错误"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/usage/trend [get]
+func (h *Handler) GetUsageTrend(c *gin.Context) {
+	days := 30
+	if s := c.Query("days"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			days = n
+		}
+	}
+	if days <= 0 || days > 90 {
+		days = 30
+	}
+	t, err := h.svc.UsageTrend(c.Request.Context(), c.Param("id"), days)
+	if err != nil {
+		httpx.Err(c, 500, 50061, err.Error())
+		return
+	}
+	httpx.OK(c, t)
 }
 
 // updateBody 配额更新入参。4 个 max_* 都可选（min=0 允许设为 0 拦截全部）；
