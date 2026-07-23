@@ -227,6 +227,10 @@ func main() {
 	// ---- 库大小定时采集（默认每 1h；DBSIZE_INTERVAL_HOURS=0 关闭；启动后先跑一次再 tick）----
 	go runDBSizeTicker(backupCtx, logger, dbSizeCollector)
 
+	// ---- appgw_access_log TTL 清理（每天 1 次；保留窗口 ACCESS_LOG_RETAIN_DAYS 默认 30 天；0=关闭）----
+	// appgw 每请求记一条，不清理会无限涨。PurgeAccessLogs 删 created_at 早于 retainDays 前的行。
+	go runAccessLogPurgeTicker(backupCtx, logger, appgwStore)
+
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv,
@@ -325,6 +329,54 @@ func runDBSizeTicker(ctx context.Context, logger *zap.Logger, c *pgsupply.Collec
 				zap.Int("updated", r.Updated), zap.Int("failed", r.Failed), zap.Int("alerts", len(r.Alerts)))
 		}
 	}
+}
+
+// runAccessLogPurgeTicker 后台每天清一次 appgw_access_log（保留窗口外）。
+// retainDays 由 env ACCESS_LOG_RETAIN_DAYS 控制：默认 30；0=关闭；非法值回落默认。
+// 启动后先跑一次（首次部署即清历史），之后每 24h tick。
+// ctx.Done 即优雅关闭。
+func runAccessLogPurgeTicker(ctx context.Context, logger *zap.Logger, s *appgw.Store) {
+	retain := parseAccessLogRetainDays(os.Getenv("ACCESS_LOG_RETAIN_DAYS"), 30)
+	if retain <= 0 {
+		logger.Info("access_log purge disabled (ACCESS_LOG_RETAIN_DAYS=0)")
+		return
+	}
+	const interval = 24 * time.Hour
+	logger.Info("access_log purge ticker started",
+		zap.Int("retain_days", retain), zap.Float64("interval_hours", interval.Hours()))
+	purge := func() {
+		n, err := s.PurgeAccessLogs(ctx, retain)
+		if err != nil {
+			logger.Warn("access_log purge failed", zap.Error(err))
+			return
+		}
+		logger.Info("access_log purge done", zap.Int64("deleted", n), zap.Int("retain_days", retain))
+	}
+	purge() // 启动后立即清一次
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("access_log purge ticker stopped")
+			return
+		case <-t.C:
+			purge()
+		}
+	}
+}
+
+// parseAccessLogRetainDays 解析 ACCESS_LOG_RETAIN_DAYS（天数正整数）。
+// 空/非法 → def；负数原样返回（调用方判 <=0 关闭）。
+func parseAccessLogRetainDays(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // runMigrateCmd 处理 migrate-up / migrate-down 子命令：只跑迁移（不启 server）。

@@ -161,3 +161,20 @@ func (s *Store) ListAccessLogs(ctx context.Context, appID string, limit int) ([]
 		appID, limit)
 	return list, err
 }
+
+// PurgeAccessLogs 清理超过 retainDays 天的 appgw 调用日志，返回删除行数。
+// main ticker 每天 1 次跑（保留窗口 env ACCESS_LOG_RETAIN_DAYS 控制，默认 30），
+// 防止 appgw_access_log 表无限增长（每请求一条）。
+// retainDays<=0 视为不清理（调用方判断后跳过）。
+func (s *Store) PurgeAccessLogs(ctx context.Context, retainDays int) (int64, error) {
+	if retainDays <= 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM appgw_access_log WHERE created_at < now() - make_interval(days => $1)`, retainDays)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

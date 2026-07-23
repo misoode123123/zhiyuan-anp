@@ -250,3 +250,47 @@ func TestStore_LogAccessNullableCaller(t *testing.T) {
 		t.Fatalf("空字段应落库为空串: %+v", got)
 	}
 }
+
+// TestStore_PurgeAccessLogs TTL 清理：旧（>N 天）删、新（<=N 天）保留。
+// 验证 retainDays 边界 + retainDays<=0 不删（调用方判断后跳过的兜底）。
+func TestStore_PurgeAccessLogs(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// 写 3 条：1 条 40 天前（删）、1 条 10 天前（保留）、1 条当前（保留）
+	// created_at 用 INSERT 直接改写（LogAccess 走 DEFAULT CURRENT_TIMESTAMP 无法控制时间）。
+	mkRow := func(id string, daysAgo int) {
+		s.db.MustExec(`INSERT INTO appgw_access_log
+			(id, project_space_id, app_id, app_code, env, method, path, status, latency_ms, created_at)
+			VALUES ($1,'ps_1','app_1','app_1','prod','GET','/x',200,1, now() - make_interval(days => $2))`,
+			id, daysAgo)
+	}
+	mkRow("al_old", 40)
+	mkRow("al_mid", 10)
+	mkRow("al_now", 0)
+
+	// retainDays=30 → 删 40 天那条，留 10 天 + 当前
+	n, err := s.PurgeAccessLogs(ctx, 30)
+	if err != nil {
+		t.Fatalf("PurgeAccessLogs: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("应删 1 条（40 天前），得到 %d", n)
+	}
+	var left int
+	s.db.Get(&left, `SELECT COUNT(*) FROM appgw_access_log WHERE app_id='app_1'`)
+	if left != 2 {
+		t.Fatalf("应剩 2 条，得到 %d", left)
+	}
+
+	// retainDays<=0 → 不删（兜底，main 调用方应跳过但 store 也守护）
+	n2, err := s.PurgeAccessLogs(ctx, 0)
+	if err != nil || n2 != 0 {
+		t.Fatalf("retainDays=0 应不删，得到 n=%d err=%v", n2, err)
+	}
+
+	// retainDays=5 → 删剩下的 10 天那条（5 天 < 10 天）
+	n3, _ := s.PurgeAccessLogs(ctx, 5)
+	if n3 != 1 {
+		t.Fatalf("retainDays=5 应删 1 条（10 天前），得到 %d", n3)
+	}
+}
