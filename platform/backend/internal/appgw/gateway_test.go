@@ -390,3 +390,104 @@ func TestResolveCaller(t *testing.T) {
 		}
 	}
 }
+
+// TestGateway_ExternalURL external 应用反代：route.external_url 非空 → gateway 直接反代到此 URL。
+// 验证两点：
+//  1. 路径前缀剥离 /apps/<code>/ 不变（rest 透传到 external_url）
+//  2. external_url 自带路径（/prefix）应拼到 rest 前 → /prefix/<rest>
+func TestGateway_ExternalURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// 假"外部应用"：回显收到的 path + query
+	var seenPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.Header().Set("X-Upstream-Path", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "external hit; path="+r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+
+	// Case 1: external_url 无路径（http://host:port），rest 透传为 /<rest>
+	t.Run("no_prefix", func(t *testing.T) {
+		route := &Route{
+			AppCode: "app_ext", Env: "prod",
+			ProjectSpaceID: "ps_1",
+			ExternalURL:    srv.URL, // 形如 http://127.0.0.1:port（无路径）
+			Status:         StatusActive, AuthRequired: false,
+		}
+		g := NewGateway(newFakeStore(route), nil, nil, nil)
+		r := gin.New()
+		r.Any("/apps/*any", g.ReverseProxy)
+		gwSrv := httptest.NewServer(r)
+		t.Cleanup(gwSrv.Close)
+
+		resp, err := http.Get(gwSrv.URL + "/apps/app_ext/api/list?page=1")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("应 200，得到 %d body=%s", resp.StatusCode, body)
+		}
+		// upstream 看到的 path = /api/list（rest 透传）
+		if seenPath != "/api/list?page=1" {
+			t.Fatalf("upstream path 应 /api/list?page=1，得到 %q", seenPath)
+		}
+	})
+
+	// Case 2: external_url 自带路径前缀（http://host:port/prefix）→ 反代到 /prefix/<rest>
+	t.Run("with_prefix", func(t *testing.T) {
+		route := &Route{
+			AppCode: "app_ext2", Env: "prod",
+			ProjectSpaceID: "ps_1",
+			ExternalURL:    srv.URL + "/erp/api",
+			Status:         StatusActive, AuthRequired: false,
+		}
+		g := NewGateway(newFakeStore(route), nil, nil, nil)
+		r := gin.New()
+		r.Any("/apps/*any", g.ReverseProxy)
+		gwSrv := httptest.NewServer(r)
+		t.Cleanup(gwSrv.Close)
+
+		resp, err := http.Get(gwSrv.URL + "/apps/app_ext2/users?id=42")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("应 200，得到 %d body=%s", resp.StatusCode, body)
+		}
+		// external_url 的 /erp/api 前缀 + rest(users) → /erp/api/users?id=42
+		if seenPath != "/erp/api/users?id=42" {
+			t.Fatalf("应拼前缀 /erp/api/users?id=42，得到 %q", seenPath)
+		}
+	})
+}
+
+// TestGateway_ExternalURL_BadRoute external_url 非法 → 502（不 panic）。
+func TestGateway_ExternalURL_BadRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	route := &Route{
+		AppCode: "app_bad", Env: "prod",
+		ProjectSpaceID: "ps_1",
+		ExternalURL:    "://not-a-url", // url.Parse 解析后 Host 空
+		Status:         StatusActive, AuthRequired: false,
+	}
+	g := NewGateway(newFakeStore(route), nil, nil, nil)
+	r := gin.New()
+	r.Any("/apps/*any", g.ReverseProxy)
+	gwSrv := httptest.NewServer(r)
+	t.Cleanup(gwSrv.Close)
+
+	resp, err := http.Get(gwSrv.URL + "/apps/app_bad/foo")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("非法 external_url 应 502，得到 %d", resp.StatusCode)
+	}
+}

@@ -105,6 +105,79 @@ func TestStore_SetRouteStatus(t *testing.T) {
 	}
 }
 
+// TestStore_UpsertExternalRoute external 应用路由：写入后 external_url 字段落库 + 状态 active。
+// host/port 从 URL 解析填一份（展示用），gateway 反代直接走 external_url。
+func TestStore_UpsertExternalRoute(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.UpsertExternalRoute(ctx, "app_1", "ps_1", "prod", "http://erp.example.com:8088/api"); err != nil {
+		t.Fatalf("UpsertExternalRoute: %v", err)
+	}
+	r, err := s.GetRoute(ctx, "app_1", "prod")
+	if err != nil || r == nil {
+		t.Fatalf("GetRoute 失败: %v / %+v", err, r)
+	}
+	if r.ExternalURL != "http://erp.example.com:8088/api" {
+		t.Fatalf("external_url 应回显原值，得到 %q", r.ExternalURL)
+	}
+	if r.Status != StatusActive {
+		t.Fatalf("external 路由应 active，得到 %s", r.Status)
+	}
+	// host/port 从 URL 解析（展示用）
+	if r.UpstreamHost != "erp.example.com" {
+		t.Fatalf("upstream_host 应从 URL 解析为 erp.example.com，得到 %q", r.UpstreamHost)
+	}
+	if r.UpstreamPort != 8088 {
+		t.Fatalf("upstream_port 应为 8088，得到 %d", r.UpstreamPort)
+	}
+}
+
+// TestStore_UpsertExternalRoute_DefaultPort 无显式端口时按 scheme 默认（http→80, https→443）。
+func TestStore_UpsertExternalRoute_DefaultPort(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	_ = s.UpsertExternalRoute(ctx, "app_1", "ps_1", "prod", "https://erp.example.com")
+	r, _ := s.GetRoute(ctx, "app_1", "prod")
+	if r.UpstreamPort != 443 {
+		t.Fatalf("https 无端口应默认 443，得到 %d", r.UpstreamPort)
+	}
+
+	_ = s.UpsertExternalRoute(ctx, "app_1", "ps_1", "test", "http://erp.example.com")
+	r2, _ := s.GetRoute(ctx, "app_1", "test")
+	if r2.UpstreamPort != 80 {
+		t.Fatalf("http 无端口应默认 80，得到 %d", r2.UpstreamPort)
+	}
+}
+
+// TestStore_UpsertExternalRoute_EmptyURL 空串应报错（必填校验）。
+func TestStore_UpsertExternalRoute_EmptyURL(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.UpsertExternalRoute(context.Background(), "app_1", "ps_1", "prod", ""); err == nil {
+		t.Fatal("空 external_url 应报错")
+	}
+}
+
+// TestStore_UpsertRouteClearsExternalURL 从 external 切回 managed（UpsertRoute）时，
+// external_url 应清空 —— 否则 gateway 还会走 external 反代逻辑。
+func TestStore_UpsertRouteClearsExternalURL(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// 先 external
+	_ = s.UpsertExternalRoute(ctx, "app_1", "ps_1", "prod", "http://ext.example.com")
+	// 再 managed（同一 app+env）
+	_ = s.UpsertRoute(ctx, "app_1", "ps_1", "prod", "10.10.0.28", 9200)
+	r, _ := s.GetRoute(ctx, "app_1", "prod")
+	if r.ExternalURL != "" {
+		t.Fatalf("切回 managed 后 external_url 应清空，得到 %q", r.ExternalURL)
+	}
+	if r.UpstreamHost != "10.10.0.28" || r.UpstreamPort != 9200 {
+		t.Fatalf("managed 应生效，得到 %+v", r)
+	}
+}
+
 // LogAccess 写入 + ListAccessLogs 倒序 + limit 截断。
 func TestStore_LogAndListAccessLogs(t *testing.T) {
 	s := newTestStore(t)

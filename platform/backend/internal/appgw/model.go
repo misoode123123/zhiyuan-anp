@@ -27,6 +27,7 @@ type Route struct {
 	UpstreamPort   int       `json:"upstream_port" db:"upstream_port"`
 	Status         string    `json:"status" db:"status"` // active / inactive
 	AuthRequired   bool      `json:"auth_required" db:"auth_required"`
+	ExternalURL    string    `json:"external_url" db:"external_url"` // 非空=external 应用：gateway 直接反代此 URL（managed 为空走 host:port）
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }

@@ -93,20 +93,45 @@ func (g *Gateway) ReverseProxy(c *gin.Context) {
 		user = u
 	}
 
-	target := &url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("%s:%d", route.UpstreamHost, route.UpstreamPort),
+	// external 应用（B 类轻接入）：route.external_url 非空 → 直接反代此完整 URL（含 scheme/可能路径）。
+	// managed：原有 host:port 反代。
+	var target *url.URL
+	prefixPath := "" // external_url 自带路径前缀（如 http://h/api → 反代到 /api/<rest>）
+	if route.ExternalURL != "" {
+		tu, perr := url.Parse(route.ExternalURL)
+		if perr != nil || tu.Host == "" {
+			c.JSON(http.StatusBadGateway, gin.H{"code": 50202, "message": "external_url 非法: " + route.ExternalURL})
+			return
+		}
+		if tu.Scheme != "http" && tu.Scheme != "https" {
+			tu.Scheme = "http"
+		}
+		target = tu
+		prefixPath = strings.Trim(tu.Path, "/") // 拼到 rest 前；空则不拼
+	} else {
+		target = &url.URL{
+			Scheme: "http",
+			Host:   fmt.Sprintf("%s:%d", route.UpstreamHost, route.UpstreamPort),
+		}
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
 	// 自定义 Director：去掉 /apps/<code>~<env>/ 前缀 + 注入身份头。
 	// 保留原始 NewSingleHostReverseProxy 的行为（Scheme/Host/Path 合并），覆写 Path 与头。
+	// external 应用：保留 external_url 自带路径前缀（如 http://h/api → 转发到 /api/<rest>）。
 	traceID := c.GetString("trace_id")
 	projectSpaceID := route.ProjectSpaceID
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
-		req.URL.Path = "/" + rest
+		finalPath := rest
+		if prefixPath != "" {
+			finalPath = prefixPath + "/" + rest
+		}
+		if finalPath == "" || !strings.HasPrefix(finalPath, "/") {
+			finalPath = "/" + finalPath
+		}
+		req.URL.Path = finalPath
 		req.URL.RawPath = "" // 已重新规范化，丢弃原始 escaped path
 		// 身份头注入（应用侧可选校验；X-User 仅在鉴权通过时填）
 		if user != "" {
