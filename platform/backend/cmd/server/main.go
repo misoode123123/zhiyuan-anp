@@ -144,7 +144,8 @@ func main() {
 	quotaSvc := quota.NewService(quotaStore, pgsupply.NewQuotaAdapter(pgsupplyStore), pgAdmin)
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore, quotaSvc) // appDeployStore 满足 EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
-	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups")
+	// 每应用保留最近 N 份（BACKUP_RETAIN 默认 7，0=不清理）—— Dump 成功后自动 prune 该 app 旧备份。
+	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups", parseBackupRetain(os.Getenv("BACKUP_RETAIN"), 7))
 	// Collector：定时采 appdeploy_database.size_bytes + 库超限告警（DBSIZE_INTERVAL_HOURS 控制，0=关闭，默认 1h）
 	dbSizeCollector := pgsupply.NewCollector(pgsupplyStore, pgAdmin, logger)
 	// 删项目空间前级联清理 PG 容器（I2 资源泄漏修复）；FK CASCADE 只清行，运行中容器靠此钩子回收。
@@ -287,6 +288,19 @@ func runBackupTicker(ctx context.Context, logger *zap.Logger, b *pgsupply.Backup
 // parseBackupInterval 解析 BACKUP_INTERVAL_HOURS（小时整数）。
 // 非法/空 → def；负数原样返回（调用方判 <=0 关闭）。
 func parseBackupInterval(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+// parseBackupRetain 解析 BACKUP_RETAIN（保留份数正整数）。
+// 空/非法 → def；负数原样返回（调用方判 <=0 表示不清理，向后兼容旧 Backuper 行为）。
+func parseBackupRetain(s string, def int) int {
 	if s == "" {
 		return def
 	}

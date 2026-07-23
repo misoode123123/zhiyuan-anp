@@ -22,13 +22,14 @@ import (
 type Backuper struct {
 	store      *Store
 	backupRoot string // 如 /data/backups
+	retain     int    // 每应用保留最近 N 份（0=不清理，磁盘无限涨由调用方负责）
 	dumpFn     func(ctx context.Context, containerName, dbName, pwd string, out io.Writer) error
 	restoreFn  func(ctx context.Context, containerName, dbName, dumpFile, pwd string) error
 }
 
-// NewBackuper 构造。backupRoot 形如 /data/backups。
-func NewBackuper(store *Store, backupRoot string) *Backuper {
-	b := &Backuper{store: store, backupRoot: backupRoot}
+// NewBackuper 构造。backupRoot 形如 /data/backups。retain<=0 不清理（向后兼容）。
+func NewBackuper(store *Store, backupRoot string, retain int) *Backuper {
+	b := &Backuper{store: store, backupRoot: backupRoot, retain: retain}
 	b.dumpFn = b.dockerExecDump
 	b.restoreFn = b.dockerExecRestore
 	return b
@@ -68,7 +69,53 @@ func (b *Backuper) Dump(ctx context.Context, appID string) (string, error) {
 		return "", dumpErr
 	}
 	_ = b.store.SetAppDBBackup(ctx, ad.ID, now)
+	// 保留策略：Dump 成功后清该 app 目录超 retain 份的旧备份（按 mtime 倒序保留最新 N 份）。
+	// retain<=0 不清理（Backuper 构造时设）。清理失败忽略 —— 备份产物已落盘，清理非关键路径。
+	if b.retain > 0 {
+		_, _ = b.pruneAppDir(dir, b.retain)
+	}
 	return out, nil
+}
+
+// pruneAppDir 清理 dir 目录下超 retain 份的 .dump 文件，按 mtime 倒序保留最新 retain 份。
+// 返回删除文件数。dir 不存在返回 0,nil（Dump 首次备份场景）。
+// 用于 Backuper.Dump 后自动保留策略（env BACKUP_RETAIN 默认 7，0=关闭）。
+func (b *Backuper) pruneAppDir(dir string, retain int) (int, error) {
+	if retain <= 0 {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	type fi struct {
+		name string
+		mt   time.Time
+	}
+	var dumps []fi
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".dump" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		dumps = append(dumps, fi{name: e.Name(), mt: info.ModTime()})
+	}
+	// mtime 倒序（最新在前）；从第 retain 位起删
+	sort.Slice(dumps, func(i, j int) bool { return dumps[i].mt.After(dumps[j].mt) })
+	deleted := 0
+	for i := retain; i < len(dumps); i++ {
+		if err := os.Remove(filepath.Join(dir, dumps[i].name)); err != nil {
+			continue // 单个删失败不中断（可能并发被其它进程清）
+		}
+		deleted++
+	}
+	return deleted, nil
 }
 
 // Restore 从 dump 文件恢复到某应用库（覆盖）。
