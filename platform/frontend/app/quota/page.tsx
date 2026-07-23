@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE_URL, currentProjectSpace } from "@/lib/api";
+import { LineChart, fmt, type ChartPoint } from "./line-chart";
 
 type Envelope<T> = { code: number; message?: string; data: T };
 type ProjectSpace = { id: string; name: string; slug: string };
@@ -19,6 +20,32 @@ type Usage = {
   used_databases: number;
   used_db_size_mb: number;
   used_capability_today: number;
+};
+
+// ---- 3c 趋势响应（与后端 quota.UsageTrend 对齐） ----
+type AITrendPoint = {
+  day: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  avg_latency_ms: number;
+  success_rate: number;
+};
+type APITrendPoint = {
+  day: string;
+  calls: number;
+  avg_latency_ms: number;
+  success_rate: number;
+  error_count: number;
+};
+type DBSizeTrendPoint = { day: string; size_bytes: number; size_mb: number };
+type UsageTrend = {
+  days: number;
+  ai_trend: AITrendPoint[];
+  api_trend: APITrendPoint[];
+  db_size_trend: DBSizeTrendPoint[];
+  db_size_current_mb: number;
+  usage: Usage | null;
 };
 
 // 维度元数据（label / 单位 / 颜色阈值）
@@ -62,6 +89,11 @@ export default function QuotaPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+  // ---- 3c 趋势 ----
+  const [trend, setTrend] = useState<UsageTrend | null>(null);
+  const [days, setDays] = useState(30);
+  const [trendErr, setTrendErr] = useState("");
+
   // 1. 拉项目空间列表，默认选 currentProjectSpace()
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -102,6 +134,26 @@ export default function QuotaPage() {
     if (psID) load(psID);
   }, [psID]);
 
+  // 3. 拉趋势（psID 或 days 变化都重拉）
+  const loadTrend = (id: string, d: number) => {
+    if (!id) return;
+    setTrendErr("");
+    fetch(`${API_BASE_URL}/project-spaces/${id}/usage/trend?days=${d}`)
+      .then((r) => r.json())
+      .then((r: Envelope<UsageTrend>) => {
+        if (r.code !== 0 || !r.data) {
+          setTrendErr(r.message ?? "拉趋势失败");
+          setTrend(null);
+          return;
+        }
+        setTrend(r.data);
+      })
+      .catch(() => setTrendErr("拉趋势失败（后端 :8080 未连接？）"));
+  };
+  useEffect(() => {
+    if (psID) loadTrend(psID, days);
+  }, [psID, days]);
+
   // 3. 保存（PUT 只传改过的字段——这里全传，后端用 *int 区分）
   async function save() {
     if (!psID) return;
@@ -127,6 +179,52 @@ export default function QuotaPage() {
     if (ratio >= 0.8) return "bg-amber-500";
     return "bg-blue-500";
   }
+
+  // ---- 趋势辅助：day 格式化、points 转换、摘要 ----
+  function dayLabel(iso: string): string {
+    // 后端 created_at::date → "2026-07-21T00:00:00Z"；取 MM-DD
+    try {
+      return new Date(iso).toISOString().slice(5, 10);
+    } catch {
+      return iso;
+    }
+  }
+  function pct(rate: number): string {
+    return (rate * 100).toFixed(rate >= 0.999 ? 0 : 1) + "%";
+  }
+  const aiPoints: ChartPoint[] = (trend?.ai_trend ?? []).map((p) => ({
+    label: dayLabel(p.day),
+    value: p.calls,
+  }));
+  const apiPoints: ChartPoint[] = (trend?.api_trend ?? []).map((p) => ({
+    label: dayLabel(p.day),
+    value: p.calls,
+  }));
+  const dbPoints: ChartPoint[] = (trend?.db_size_trend ?? []).map((p) => ({
+    label: dayLabel(p.day),
+    value: p.size_mb,
+  }));
+  // AI 摘要
+  const aiSum = (trend?.ai_trend ?? []).reduce(
+    (a, p) => {
+      a.calls += p.calls;
+      a.tokens += p.input_tokens + p.output_tokens;
+      a.latencySum += p.avg_latency_ms * p.calls;
+      a.successW += p.success_rate * p.calls;
+      return a;
+    },
+    { calls: 0, tokens: 0, latencySum: 0, successW: 0 }
+  );
+  const apiSum = (trend?.api_trend ?? []).reduce(
+    (a, p) => {
+      a.calls += p.calls;
+      a.errors += p.error_count;
+      a.latencySum += p.avg_latency_ms * p.calls;
+      a.successW += p.success_rate * p.calls;
+      return a;
+    },
+    { calls: 0, errors: 0, latencySum: 0, successW: 0 }
+  );
 
   return (
     <div>
@@ -254,6 +352,97 @@ export default function QuotaPage() {
               <span className="text-xs text-neutral-400">
                 设为 0 表示完全禁用（任何已用都超限）
               </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {psID && (
+        <>
+          {/* ---- 3c 用量趋势 ---- */}
+          <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-neutral-700">
+                📈 用量趋势（近 {days} 天）
+              </div>
+              <div className="flex items-center gap-1 text-xs">
+                {[7, 30, 90].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDays(d)}
+                    className={`rounded px-2 py-1 ${
+                      days === d
+                        ? "bg-blue-600 text-white"
+                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                    }`}
+                  >
+                    {d}天
+                  </button>
+                ))}
+                <button
+                  onClick={() => psID && loadTrend(psID, days)}
+                  className="ml-2 rounded bg-neutral-100 px-2 py-1 text-neutral-600 hover:bg-neutral-200"
+                >
+                  刷新
+                </button>
+              </div>
+            </div>
+
+            {trendErr && (
+              <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                {trendErr}
+              </div>
+            )}
+
+            {/* AI 调用趋势 */}
+            <div className="mb-4 border-t border-neutral-100 pt-3">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-medium text-neutral-700">🤖 AI 调用（次/日）</span>
+                {aiSum.calls > 0 && (
+                  <span className="text-xs text-neutral-500">
+                    合计 {fmt(aiSum.calls)} 次 · {fmt(aiSum.tokens)} tokens · 均延迟{" "}
+                    {Math.round(aiSum.latencySum / aiSum.calls)}ms · 成功率{" "}
+                    {pct(aiSum.successW / aiSum.calls)}
+                  </span>
+                )}
+              </div>
+              <LineChart data={aiPoints} color="#3b82f6" unit="次" />
+            </div>
+
+            {/* 应用 API 调用趋势 */}
+            <div className="mb-4 border-t border-neutral-100 pt-3">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-medium text-neutral-700">
+                  🔌 应用 API 调用（次/日）
+                </span>
+                {apiSum.calls > 0 && (
+                  <span className="text-xs text-neutral-500">
+                    合计 {fmt(apiSum.calls)} 次 · 均延迟{" "}
+                    {Math.round(apiSum.latencySum / apiSum.calls)}ms · 错误 {apiSum.errors} 次 ·
+                    成功率 {pct(apiSum.successW / apiSum.calls)}
+                  </span>
+                )}
+              </div>
+              <LineChart data={apiPoints} color="#10b981" unit="次" />
+            </div>
+
+            {/* 库大小趋势 */}
+            <div className="border-t border-neutral-100 pt-3">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-medium text-neutral-700">
+                  💾 库总大小（MB/日，当日末值）
+                </span>
+                <span className="text-xs text-neutral-500">
+                  当前 {fmt(trend?.db_size_current_mb ?? 0)} MB
+                  {dbPoints.length >= 2 && (
+                    <>
+                      {" "}
+                      · 区间 {fmt(dbPoints[0].value)}→{fmt(dbPoints[dbPoints.length - 1].value)} MB
+                    </>
+                  )}
+                </span>
+              </div>
+              <LineChart data={dbPoints} color="#f59e0b" unit="MB" />
             </div>
           </div>
         </>
