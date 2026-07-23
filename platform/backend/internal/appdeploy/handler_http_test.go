@@ -641,3 +641,154 @@ func TestHandler_Register(t *testing.T) {
 		t.Fatalf("注册后 List 路由应可用，得到 %d", code)
 	}
 }
+
+// extRouteStore 采集 Create external 时 routeWriter.UpsertExternalRoute 的入参，
+// 验证 appdeploy handler 调对了 external 分支（而不是 managed 的 UpsertRoute）。
+type extRouteStore struct {
+	called      bool
+	gotAppID    string
+	gotEnv      string
+	gotExtURL   string
+}
+
+func (s *extRouteStore) UpsertRoute(_ context.Context, _, _, _ string, _ string, _ int) error {
+	return nil
+}
+func (s *extRouteStore) UpsertExternalRoute(_ context.Context, appID, _, env, extURL string) error {
+	s.called = true
+	s.gotAppID = appID
+	s.gotEnv = env
+	s.gotExtURL = extURL
+	return nil
+}
+func (s *extRouteStore) DeleteRouteByApp(_ context.Context, _ string) error { return nil }
+
+// newHTTPHandlerWithExtRoute 同 newHTTPHandler，但注入 extRouteStore 以观测 Create external 调用。
+func newHTTPHandlerWithExtRoute(t *testing.T) (*Handler, *extRouteStore) {
+	t.Helper()
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db,
+		"release_record", "change_request", "requirement",
+		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+	)
+	store := NewStore(db)
+	rw := &extRouteStore{}
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, rw, nil, nil)
+	return h, rw
+}
+
+// TestHandler_CreateExternal external 模式注册：落库 + 调 UpsertExternalRoute + 不调 EnsureRepo。
+// 不走 managed 的 EnsureRepo/git/provision，验证 external 分支独立工作。
+func TestHandler_CreateExternal(t *testing.T) {
+	h, rw := newHTTPHandlerWithExtRoute(t)
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name":         "存量ERP",
+		"deploy_mode":  "external",
+		"external_url": "http://10.10.0.28:8088",
+	})
+	if code != 201 {
+		t.Fatalf("状态码 %d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatalf("应返回应用本体，得到 %v", resp)
+	}
+	if data["deploy_mode"] != "external" {
+		t.Fatalf("deploy_mode 应 external，得到 %v", data["deploy_mode"])
+	}
+	if data["external_url"] != "http://10.10.0.28:8088" {
+		t.Fatalf("external_url 不匹配: %v", data["external_url"])
+	}
+	if data["status"] != "running" {
+		t.Fatalf("external 应用应 running，得到 %v", data["status"])
+	}
+	appID, _ := data["id"].(string)
+	if appID == "" {
+		t.Fatal("应自动生成 app id")
+	}
+	// UpsertExternalRoute 应被调一次（external_url + env=prod）
+	if !rw.called {
+		t.Fatal("Create external 应调 routeWriter.UpsertExternalRoute")
+	}
+	if rw.gotAppID != appID || rw.gotEnv != "prod" || rw.gotExtURL != "http://10.10.0.28:8088" {
+		t.Fatalf("UpsertExternalRoute 入参不符: %+v", rw)
+	}
+	// 落库回读验证（不带 managed 的 repo_dir/internal_port）
+	got, _ := h.store.GetByAppID(context.Background(), appID)
+	if got == nil || got.DeployMode != AppExternal {
+		t.Fatalf("落库 external 应用读不到或字段错: %+v", got)
+	}
+	if got.RepoDir != "" || got.InternalPort != 0 {
+		t.Fatalf("external 应用不应建 repo_dir/internal_port: %+v", got)
+	}
+}
+
+// TestHandler_CreateExternal_BadURL external_url 非法 → 400（不落库、不调 route）。
+func TestHandler_CreateExternal_BadURL(t *testing.T) {
+	h, rw := newHTTPHandlerWithExtRoute(t)
+	r := newRouterWith(h)
+	cases := []struct {
+		url  string
+		desc string
+	}{
+		{"", "空串（必填）"},
+		{"not-a-url", "无 scheme"},
+		{"ftp://h/p", "非 http(s) scheme"},
+		{"http://", "缺 host"},
+	}
+	for _, c := range cases {
+		code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+			"name": "bad-app", "deploy_mode": "external", "external_url": c.url,
+		})
+		if code != 400 {
+			t.Fatalf("%s: 应 400，得到 %d", c.desc, code)
+		}
+	}
+	if rw.called {
+		t.Fatal("非法 URL 时不应调 UpsertExternalRoute")
+	}
+}
+
+// TestHandler_Stats_External external 应用 Stats 返回 deployed=true + health（按 external_url 探活）。
+// 不查实例、不调 docker；external_url 指向 httptest 假上游以测 up 状态。
+func TestHandler_Stats_External(t *testing.T) {
+	// 启 httptest 假外部应用（200 → health=up）
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	h, _ := newHTTPHandlerWithExtRoute(t)
+	r := newRouterWith(h)
+	// 通过 HTTP 创建 external 应用（走完整 Create 分支，含 route 写入）
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name":         "外部应用",
+		"deploy_mode":  "external",
+		"external_url": srv.URL,
+	})
+	if code != 201 {
+		t.Fatalf("create external: 状态码 %d body=%v", code, resp)
+	}
+	appID, _ := resp["data"].(map[string]interface{})["id"].(string)
+
+	// Stats：应返回 deployed=true + external=true + health=up
+	code, resp = doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+appID+"/stats?env=prod", nil)
+	if code != 200 {
+		t.Fatalf("stats 状态码 %d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data["deployed"] != true {
+		t.Fatalf("external 应用应 deployed=true，得到 %v", data["deployed"])
+	}
+	if data["external"] != true {
+		t.Fatalf("应返回 external=true 标识，得到 %v", data["external"])
+	}
+	if data["url"] != srv.URL {
+		t.Fatalf("应回显 external_url，得到 %v", data["url"])
+	}
+	if data["health"] != "up" {
+		t.Fatalf("健康应 up，得到 %v", data["health"])
+	}
+}

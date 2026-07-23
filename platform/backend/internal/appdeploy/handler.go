@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -733,8 +734,10 @@ func (h *Handler) DeleteEnv(c *gin.Context) {
 
 type createBody struct {
 	Name         string `json:"name" binding:"required"`
-	RepoDir      string `json:"repo_dir"`      // 可选；空=平台托管 git 仓库 /data/repos/<name>
-	InternalPort int    `json:"internal_port"` // 可选；buildpack 检测或默认 8080
+	RepoDir      string `json:"repo_dir"`      // managed 可选；空=平台托管 git 仓库 /data/repos/<name>
+	InternalPort int    `json:"internal_port"` // managed 可选；buildpack 检测或默认 8080
+	DeployMode   string `json:"deploy_mode"`   // managed(默认,A类) / external(B类纳管外部应用)
+	ExternalURL  string `json:"external_url"`  // external 必填：外部应用访问地址 http(s)://host[:port][/path]
 }
 
 // validateAppName 应用名必须人工起名(非随机数/ID):trim 非空、≥2 字符、不带 ID 前缀(chg_/app_/req_/rel_/ps_)、非纯数字。
@@ -765,6 +768,24 @@ func validateAppName(name string) string {
 		return "应用名不能为纯数字,请起一个可读的名字"
 	}
 	return ""
+}
+
+// validateExternalURL 校验 external 模式的外部应用访问地址。
+// 要求：非空 + http/https scheme + host 非空。返回规范化的 URL（去掉末尾斜杠）+ 错误消息（空=合法）。
+func validateExternalURL(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "external 模式必须填 external_url（外部应用访问地址）"
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", "external_url 非法（需 http(s)://host[:port][/path]）"
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", "external_url scheme 必须是 http 或 https"
+	}
+	// 去掉末尾斜杠避免反代路径双斜杠（/prefix//rest）
+	return strings.TrimRight(raw, "/"), ""
 }
 
 // Create 注册一个产出应用，并初始化其托管 git 仓库（代码归属确立：/data/repos/<name>）。
@@ -798,6 +819,33 @@ func (h *Handler) Create(c *gin.Context) {
 			httpx.Err(c, 409, 40950, err.Error())
 			return
 		}
+	}
+	// external 模式（B 类轻接入）：纳管外部已在运行的应用。
+	// 不 EnsureRepo / 不 AI 编码 / 不部署 / 不建库；仅注册 + appgw 统一入口 + ops 按 external_url 探活。
+	if in.DeployMode == AppExternal {
+		extURL, msg := validateExternalURL(in.ExternalURL)
+		if msg != "" {
+			httpx.Err(c, 400, 40001, msg)
+			return
+		}
+		a := &Application{
+			ProjectSpaceID: c.Param("id"), Name: in.Name,
+			DeployMode: AppExternal, ExternalURL: extURL,
+			Status: "running", // external 应用外部已活，注册即"运行中"
+		}
+		if err := h.store.Create(c.Request.Context(), a); err != nil {
+			httpx.Err(c, 500, 50020, err.Error())
+			return
+		}
+		// 写 appgw 路由：external_url 非空 → /apps/<app_id>/ 反代到 external_url。
+		// 失败不阻塞注册（应用已创建；路由失败记到 last_error，前端可见）。
+		if h.routeWriter != nil {
+			if err := h.routeWriter.UpsertExternalRoute(c.Request.Context(), a.ID, a.ProjectSpaceID, EnvProd, extURL); err != nil {
+				_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, a.Status, "appgw 路由写入失败: "+err.Error(), "")
+			}
+		}
+		httpx.Created(c, a)
+		return
 	}
 	repoDir := in.RepoDir
 	if repoDir == "" {
@@ -1173,6 +1221,15 @@ func (h *Handler) Stats(c *gin.Context) {
 	env := c.Query("env")
 	if !IsValidEnv(env) {
 		env = EnvProd
+	}
+	// external 应用（B 类轻接入）：无容器，按 external_url 直接 HTTP GET 探活。
+	// 不查实例、不调 docker；返回 external 标识供前端区分展示。
+	if a.DeployMode == AppExternal {
+		httpx.OK(c, gin.H{
+			"env": env, "deployed": true, "external": true,
+			"url": a.ExternalURL, "health": probeHealth(a.ExternalURL),
+		})
+		return
 	}
 	ins, _ := h.store.GetInstance(c.Request.Context(), aid, env)
 	if ins == nil || ins.ContainerName == "" {
