@@ -315,8 +315,13 @@ func SeedDemoSOPs(ctx context.Context, db *sqlx.DB) error {
 	return nil
 }
 
-// SeedDemoStandards 若 coding_standard 为空，播种分层占位规范（platform/app/module）。
-// 让 /governance 开发规范分层页有可见数据，正文后续在 UI 维护。
+// SeedDemoStandards 若 coding_standard 为空，播种分层规范（platform/app/module 全套实质条文）。
+//
+// 数据源：StandardSeeds（standards_seed.go），提炼自 ANP 后端真实约定 + 通用最佳实践。
+// 让 /governance 开发规范分层页有可见的、可执行的实质内容（非占位）。
+//
+// 仅在表空时跑（n > 0 跳过）——已运行环境（如 .28）通过 scripts/standards_seed.sql 升级（幂等）。
+// 项目级规范（project_space_id 非空）不受此 seed 影响，保留用户在 UI 的调整。
 func SeedDemoStandards(ctx context.Context, db *sqlx.DB) error {
 	var n int
 	if err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM coding_standard`); err != nil {
@@ -325,25 +330,11 @@ func SeedDemoStandards(ctx context.Context, db *sqlx.DB) error {
 	if n > 0 {
 		return nil
 	}
-	// scope, module, name, category, content, priority
-	demos := []struct {
-		scope, module, name, category, content string
-		priority                               int
-	}{
-		// L1 平台级
-		{"platform", "", "产出五约束", "general", "AI 产出须满足：可校验、可追溯、可回滚、守边界、守权限", 100},
-		{"platform", "", "安全基线", "security", "密钥与敏感信息不得硬编码；外部输入必须校验；不得在日志/响应中暴露凭据", 100},
-		// L2 应用级（占位）
-		{"app", "", "应用 API 统一信封", "general", "所有应用 API 响应使用统一信封：{code,data,message}；code=0 成功，非 0 业务错误码。", 100},
-		// L3 模块级（占位）
-		{"module", "api", "API 响应必须用统一信封", "general", "API handler 返回必须走 httpx.OK/Err，结构 {code,data,message}；不得裸返回数据。", 100},
-		{"module", "form", "表单字段必须有 label + 校验", "general", "前端表单每个输入字段必须有 label 文案 + 必填/格式校验；提交前 client 校验失败阻断。", 100},
-	}
-	for _, d := range demos {
+	for _, d := range StandardSeeds {
 		if _, err := db.ExecContext(ctx,
 			`INSERT INTO coding_standard (id, project_space_id, name, category, content, priority, enabled, scope, module)
 			 VALUES ($1, NULL, $2, $3, $4, $5, TRUE, $6, $7)`,
-			"std_"+uuid.NewString()[:21], d.name, d.category, d.content, d.priority, d.scope, d.module); err != nil {
+			"std_"+uuid.NewString()[:21], d.Name, d.Category, d.Content, d.Priority, d.Scope, d.Module); err != nil {
 			return err
 		}
 	}
