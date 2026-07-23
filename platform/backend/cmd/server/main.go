@@ -313,7 +313,8 @@ func runDBSizeTicker(ctx context.Context, logger *zap.Logger, c *pgsupply.Collec
 	r := c.CollectDBSizes(ctx)
 	logger.Info("db size collect (startup) done",
 		zap.Int("instances", r.Instances), zap.Int("total", r.Total),
-		zap.Int("updated", r.Updated), zap.Int("failed", r.Failed), zap.Int("alerts", len(r.Alerts)))
+		zap.Int("updated", r.Updated), zap.Int("failed", r.Failed),
+		zap.Int("snapshots", r.Snapshots), zap.Int("alerts", len(r.Alerts)))
 
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -326,7 +327,8 @@ func runDBSizeTicker(ctx context.Context, logger *zap.Logger, c *pgsupply.Collec
 			r := c.CollectDBSizes(ctx)
 			logger.Info("db size collect tick done",
 				zap.Int("instances", r.Instances), zap.Int("total", r.Total),
-				zap.Int("updated", r.Updated), zap.Int("failed", r.Failed), zap.Int("alerts", len(r.Alerts)))
+				zap.Int("updated", r.Updated), zap.Int("failed", r.Failed),
+				zap.Int("snapshots", r.Snapshots), zap.Int("alerts", len(r.Alerts)))
 		}
 	}
 }
