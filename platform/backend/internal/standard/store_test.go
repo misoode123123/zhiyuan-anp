@@ -265,6 +265,50 @@ func TestRefreshAgentsMD_CreatesRepoDirIfMissing(t *testing.T) {
 	}
 }
 
+// TestUpdate_ModuleEmptyKeepsOldModule 覆盖 bug1：Update 不传/传空 module 时，
+// 原 module 层规范的 module 字段应保留，不被空串覆盖。
+// 同时验证：传新值时改、回查后 st 含真实字段。
+func TestUpdate_ModuleEmptyKeepsOldModule(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// 建 1 条 module 层规范 module=api
+	orig := createScoped(t, s, ScopeModule, ModuleAPI, "M-api", 100, true)
+
+	// case 1: Update 不改 module（传空串）→ module 保留 "api"
+	upd := &Standard{ID: orig.ID, Name: "M-api-v2", Category: "general", Content: "新内容",
+		Priority: 50, Enabled: true, Module: ""}
+	if err := s.Update(ctx, upd); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got, _ := s.Get(ctx, orig.ID)
+	if got.Module != ModuleAPI {
+		t.Fatalf("不传 module 应保留 api，得到 %q", got.Module)
+	}
+	if got.Name != "M-api-v2" || got.Priority != 50 || got.Content != "新内容" {
+		t.Fatalf("其他字段未更新: %+v", got)
+	}
+	// 回查后 st 自身字段应为 DB 真实值（module/scope/created_at 都填全）
+	if upd.Module != ModuleAPI || upd.Scope != ScopeModule {
+		t.Fatalf("Update 后 st 应回查为 DB 真实值，得到 module=%q scope=%q", upd.Module, upd.Scope)
+	}
+
+	// case 2: Update 传新 module → 改
+	upd2 := &Standard{ID: orig.ID, Name: "M-api-v3", Category: "general", Content: "再改",
+		Priority: 30, Enabled: true, Module: ModuleForm}
+	if err := s.Update(ctx, upd2); err != nil {
+		t.Fatalf("Update2: %v", err)
+	}
+	got2, _ := s.Get(ctx, orig.ID)
+	if got2.Module != ModuleForm {
+		t.Fatalf("传 module=form 应改为 form，得到 %q", got2.Module)
+	}
+
+	// case 3: Update 不存在的 ID → 报错
+	if err := s.Update(ctx, &Standard{ID: "std_notexist", Name: "x", Content: "y"}); err == nil {
+		t.Fatal("不存在 ID 应报错")
+	}
+}
+
 // namesOf 收集规范名（断言用）。
 func namesOf(list []Standard) []string {
 	out := make([]string, 0, len(list))

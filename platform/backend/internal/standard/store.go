@@ -117,15 +117,25 @@ func (s *Store) Create(ctx context.Context, st *Standard) error {
 }
 
 // Update 更新（不含 project_space_id/scope，层级不可改）。
+// module 行为：空串=保留原值（前端 PUT 不传 module 时 updateBody.Module 为空串，
+// 避免误把 module 层规范 module 字段清空）；非空=改子模块。
+// scope 不可改 + scope!=module 时 module 本就为空 → 不存在「清空 module 降级」诉求。
 func (s *Store) Update(ctx context.Context, st *Standard) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE coding_standard SET name=$1, category=$2, content=$3, priority=$4, enabled=$5, module=$6, updated_at=CURRENT_TIMESTAMP
+		`UPDATE coding_standard SET name=$1, category=$2, content=$3, priority=$4, enabled=$5,
+		 module = COALESCE(NULLIF($6,''), module),
+		 updated_at=CURRENT_TIMESTAMP
 		 WHERE id=$7`, st.Name, st.Category, st.Content, st.Priority, st.Enabled, st.Module, st.ID)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("编码规范 %s 不存在", st.ID)
+	}
+	// 回查：把 st 替换为 DB 当前真实值。module 保留逻辑下，调用方传入的 st.Module 可能是空串
+	//（前端不传 module 时），回查确保返回响应/上层用到的字段（module/scope/created_at 等）准确。
+	if cur, gerr := s.Get(ctx, st.ID); gerr == nil {
+		*st = *cur
 	}
 	return nil
 }
