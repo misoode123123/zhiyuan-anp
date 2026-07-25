@@ -3,6 +3,7 @@ package log
 
 import (
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -22,8 +23,9 @@ type Config struct {
 }
 
 // New 按 Config 构造 zap.Logger 并设全局（zap.L() 可用）。
-//   Core A：全级别 → stdout 或 File（lumberjack 滚动）
-//   Core B（若 ErrorFile 非空）：Error+ → ErrorFile 独立，便于告警/快查
+//
+//	Core A：全级别 → stdout 或 File（lumberjack 滚动）
+//	Core B（若 ErrorFile 非空）：Error+ → ErrorFile 独立，便于告警/快查
 func New(c Config) *zap.Logger {
 	level := parseLevel(c.Level)
 	encoder := newEncoder(c.Format)
@@ -53,6 +55,7 @@ func newRoller(path string, maxMB, maxBackups, maxAge int) *lumberjack.Logger {
 	if maxMB <= 0 {
 		maxMB = 100
 	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o755) // 确保父目录存在（容器卷挂载场景，宿主可能未预建）
 	return &lumberjack.Logger{
 		Filename:   path,
 		MaxSize:    maxMB,
