@@ -24,9 +24,10 @@ func NewHandler(svc *Service, chgStore *change.Store, authStore *auth.Store) *Ha
 
 // Register 模块级装配：内部 new Service/Handler + Register。
 // 跨模块枢纽(repo/devAgent)由 main 传入；appResolver 用本包 AppResolver interface，避免 import appdeploy。
-func Register(r gin.IRouter, repo *Repository, agentRuntimeURL string, devAgent *dev.CodingAgent, computeStore *compute.Store, appResolver AppResolver, changeStore *change.Store, authStore *auth.Store) {
+func Register(r gin.IRouter, repo *Repository, agentRuntimeURL string, devAgent *dev.CodingAgent, computeStore *compute.Store, appResolver AppResolver, changeStore *change.Store, authStore *auth.Store) *Service {
 	svc := NewService(repo, agentRuntimeURL, devAgent, computeStore, appResolver)
 	NewHandler(svc, changeStore, authStore).Register(r)
+	return svc
 }
 
 // Register 注册路由。

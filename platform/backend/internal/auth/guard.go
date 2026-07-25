@@ -45,6 +45,16 @@ var routeOps = map[string]string{
 	"POST /api/v1/project-spaces/:id/apps/:aid/database/backup": "config.manage",
 	// 删项目空间（admin；级联清理 PG 容器，高风险）
 	"DELETE /api/v1/project-spaces/:id": "config.manage",
+	// 算力中心：供应商/模型/路由管理（admin）
+	"POST /api/v1/compute/providers":   "config.manage",
+	"PUT /api/v1/compute/providers/:id":  "config.manage",
+	"DELETE /api/v1/compute/providers/:id": "config.manage",
+	"POST /api/v1/compute/models":      "config.manage",
+	"PUT /api/v1/compute/models/:id":     "config.manage",
+	"DELETE /api/v1/compute/models/:id":  "config.manage",
+	"PUT /api/v1/compute/routes/:task_type": "config.manage",
+	// 日志标记处理（admin）
+	"PATCH /api/v1/logs/:id/resolve": "config.manage",
 }
 
 // RouteOp 返回某「方法+路由模板」对应的操作；未登记返回空串（不强制）。

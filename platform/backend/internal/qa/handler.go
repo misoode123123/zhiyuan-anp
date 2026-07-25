@@ -30,8 +30,10 @@ func NewHandler(svc *Service, reqRepo *requirement.Repository, apps AppURLResolv
 
 // Register 模块级装配：内部 NewStore(db)+NewService+NewHandler+Register。
 // apps 用本包 AppURLResolver interface（由 *appdeploy.Store 实现），避免 import appdeploy。
-func Register(r gin.IRouter, db *sqlx.DB, agentRuntimeURL string, reqRepo *requirement.Repository, apps AppURLResolver) {
-	NewHandler(NewService(NewStore(db), agentRuntimeURL), reqRepo, apps).Register(r)
+func Register(r gin.IRouter, db *sqlx.DB, agentRuntimeURL string, reqRepo *requirement.Repository, apps AppURLResolver) *Service {
+	svc := NewService(NewStore(db), agentRuntimeURL)
+	NewHandler(svc, reqRepo, apps).Register(r)
+	return svc
 }
 
 // Register 注册路由。

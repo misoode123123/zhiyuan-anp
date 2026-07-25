@@ -34,12 +34,16 @@ type Service struct {
 	coder           *dev.CodingAgent
 	compute         *compute.Store
 	apps            AppResolver
+	gateway         *compute.Gateway // P2: 算力中心统一网关（优先于 agentRuntimeURL）
 }
 
 // NewService 构造 Service。apps 可为 nil（不启用按应用派发）。
 func NewService(repo *Repository, agentRuntimeURL string, coder *dev.CodingAgent, computeStore *compute.Store, apps AppResolver) *Service {
 	return &Service{repo: repo, agentRuntimeURL: agentRuntimeURL, coder: coder, compute: computeStore, apps: apps}
 }
+
+// SetGateway 注入算力中心网关（P2：优先用网关调模型，替代 HTTP→agent-runtime）。
+func (s *Service) SetGateway(gw *compute.Gateway) { s.gateway = gw }
 
 // CreateInput 创建需求入参。
 type CreateInput struct {
@@ -268,11 +272,10 @@ func buildCodePrompt(r *Requirement) string {
 // deployableServiceHint 派发编码的可部署性约束：产出须为完整可独立运行的 Web 服务。
 const deployableServiceHint = ` 【交付要求】产出必须是完整可独立运行的 Web 服务（含 main 入口，不是库/模块）：用一个 HTTP 服务监听 0.0.0.0:${PORT:-8080}，实现上述核心功能，并提供 GET / 返回 200 的健康检查；自包含可运行，依赖写入 go.mod/requirements.txt/package.json 之一；无需写 Dockerfile（平台按类型自动生成）。`
 
-// generateSpec 调 agent-runtime 让 GLM 生成规格（有图片时走 GLM-4V 多模态）。
+// generateSpec 调 AI 生成规格（优先用算力中心网关，否则 HTTP→agent-runtime）。
 func (s *Service) generateSpec(ctx context.Context, description string, images []string) (*specResult, *usageInfo, error) {
-	// 构造 user content：有图片则多模态（content 数组），否则纯文本
+	// 构造 messages
 	var userContent interface{}
-	model := ""
 	if len(images) > 0 {
 		parts := []map[string]interface{}{{"type": "text", "text": description}}
 		for _, img := range images {
@@ -282,21 +285,54 @@ func (s *Service) generateSpec(ctx context.Context, description string, images [
 			})
 		}
 		userContent = parts
-		model = "zhipu/glm-4v-flash" // 视觉模型
 	} else {
 		userContent = description
 	}
-
-	body := map[string]interface{}{
-		"messages": []map[string]interface{}{
-			{"role": "system", "content": specSystemPrompt},
-			{"role": "user", "content": userContent},
-		},
-	}
-	if model != "" {
-		body["model"] = model
+	messages := []map[string]interface{}{
+		{"role": "system", "content": specSystemPrompt},
+		{"role": "user", "content": userContent},
 	}
 
+	// P2: 优先用算力中心网关（有图片时跳过——网关路由可能指向非视觉模型）
+	if s.gateway != nil && len(images) == 0 {
+		taskType := "spec"
+		resp, err := s.gateway.Chat(ctx, compute.ChatRequest{
+			TaskType: taskType,
+			Messages: messages,
+		})
+		if err == nil {
+			return parseSpecContent(resp.Content, resp.Model, resp.Usage)
+		}
+		// 网关失败 → 回退 HTTP agent-runtime
+	}
+
+	// 回退：HTTP → agent-runtime
+	return s.generateSpecViaRuntime(ctx, messages, images)
+}
+
+// parseSpecContent 从 AI 返回内容解析规格 JSON。
+func parseSpecContent(content, model string, usage map[string]interface{}) (*specResult, *usageInfo, error) {
+	raw := extractJSON(content)
+	var spec specResult
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return nil, nil, fmt.Errorf("解析需求规格 JSON 失败: %w（AI 原文: %s）", err, content)
+	}
+	var u *usageInfo
+	if usage != nil {
+		pt, _ := usage["prompt_tokens"].(int)
+		ct, _ := usage["completion_tokens"].(int)
+		tt, _ := usage["total_tokens"].(int)
+		u = &usageInfo{Model: model, PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
+	}
+	return &spec, u, nil
+}
+
+// generateSpecViaRuntime 通过 HTTP 调 agent-runtime（回退路径）。
+func (s *Service) generateSpecViaRuntime(ctx context.Context, messages []map[string]interface{}, images []string) (*specResult, *usageInfo, error) {
+	body := map[string]interface{}{"messages": messages}
+	if len(images) > 0 {
+		body["model"] = "zhipu/glm-4v-flash"
+	}
 	buf, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", s.agentRuntimeURL+"/v1/chat", bytes.NewReader(buf))
 	if err != nil {
@@ -328,19 +364,15 @@ func (s *Service) generateSpec(ctx context.Context, description string, images [
 		return nil, nil, fmt.Errorf("AI 返回错误: %s", out.Error)
 	}
 
-	raw := extractJSON(out.Content)
-	var spec specResult
-	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
-		return nil, nil, fmt.Errorf("解析需求规格 JSON 失败: %w（AI 原文: %s）", err, out.Content)
-	}
-	var u *usageInfo
+	var usage map[string]interface{}
 	if out.Usage != nil {
-		u = &usageInfo{
-			Model: out.Model, PromptTokens: out.Usage.PromptTokens,
-			CompletionTokens: out.Usage.CompletionTokens, TotalTokens: out.Usage.TotalTokens,
+		usage = map[string]interface{}{
+			"prompt_tokens":     out.Usage.PromptTokens,
+			"completion_tokens": out.Usage.CompletionTokens,
+			"total_tokens":      out.Usage.TotalTokens,
 		}
 	}
-	return &spec, u, nil
+	return parseSpecContent(out.Content, out.Model, usage)
 }
 
 // extractJSON 从可能含 markdown 的文本中提取首个 JSON 对象。

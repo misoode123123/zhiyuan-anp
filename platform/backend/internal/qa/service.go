@@ -11,18 +11,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"zhiyuan-anp/platform/backend/internal/compute"
 )
 
 // Service 测试业务逻辑：调 AI 把需求验收标准转测试用例；按用例 HTTP 检查对着已部署应用自动验收。
 type Service struct {
 	store           *Store
 	agentRuntimeURL string
+	gateway         *compute.Gateway // P2: 优先用算力中心网关
 }
 
 // NewService 构造 Service。
 func NewService(store *Store, agentRuntimeURL string) *Service {
 	return &Service{store: store, agentRuntimeURL: agentRuntimeURL}
 }
+
+// SetGateway 注入算力中心网关（P2：优先用网关调模型）。
+func (s *Service) SetGateway(gw *compute.Gateway) { s.gateway = gw }
 
 const testSystemPrompt = `你是测试工程师。把需求验收标准转为可执行的 HTTP 测试用例（被测对象是已部署运行的 Web 服务）。
 严格只返回纯 JSON 数组（不要 markdown、不要解释），格式：
@@ -46,40 +52,54 @@ type caseDraft struct {
 // GenerateTests 把需求验收标准转为测试用例并入库（含可执行 HTTP 检查）。
 func (s *Service) GenerateTests(ctx context.Context, projectSpaceID, requirementID, title, acceptanceCriteria string) ([]TestCase, error) {
 	userMsg := "需求：" + title + "。验收标准：" + acceptanceCriteria
-	body := map[string]interface{}{
-		"messages": []map[string]string{
-			{"role": "system", "content": testSystemPrompt},
-			{"role": "user", "content": userMsg},
-		},
-	}
-	buf, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST", s.agentRuntimeURL+"/v1/chat", bytes.NewReader(buf))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var out struct {
-		Content string `json:"content"`
-		Error   string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("解析 AI 响应: %w", err)
-	}
-	if out.Error != "" {
-		return nil, fmt.Errorf("AI: %s", out.Error)
+	messages := []map[string]interface{}{
+		{"role": "system", "content": testSystemPrompt},
+		{"role": "user", "content": userMsg},
 	}
 
-	// 容错解析：AI 偶尔把每个用例各包一个数组（[{..}][{..}]）或散落对象，
-	// 按大括号配平提取所有 JSON 对象，避免 "invalid character '[' after top-level value"。
-	objs := extractObjects(out.Content)
+	// P2: 优先用算力中心网关
+	var content string
+	if s.gateway != nil {
+		resp, err := s.gateway.Chat(ctx, compute.ChatRequest{
+			TaskType: "test",
+			Messages: messages,
+		})
+		if err == nil {
+			content = resp.Content
+		}
+	}
+	// 回退：HTTP → agent-runtime
+	if content == "" {
+		body := map[string]interface{}{"messages": messages}
+		buf, _ := json.Marshal(body)
+		req, err := http.NewRequestWithContext(ctx, "POST", s.agentRuntimeURL+"/v1/chat", bytes.NewReader(buf))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Content string `json:"content"`
+			Error   string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return nil, fmt.Errorf("解析 AI 响应: %w", err)
+		}
+		if out.Error != "" {
+			return nil, fmt.Errorf("AI: %s", out.Error)
+		}
+		content = out.Content
+	}
+
+	// 容错解析
+	objs := extractObjects(content)
 	if len(objs) == 0 {
-		return nil, fmt.Errorf("AI 未返回有效测试用例（原文: %s）", out.Content)
+		return nil, fmt.Errorf("AI 未返回有效测试用例（原文: %s）", content)
 	}
 	var drafts []caseDraft
 	for _, obj := range objs {
