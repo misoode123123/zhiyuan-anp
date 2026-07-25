@@ -38,6 +38,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/docs"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
+	"zhiyuan-anp/platform/backend/internal/audit"
 	"zhiyuan-anp/platform/backend/internal/logsvc"
 	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/ops"
@@ -205,6 +206,9 @@ func main() {
 	v1.Use(auth.AuthUser(authStore))
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权。
 	v1.Use(auth.AutoRequire(authStore))
+	// 操作审计：白名单路由自动记 operation_log（M3）；挂在 auth 后以取 user_id
+	auditStore := audit.NewStore(database)
+	v1.Use(audit.Middleware(auditStore))
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
 	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc)
@@ -216,6 +220,7 @@ func main() {
 	standard.Register(v1, standardStore, v)
 	change.Register(v1, changeStore)
 	auth.Register(v1, authStore)
+	audit.NewHandler(auditStore).Register(v1) // 操作审计查询（/operation-logs）
 	compute.Register(v1, computeStore)
 	compute.NewProviderHandler(computeStore, v).RegisterProvider(v1)
 	computeGateway := compute.NewGateway(computeStore)
