@@ -51,6 +51,18 @@ export function isLoggedIn(): boolean {
   return !!getAuthToken();
 }
 
+// ---- 会话 trace_id（M4）：sessionStorage 存，会话内稳定，贯穿后端日志/审计 ----
+const TRACE_KEY = "anp.trace_id";
+function getTraceId(): string {
+  if (typeof window === "undefined") return "";
+  let tid = sessionStorage.getItem(TRACE_KEY);
+  if (!tid) {
+    tid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    sessionStorage.setItem(TRACE_KEY, tid);
+  }
+  return tid;
+}
+
 // ---- 全局 fetch 拦截：跨域 API 调用自动带 X-User / X-Project-Space-Id ----
 // 集中注入，避免逐页面改 fetch；仅拦截发往后端的请求，其余原样放行。
 let interceptorInstalled = false;
@@ -70,6 +82,7 @@ export function installAuthInterceptor(): void {
       }
       const ps = currentProjectSpace();
       if (ps && !headers.has("X-Project-Space-Id")) headers.set("X-Project-Space-Id", ps);
+      headers.set("X-Trace-Id", getTraceId()); // M4: 会话 trace_id 贯穿后端日志/审计
       return origFetch(input, { ...init, headers });
     }
     return origFetch(input, init);
