@@ -21,6 +21,7 @@ type Application struct {
 	Image          string        `json:"image" db:"image"`                 // 镜像引用 appdeploy/<name>:v<n>
 	ContainerName  string        `json:"container_name" db:"container_name"`
 	HostPort       int           `json:"host_port" db:"host_port"` // 分配的宿主端口
+	DeployHost     string        `json:"deploy_host,omitempty" db:"deploy_host"` // 部署节点（空=本地 .28，如 tcp://10.10.0.30:2375）
 	URL            string        `json:"url" db:"url"`             // http://<host>:<host_port>
 	Version        int           `json:"version" db:"version"`     // 构建版本号
 	Status         string        `json:"status" db:"status"`       // registered/building/running/stopped/failed

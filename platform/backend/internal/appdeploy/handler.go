@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/appgw"
 	"zhiyuan-anp/platform/backend/internal/auth"
@@ -44,6 +45,7 @@ type Handler struct {
 	routeWriter appgw.RouteWriter        // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
 	standards   *standard.Store          // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
 	quota       AppQuotaChecker          // 应用数配额检查；nil=不强制
+	nodeStore   *NodeStore               // 部署节点（多机）；nil=仅本地
 	checkFn     checkFunc                // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
@@ -53,8 +55,12 @@ type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (
 
 // NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
 func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota}
-	h.checkFn = checkRequirement // 默认真 AI 核对
+	var nodeStore *NodeStore
+	if store != nil {
+		nodeStore = NewNodeStore(store.db)
+	}
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore}
+	h.checkFn = checkRequirement
 	return h
 }
 
@@ -89,6 +95,12 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
 	r.GET("/project-spaces/:id/apps/:aid/repo-file", h.RepoFile) // 读 repo 文件内容
+
+	// 部署节点管理（多机部署）
+	r.GET("/deploy-nodes", h.ListNodes)
+	r.POST("/deploy-nodes", h.CreateNode)
+	r.DELETE("/deploy-nodes/:nid", h.DeleteNode)
+	r.POST("/deploy-nodes/:nid/test", h.TestNode) // 测试连通性
 }
 
 // List 应用列表，附带各环境实例（前端展示 test/prod URL）。
@@ -877,8 +889,9 @@ func (h *Handler) Create(c *gin.Context) {
 
 // deployBody 部署请求体（均可选）。
 type deployBody struct {
-	Env string `json:"env"` // test / prod；空默认 test
-	SHA string `json:"sha"` // 可选：部署指定历史版本（回滚）
+	Env    string `json:"env"`     // test / prod；空默认 test
+	SHA    string `json:"sha"`     // 可选：部署指定历史版本（回滚）
+	NodeID string `json:"node_id"`  // 可选：部署到指定节点（空=本地 .28，如 node_30）
 }
 
 // Deploy 构建+部署到指定环境（默认 test=测试验证）。立即返回 building，后台完成。
@@ -906,8 +919,13 @@ func (h *Handler) Deploy(c *gin.Context) {
 	if !IsValidEnv(env) {
 		env = EnvTest
 	}
-	go h.buildAndDeploy(psID, aid, "", env)
-	httpx.OK(c, gin.H{"id": aid, "env": env, "status": "building", "note": "异步构建部署到 " + env + " 环境中"})
+	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
+	go h.buildAndDeploy(psID, aid, "", env, in.NodeID)
+	noteSuffix := ""
+	if in.NodeID != "" && in.NodeID != "node_local" {
+		noteSuffix = "（节点 " + in.NodeID + "）"
+	}
+	httpx.OK(c, gin.H{"id": aid, "env": env, "status": "building", "note": "异步构建部署到 " + env + " 环境" + noteSuffix})
 }
 
 // Promote 上线：部署到 prod 环境（用户可访问）。
@@ -940,7 +958,8 @@ func (h *Handler) Promote(c *gin.Context) {
 			_ = h.changes.MarkReleased(c.Request.Context(), aid) // 上线后标记 released;失败不阻塞(下次上线再标)
 		}
 	}
-	go h.buildAndDeploy(psID, aid, "", EnvProd)
+	h.markBuilding(c.Request.Context(), psID, aid, EnvProd) // 同步标 building，前端立即看到进度条
+	go h.buildAndDeploy(psID, aid, "", EnvProd, "")
 	httpx.OK(c, gin.H{"id": aid, "env": EnvProd, "status": "building", "note": "上线中：部署到 prod 环境"})
 }
 
@@ -973,23 +992,34 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
-	go h.buildAndDeploy(psID, aid, in.SHA, env)
+	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
+	go h.buildAndDeploy(psID, aid, in.SHA, env, in.NodeID)
 	httpx.OK(c, gin.H{"id": aid, "sha": in.SHA, "env": env, "status": "building", "note": "版本化部署/回滚到 " + env})
 }
 
 // buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本；env 指定环境。
-func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
+func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	ctx := context.Background()
 	a, err := h.store.Get(ctx, psID, aid)
 	if err != nil || a == nil || a.ID == "" {
 		return
+	}
+	// 解析部署节点的 docker host（空=本地）
+	dockerHost := ""
+	if nodeID != "" && nodeID != "node_local" && h.nodeStore != nil {
+		if node, e := h.nodeStore.Get(ctx, nodeID); e == nil && node != nil && node.DockerURL != "" {
+			dockerHost = node.DockerURL
+		}
 	}
 	ins, err := h.store.GetOrCreateInstance(ctx, a.ID, env)
 	if err != nil || ins == nil {
 		return
 	}
 	// 清理该 app+env 所有历史容器（DB 记录的 + 孤儿残留），彻底释放端口避免漂移/Conflict
-	_, _ = h.deployer.RemoveByPrefix(ctx, "appdeploy-"+a.Name+"-"+env+"-")
+	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+a.Name+"-"+env+"-"); err != nil {
+		zap.L().Warn("清理历史容器失败（不阻塞部署）",
+			zap.String("app", a.Name), zap.String("env", env), zap.Error(err))
+	}
 	// 版本化回滚：checkout 指定 commit，构建后恢复工作区
 	prevBranch := ""
 	if sha != "" {
@@ -1008,7 +1038,7 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 			note += "buildpack 已按源码类型自动生成 Dockerfile\n"
 		}
 	}
-	log, err := h.deployer.Build(ctx, a, ins)
+	log, err := h.deployer.Build(ctx, a, ins, dockerHost)
 	if note != "" {
 		log = note + log
 	}
@@ -1017,18 +1047,19 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 		ins.LastError = err.Error()
 		ins.BuildLog = tail(log, 2000)
 		_ = h.store.UpdateInstance(ctx, ins)
-		h.syncOverviewIfProd(ctx, a, env)
+		h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog) // 不限环境，前端立即看到失败 + 原因
 		return
 	}
-	ins.Status = "building"
+	ins.Status = "building" // build 完成，进入 run 阶段
 	ins.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateInstance(ctx, ins)
+	// a.Status=building 已由 Deploy handler 同步标记（markBuilding），此处无需重写
 	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
-	if err := h.deployer.Deploy(ctx, a, ins, envPairs); err != nil {
+	if err := h.deployer.Deploy(ctx, a, ins, envPairs, dockerHost); err != nil {
 		ins.Status = "failed"
 		ins.LastError = err.Error()
 		_ = h.store.UpdateInstance(ctx, ins)
-		h.syncOverviewIfProd(ctx, a, env)
+		h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog) // 不限环境，前端立即看到失败 + 原因
 		return
 	}
 	ins.Status = "running"
@@ -1039,11 +1070,21 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env string) {
 	// 失败不阻塞部署（应用仍可裸端口访问）；routeWriter nil = 未启用 appgw。
 	if h.routeWriter != nil {
 		if err := h.routeWriter.UpsertRoute(ctx, a.ID, a.ProjectSpaceID, env, h.deployer.host, ins.HostPort); err != nil {
-			// 路由表写入失败仅记录到 instance.LastError，不影响部署成功态
+			// 路由表写入失败仅记录到 instance.LastError，不影响部署成功态；另记 WARN 便于排查
 			ins.LastError = "部署成功但 appgw 路由表写入失败: " + err.Error()
 			_ = h.store.UpdateInstance(ctx, ins)
+			zap.L().Warn("appgw 路由表写入失败（部署仍成功）",
+				zap.String("app_id", a.ID), zap.String("env", env), zap.Error(err))
 		}
 	}
+	h.syncOverviewIfProd(ctx, a, env) // prod 同步部署态字段 + status=running
+	if env != EnvProd {
+		_ = h.store.UpdateAppStatus(ctx, a.ID, "running") // test 成功也回 running，避免卡 building
+	}
+}
+
+// syncOverviewAll 所有环境都同步实例态到 application 概览。
+func (h *Handler) syncOverviewAll(ctx context.Context, a *Application, env string) {
 	h.syncOverviewIfProd(ctx, a, env)
 }
 
@@ -1066,6 +1107,26 @@ func (h *Handler) syncOverviewIfProd(ctx context.Context, a *Application, env st
 	a.LastError = ins.LastError
 	a.BuildLog = ins.BuildLog
 	_ = h.store.UpdateDeploy(ctx, a)
+}
+
+// markBuilding 部署开始前同步标记 building：application + 当前环境实例都置 building，
+// 并清空上次的 last_error。在 Deploy/Promote/DeployCommit 的同步段调用，确保 HTTP 返回前
+// DB 已是 building——前端下一次 3s 轮询立即看到进度条。原实现 a.Status="building" 在
+// docker build 之后才写（handler.go:1046），构建期间（可能数分钟）状态滞后，进度条不出现。
+// 清空 last_error 避免上次失败的红条残留误导。
+func (h *Handler) markBuilding(ctx context.Context, psID, aid, env string) {
+	_ = h.store.SetStatus(ctx, psID, aid, "building", "", "")
+	if _, err := h.store.GetOrCreateInstance(ctx, aid, env); err == nil {
+		_ = h.store.SetInstanceStatus(ctx, aid, env, "building", "", "")
+	}
+}
+
+// markFailed 部署失败时把 application.status 写成 failed 并记录原因 + 构建日志，
+// 对 test/prod 所有环境都写。修复前仅 prod 经 syncOverviewIfProd 同步失败态，而它对 test
+// early return → test 失败时 a.status 不变，前端 a.status==="failed" 红条永不触发
+// （用户"只看到 failed、无原因"）。instance 的失败态由调用方 buildAndDeploy 单独 UpdateInstance 写入。
+func (h *Handler) markFailed(ctx context.Context, psID, aid, lastErr, buildLog string) {
+	_ = h.store.SetStatus(ctx, psID, aid, "failed", lastErr, buildLog)
 }
 
 func min(a, b int) int {
@@ -1266,7 +1327,8 @@ func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application
 	if err != nil || a == nil || a.ID == "" {
 		return nil, errAppNotFound
 	}
-	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest)
+	h.markBuilding(ctx, a.ProjectSpaceID, appID, EnvTest) // 同步标 building，前端立即看到进度条
+	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest, "")
 	return a, nil
 }
 
@@ -1282,4 +1344,77 @@ func tail(s string, n int) string {
 		return s[len(s)-n:]
 	}
 	return s
+}
+
+// --- 部署节点管理 ---
+
+func (h *Handler) ListNodes(c *gin.Context) {
+	if h.nodeStore == nil {
+		c.JSON(200, gin.H{"code": 0, "data": []interface{}{}})
+		return
+	}
+	list, err := h.nodeStore.List(c.Request.Context())
+	if err != nil {
+		httpx.Err(c, 500, 50014, err.Error())
+		return
+	}
+	// 附带每节点应用数
+	type nodeWithCount struct {
+		DeployNode
+		AppCount int `json:"app_count"`
+	}
+	out := []nodeWithCount{}
+	for _, n := range list {
+		cnt, _ := h.nodeStore.AppCount(c.Request.Context(), n.ID)
+		out = append(out, nodeWithCount{DeployNode: n, AppCount: cnt})
+	}
+	httpx.OK(c, out)
+}
+
+func (h *Handler) CreateNode(c *gin.Context) {
+	if h.nodeStore == nil {
+		httpx.Err(c, 500, 50014, "nodeStore 未初始化")
+		return
+	}
+	var n DeployNode
+	if err := c.ShouldBindJSON(&n); err != nil {
+		httpx.Err(c, 400, 40001, err.Error())
+		return
+	}
+	if err := h.nodeStore.Create(c.Request.Context(), &n); err != nil {
+		httpx.Err(c, 500, 50014, err.Error())
+		return
+	}
+	httpx.Created(c, n)
+}
+
+func (h *Handler) DeleteNode(c *gin.Context) {
+	if h.nodeStore == nil {
+		return
+	}
+	if err := h.nodeStore.Delete(c.Request.Context(), c.Param("nid")); err != nil {
+		httpx.Err(c, 500, 50014, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"id": c.Param("nid"), "deleted": true})
+}
+
+func (h *Handler) TestNode(c *gin.Context) {
+	if h.nodeStore == nil {
+		return
+	}
+	n, err := h.nodeStore.Get(c.Request.Context(), c.Param("nid"))
+	if err != nil {
+		httpx.Err(c, 404, 40401, "节点不存在")
+		return
+	}
+	dockerURL := n.DockerURL
+	if dockerURL == "" {
+		dockerURL = "unix:///var/run/docker.sock" // 本地
+	}
+	if err := h.nodeStore.TestDocker(c.Request.Context(), dockerURL); err != nil {
+		httpx.OK(c, gin.H{"status": "fail", "detail": err.Error()})
+		return
+	}
+	httpx.OK(c, gin.H{"status": "ok", "detail": "Docker 连通"})
 }

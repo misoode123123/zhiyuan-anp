@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { devStep } from "@/lib/devstep";
+import { toast } from "@/lib/toast";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
@@ -127,6 +128,10 @@ export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
   const [apps, setApps] = useState<App[]>([]);
+  const [nodes, setNodes] = useState<
+    { id: string; name: string; host: string; status: string; app_count?: number }[]
+  >([]);
+  const [selectedNode, setSelectedNode] = useState(""); // 部署目标节点
   const [form, setForm] = useState({
     name: "",
     internal_port: 8080,
@@ -164,11 +169,29 @@ export default function ApplicationsPage() {
     fetch(`${API_BASE_URL}/project-spaces/${id}/apps`)
       .then((r) => r.json())
       .then((r: Envelope<App[]>) => setApps(r.data ?? []));
+    fetch(`${API_BASE_URL}/deploy-nodes`)
+      .then((r) => r.json())
+      .then((r: Envelope<typeof nodes>) => setNodes(r.data ?? []));
   };
   useEffect(() => {
     load(psID);
     // 有 building 中的应用时轮询
-    const t = setInterval(() => load(psID), 3000);
+    const t = setInterval(() => {
+      load(psID);
+      // 清理已完成的部署进度提示
+      setDeployMsg((prev) => {
+        if (Object.keys(prev).length === 0) return prev;
+        const next = { ...prev };
+        for (const id of Object.keys(next)) {
+          const app = apps.find((a) => a.id === id);
+          if (app && app.status !== "building") {
+            toast.success(app.name + " → " + app.status);
+            delete next[id];
+          }
+        }
+        return next;
+      });
+    }, 3000);
     return () => clearInterval(t);
   }, [psID]);
   async function loadStats(id: string) {
@@ -246,9 +269,24 @@ export default function ApplicationsPage() {
     });
     load(psID);
   }
-  async function act(id: string, action: "deploy" | "stop" | "start", env?: string) {
-    const body = action === "deploy" && env ? { env } : {};
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, {
+  const [deployMsg, setDeployMsg] = useState<Record<string, string>>({});
+
+  // 上线 prod（带节点 + 变更闸门检查）
+  async function promoteWithNode(id: string, nodeID: string) {
+    const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
+    if (chgs.length > 0) {
+      const summaries = chgs
+        .map(
+          (c) =>
+            "• " + ((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60)
+        )
+        .join("\n");
+      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`))
+        return;
+    }
+    const body: Record<string, string> = { env: "prod" };
+    if (nodeID) body.node_id = nodeID;
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/deploy`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -256,7 +294,44 @@ export default function ApplicationsPage() {
     const r = await res.json();
     if (r.code !== 0) alert(r.message);
     load(psID);
+    loadChanges(id);
   }
+
+  async function act(
+    id: string,
+    action: "deploy" | "stop" | "start",
+    env?: string,
+    nodeID?: string
+  ) {
+    const body: Record<string, string> = {};
+    if (action === "deploy") {
+      if (env) body.env = env;
+      if (nodeID) body.node_id = nodeID;
+    }
+    // 进度提示
+    if (action === "deploy") {
+      setDeployMsg((prev) => ({
+        ...prev,
+        [id]: `⏳ 构建部署 ${env} ${nodeID ? "(" + (nodes.find((n) => n.id === nodeID)?.name || nodeID) + ")" : ""}`,
+      }));
+    }
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const r = await res.json();
+    if (r.code !== 0) {
+      alert(r.message);
+      setDeployMsg((prev) => {
+        const n = { ...prev };
+        delete n[id];
+        return n;
+      });
+    }
+    load(psID);
+  }
+
   async function promote(id: string) {
     const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
     if (chgs.length > 0) {
@@ -370,6 +445,28 @@ export default function ApplicationsPage() {
             </option>
           ))}
         </select>
+        {nodes.length > 1 && (
+          <div className="flex items-center gap-1 text-sm">
+            <span className="text-xs text-neutral-500">默认部署节点</span>
+            <select
+              value={selectedNode}
+              onChange={(e) => setSelectedNode(e.target.value)}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              title="新增应用的默认部署节点"
+            >
+              <option value="">
+                本地（{nodes.find((n) => n.id === "node_local")?.host || ".28"}）
+              </option>
+              {nodes
+                .filter((n) => n.id !== "node_local")
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} ({n.host}){n.app_count != null ? ` · ${n.app_count}应用` : ""}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
       </div>
       <p className="mb-4 text-sm text-neutral-600">
         把研发产出的应用（含 Dockerfile 的源码目录）自动{" "}
@@ -445,6 +542,41 @@ export default function ApplicationsPage() {
           const isExternal = a.deploy_mode === "external";
           return (
             <div key={a.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+              {/* 部署进度提示：从 app.status 派生（切 tab 回来也可见，因为 3s 轮询刷新 status） */}
+              {a.status === "building" && (
+                <div className="mb-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></span>
+                  构建部署中...
+                  {a.instances?.find((i) => i.status === "building") && (
+                    <span className="text-xs text-blue-400">
+                      {a.instances.find((i) => i.status === "building")?.url || ""}
+                    </span>
+                  )}
+                  <span className="ml-auto text-xs text-blue-400">每3秒自动刷新</span>
+                </div>
+              )}
+              {a.status === "running" && a.instances?.some((i) => i.status === "building") && (
+                <div className="mb-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></span>
+                  {a.instances.find((i) => i.status === "building")?.env} 环境构建中...
+                  <span className="ml-auto text-xs text-blue-400">每3秒自动刷新</span>
+                </div>
+              )}
+              {a.status === "failed" && (
+                <div className="mb-2 rounded bg-red-50 px-3 py-1.5 text-sm text-red-700">
+                  <div>❌ 构建失败：{a.last_error?.slice(0, 100) || "(无错误摘要)"}</div>
+                  {a.build_log && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs text-red-500">
+                        查看构建日志详情
+                      </summary>
+                      <pre className="mt-1 max-h-64 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300 whitespace-pre-wrap">
+                        {a.build_log}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
               {!isExternal && <DevWizard app={a} />}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono font-medium">{a.name}</span>
@@ -458,6 +590,20 @@ export default function ApplicationsPage() {
                 >
                   {a.status}
                 </span>
+                {/* 构建进度条 */}
+                {(a.status === "building" || a.status === "running") &&
+                  a.instances &&
+                  a.instances.some((i) => i.status === "building") && (
+                    <span className="flex items-center gap-1 text-xs text-amber-600">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400 border-t-transparent"></span>
+                      构建中...
+                    </span>
+                  )}
+                {a.status === "building" &&
+                  a.instances &&
+                  a.instances.some((i) => i.status === "failed") && (
+                    <span className="text-xs text-red-500">构建失败</span>
+                  )}
                 {!isExternal && a.image && (
                   <span className="text-xs text-neutral-400">
                     v{a.version} · {a.image}
@@ -485,13 +631,13 @@ export default function ApplicationsPage() {
                   ) : (
                     <>
                       <button
-                        onClick={() => act(a.id, "deploy")}
+                        onClick={() => act(a.id, "deploy", "test", selectedNode)}
                         className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700"
                       >
                         构建部署(test)
                       </button>
                       <button
-                        onClick={() => promote(a.id)}
+                        onClick={() => promoteWithNode(a.id, selectedNode)}
                         className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
                       >
                         🚀 上线(prod)

@@ -223,6 +223,14 @@ func (s *Store) SetStatus(ctx context.Context, psID, id, status, lastErr, buildL
 	return nil
 }
 
+// UpdateAppStatus 只更新 app 状态（部署进度用，跨环境）。
+func (s *Store) UpdateAppStatus(ctx context.Context, appID, status string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_application SET status=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`,
+		status, appID)
+	return err
+}
+
 // Delete 删除记录。
 func (s *Store) Delete(ctx context.Context, psID, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_application WHERE id=$1 AND project_space_id=$2`, id, psID)

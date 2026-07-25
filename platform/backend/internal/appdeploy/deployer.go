@@ -35,9 +35,20 @@ func (d *Deployer) envPortRange(env string) (int, int) {
 	return portTestMin, portTestMax
 }
 
-// runDocker 执行 docker 子命令，返回合并输出。
+// runDocker 执行 docker 子命令（本地），返回合并输出。
 func runDocker(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	return runDockerOn(ctx, "", args...)
+}
+
+// runDockerOn 在指定 Docker host 执行命令（host 为空=本地，否则 tcp://ip:2375）。
+// 用于多节点部署：应用容器可部署到 .30 等远程节点。
+func runDockerOn(ctx context.Context, dockerHost string, args ...string) (string, error) {
+	fullArgs := args
+	if dockerHost != "" {
+		// docker -H tcp://10.10.0.30:2375 <args>
+		fullArgs = append([]string{"-H", dockerHost}, args...)
+	}
+	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -47,10 +58,15 @@ func runDocker(ctx context.Context, args ...string) (string, error) {
 
 var hostPortRe = regexp.MustCompile(`(?::[\d.]+)?:(\d+)->`)
 
-// usedPorts 查询当前运行中容器占用的宿主端口。
+// usedPorts 查询本地运行中容器占用的宿主端口。
 func (d *Deployer) usedPorts(ctx context.Context) map[int]struct{} {
+	return d.usedPortsOn(ctx, "")
+}
+
+// usedPortsOn 查询指定 docker host 上运行中容器占用的宿主端口。
+func (d *Deployer) usedPortsOn(ctx context.Context, dockerHost string) map[int]struct{} {
 	used := map[int]struct{}{}
-	out, _ := runDocker(ctx, "ps", "--format", "{{.Ports}}")
+	out, _ := runDockerOn(ctx, dockerHost, "ps", "--format", "{{.Ports}}")
 	for _, line := range regexp.MustCompile(`\r?\n`).Split(out, -1) {
 		for _, m := range hostPortRe.FindAllStringSubmatch(line, -1) {
 			if len(m) > 1 {
@@ -85,20 +101,21 @@ func ensurePortEnv(env []string, port int) []string {
 }
 
 // Build 构建镜像（docker build -t <image> <repo_dir>），版本号按环境实例自增。
-// 镜像名带环境后缀(test/prod)，避免两环境镜像互相覆盖。
-func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance) (log string, err error) {
+// dockerHost 非空时在远程节点构建（tcp://10.10.0.30:2375）。
+func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, dockerHost string) (log string, err error) {
 	ins.Version++
 	ins.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", a.Name, ins.Env, ins.Version)
-	out, e := runDocker(ctx, "build", "-t", ins.Image, a.RepoDir)
+	out, e := runDockerOn(ctx, dockerHost, "build", "-t", ins.Image, a.RepoDir)
 	return out, e
 }
 
 // Deploy 运行容器（docker run -d --name -p host:internal -e KEY=VALUE ...）。
 // 端口段按环境；优先复用该环境实例原端口（同环境多次发布 URL 稳定）。
 // env 为应用的运行时环境变量（含密钥），逐个 -e 注入容器。
-func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string) error {
+// Deploy 运行容器。dockerHost 非空时在远程节点部署。
+func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost string) error {
 	min, max := d.envPortRange(ins.Env)
-	used := d.usedPorts(ctx)
+	used := d.usedPortsOn(ctx, dockerHost)
 	port := ins.HostPort
 	if _, occupied := used[port]; port < min || port > max || occupied {
 		port = AllocFreePort(used, min, max)
@@ -107,22 +124,28 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", a.Name, ins.Env, ins.Version)
-	// 注入 PORT=internal_port(应用未显式设时): node/python 等 PORT-driven 应用据此
-	// 监听与 -p 映射一致的端口; 否则它们监听默认端口(如 8080)而 docker -p 映射的是
-	// internal_port → host 端口连不上(曾导致 snake test/prod URL 打不开)。
 	env = ensurePortEnv(env, a.InternalPort)
 	args := []string{"run", "-d", "--name", name}
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
 	args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort), "--restart", "unless-stopped", ins.Image)
-	out, err := runDocker(ctx, args...)
+	out, err := runDockerOn(ctx, dockerHost, args...)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}
 	ins.ContainerName = name
 	ins.HostPort = port
-	ins.URL = fmt.Sprintf("http://%s:%d", d.host, port)
+	// URL 使用部署节点的 host（本地=d.host，远程=节点 IP）
+	urlHost := d.host
+	if dockerHost != "" {
+		// 从 tcp://10.10.0.30:2375 提取 IP
+		parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(dockerHost, "tcp://"), "http://"), ":")
+		if len(parts) > 0 && parts[0] != "" {
+			urlHost = parts[0]
+		}
+	}
+	ins.URL = fmt.Sprintf("http://%s:%d", urlHost, port)
 	return nil
 }
 
