@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { devStep } from "@/lib/devstep";
+import { logger } from "@/lib/logger";
 import { toast } from "@/lib/toast";
 
 type Envelope<T> = { code: number; data: T; message?: string };
@@ -186,6 +187,7 @@ export default function ApplicationsPage() {
           const app = apps.find((a) => a.id === id);
           if (app && app.status !== "building") {
             toast.success(app.name + " → " + app.status);
+            logger.info("app.deploy.done", { app: app.name, status: app.status });
             delete next[id];
           }
         }
