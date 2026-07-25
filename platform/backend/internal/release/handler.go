@@ -11,6 +11,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
@@ -128,9 +129,8 @@ func (h *Handler) Create(c *gin.Context) {
 			"需求已交付（来源需求未归属应用，未部署到 test；请在「应用部署」创建应用或派发编码自动归属）",
 			"应用 "+deployed+" 已发布，异步部署到 test 验证；确认无误后到「应用部署」点「上线」推 prod"),
 	})
+	notif.EmitBroadcast("release", "发布成功 "+r.Version, "版本 "+r.Version+" 已发布"+ternary(deployed=="", "", "，应用 "+deployed+" 已部署"), "/release")
 }
-
-// List 发布历史。
 //
 // @Summary      发布历史
 // @Tags         release

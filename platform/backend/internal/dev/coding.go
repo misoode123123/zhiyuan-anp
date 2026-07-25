@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/config"
 	"zhiyuan-anp/platform/backend/internal/rule"
@@ -85,11 +86,13 @@ func (a *CodingAgent) run(taskID string) {
 	out, err := a.opencodeRun(ctx, t.RepoDir, prompt, t.Model)
 	if err != nil {
 		_ = a.tasks.MarkFailed(ctx, taskID, out+"\n"+err.Error())
+		notif.Emit("", t.ProjectSpaceID, "code_failed", "编码失败", "任务 "+taskID+" 失败", "/dev")
 		return
 	}
 	// 编码产出落定为仓库版本（应用托管仓库由此有 commit 历史 = 版本）
 	a.gitCommit(ctx, t.RepoDir, "ANP编码: "+t.SourceID)
 	_ = a.tasks.MarkCompleted(ctx, taskID, out)
+	notif.Emit("", t.ProjectSpaceID, "code_done", "编码完成", "任务 "+taskID+" 已完成，待审批", "/approvals")
 	if a.changes != nil {
 		chg := &change.ChangeRequest{
 			ProjectSpaceID: t.ProjectSpaceID, Kind: t.Kind, SourceID: t.SourceID,

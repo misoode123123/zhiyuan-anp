@@ -7,6 +7,7 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
+	"zhiyuan-anp/platform/backend/internal/notif"
 )
 
 // Handler 变更闸门 HTTP 接口。
@@ -68,6 +69,7 @@ func (h *Handler) Approve(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"id": c.Param("id"), "status": "approved", "message": "🚪G3 通过，可合入"})
+	notif.EmitBroadcast("change_decided", "变更已批准", "变更 "+c.Param("id")+" 已通过 G3 审批，可发布", "/release")
 }
 
 // Reject 拒绝（需回滚/重做）。
@@ -91,6 +93,7 @@ func (h *Handler) Reject(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"id": c.Param("id"), "status": "rejected", "message": "已拒绝，需回滚或重做"})
+	notif.EmitBroadcast("change_decided", "变更已拒绝", "变更 "+c.Param("id")+" 被拒绝，需回滚", "/approvals")
 }
 
 // reviewer M1 取自请求头 X-User，默认 user。
