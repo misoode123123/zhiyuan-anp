@@ -22,7 +22,10 @@ func New(level string) *zap.Logger {
 	}
 	l, err := cfg.Build()
 	if err != nil {
-		return zap.NewNop()
+		nop := zap.NewNop()
+		zap.ReplaceGlobals(nop) // 失败也设全局，保证 zap.L() 永不 nil
+		return nop
 	}
+	zap.ReplaceGlobals(l) // 业务代码用 zap.L() 即可
 	return l
 }
