@@ -4,6 +4,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.claude/
 
 # ===== Env / Secrets =====
 .env
