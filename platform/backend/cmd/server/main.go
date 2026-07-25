@@ -38,6 +38,8 @@ import (
 	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/docs"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
+	"zhiyuan-anp/platform/backend/internal/logsvc"
+	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
@@ -118,6 +120,9 @@ func main() {
 	logger.Info("system_config ready", zap.Int("items", len(store.All())))
 
 	computeStore := compute.NewStore(database)
+	if err := compute.SeedProviders(context.Background(), database); err != nil {
+		logger.Fatal("seed compute providers", zap.Error(err))
+	}
 	ruleStore := rule.NewStore(database)
 	if err := ruleStore.SeedDemoRules(context.Background()); err != nil {
 		logger.Fatal("seed demo rules", zap.Error(err))
@@ -178,8 +183,15 @@ func main() {
 	}
 	v := validator.New()
 
-	srv := server.New(cfg, logger)
+	hc := server.NewHealthChecker(database, cfg.AgentRuntimeURL)
+	srv := server.New(cfg, logger, hc)
 	v1 := srv.Group("/api/v1")
+	// 统一日志：DualLogger 注入 + 5xx 自动入库
+	dualLogger := logsvc.NewDualLogger(logger, logsvc.NewStore(database))
+	v1.Use(logsvc.DualLoggerMiddleware(dualLogger)) // 挂 v1 组：group 创建时快照 engine 中间件，挂 engine 不及 v1 路由
+	// 公开路由：POST /api/v1/logs 不需要认证（前端错误回传，可能发生在未登录状态）
+	logPublic := srv.Group("/api/v1")
+	logsvc.NewHandler(logsvc.NewStore(database)).RegisterPublicPost(logPublic)
 	// 认证：Authorization Bearer token（真实登录，撤 X-User 模拟回退）。
 	v1.Use(auth.AuthUser(authStore))
 	// 集中式 RBAC：按路由模板强制写/危险操作鉴权。
@@ -196,15 +208,28 @@ func main() {
 	change.Register(v1, changeStore)
 	auth.Register(v1, authStore)
 	compute.Register(v1, computeStore)
+	compute.NewProviderHandler(computeStore, v).RegisterProvider(v1)
+	computeGateway := compute.NewGateway(computeStore)
+	compute.SetGateway(computeGateway)
+	compute.SetOpenCodeConfigPath(store.Get("opencode_config_path", "../opencode.json"))
+	// 统一日志服务
+	logStore := logsvc.NewStore(database)
+	logsvc.NewHandler(logStore).Register(v1)
+	// 消息通知
+	notifStore := notif.NewStore(database)
+	notif.SetStore(notifStore)
+	notif.NewHandler(notifStore).Register(v1)
 	security.Register(v1, securityStore)
 	attendance.Register(v1, attendanceSvc)
 	capability.Register(v1, capabilityStore, capabilityGateway)
 	ops.Register(v1, opsStore, cfg.AgentRuntimeURL, v)
 	docs.Register(v1, store)
 	dev.Register(v1, devAgent)
-	requirement.Register(v1, reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore, changeStore, authStore)
+	reqSvc := requirement.Register(v1, reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore, changeStore, authStore)
+	reqSvc.SetGateway(computeGateway)
 	conversation.Register(v1, database, reqRepo, cfg.AgentRuntimeURL)
-	qa.Register(v1, database, cfg.AgentRuntimeURL, reqRepo, appDeployStore)
+	qaSvc := qa.Register(v1, database, cfg.AgentRuntimeURL, reqRepo, appDeployStore)
+	qaSvc.SetGateway(computeGateway)
 	release.Register(v1, database, changeStore, reqRepo, appDeployHandler, store, qaStore)
 
 	// ---- appgw 路由组：/apps/*path 反代到应用容器（不在 /api/v1 下，不挂 AuthUser 全局）----

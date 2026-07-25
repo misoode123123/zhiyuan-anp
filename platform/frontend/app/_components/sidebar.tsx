@@ -18,6 +18,7 @@ const NAV = [
   { href: "/databases", label: "数据库管理", icon: "🗄️" },
   { href: "/admin/config", label: "系统配置", icon: "⚙️" },
   { href: "/admin/users", label: "用户权限", icon: "🔐" },
+  { href: "/admin/logs", label: "系统日志", icon: "📋" },
   { href: "/approvals", label: "变更审批", icon: "🚪" },
 ];
 

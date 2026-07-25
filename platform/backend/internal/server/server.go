@@ -13,7 +13,7 @@ import (
 
 // New 构造 Gin 引擎，挂载全局中间件与基础路由。
 // 认证中间件（auth.AuthUser）在 main 的 /api/v1 组挂载（需要 authStore）。
-func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
+func New(cfg *config.Config, logger *zap.Logger, hc *HealthChecker) *gin.Engine {
 	if cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -24,10 +24,12 @@ func New(cfg *config.Config, logger *zap.Logger) *gin.Engine {
 		RequestLogger(logger),
 		CORS(cfg.CORSOrigins),
 		ProjectSpaceInjector(),
+		NewRateLimiter(300).Middleware(), // 300 rpm/IP
 	)
 
 	// 健康检查 & 元信息
 	r.GET("/healthz", healthz)
+	r.GET("/healthz/deep", hc.DeepHealthz)
 	r.GET("/version", version)
 
 	// OpenAPI 文档（swag 生成）：/swagger/index.html

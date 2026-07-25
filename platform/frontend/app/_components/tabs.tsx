@@ -57,5 +57,6 @@ export const NAV_MAP: Record<string, Tab> = {
   "/workspace": { path: "/workspace", label: "编码工作台", icon: "🧑‍💻" },
   "/admin/config": { path: "/admin/config", label: "系统配置", icon: "⚙️" },
   "/admin/users": { path: "/admin/users", label: "用户权限", icon: "🔐" },
+  "/admin/logs": { path: "/admin/logs", label: "系统日志", icon: "📋" },
   "/approvals": { path: "/approvals", label: "变更审批", icon: "🚪" },
 };

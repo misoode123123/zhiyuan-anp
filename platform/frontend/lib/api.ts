@@ -78,8 +78,29 @@ export function installAuthInterceptor(): void {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // 统一 API 错误回传日志
+    reportApiFailure(`GET ${path}`, res.status);
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
   return res.json() as Promise<T>;
+}
+
+// 统一 API 错误回传到后端 /logs（不阻塞业务）
+async function reportApiFailure(path: string, status: number) {
+  try {
+    await fetch(`${API_BASE_URL}/logs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level: status >= 500 ? "ERROR" : "WARN",
+        source: "frontend",
+        message: `API ${path} → ${status}`,
+        fields: { path, status, type: "api_error" },
+      }),
+      keepalive: true,
+    });
+  } catch {}
 }
 
 // 模块加载即装拦截器(client),确保任何 effect 的 fetch 都带 token
