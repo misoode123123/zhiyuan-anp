@@ -1039,6 +1039,45 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workspace"
+                ],
+                "summary": "删除项目空间",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "project space not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
         "/project-spaces/{id}/apps": {
@@ -1099,8 +1138,20 @@
                 "summary": "创建应用",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "managed(默认,A类) / external(B类纳管外部应用)",
+                        "name": "deploy_mode",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "external 必填：外部应用访问地址 http(s)://host[:port][/path]",
+                        "name": "external_url",
+                        "in": "path"
+                    },
+                    {
                         "type": "integer",
-                        "description": "可选；buildpack 检测或默认 8080",
+                        "description": "managed 可选；buildpack 检测或默认 8080",
                         "name": "internal_port",
                         "in": "path"
                     },
@@ -1112,7 +1163,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "可选；空=平台托管 git 仓库 /data/repos/\u003cname\u003e",
+                        "description": "managed 可选；空=平台托管 git 仓库 /data/repos/\u003cname\u003e",
                         "name": "repo_dir",
                         "in": "path"
                     },
@@ -1136,6 +1187,13 @@
                     },
                     "400": {
                         "description": "invalid body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "应用数配额超限",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4081,6 +4139,105 @@
                 }
             }
         },
+        "/project-spaces/{id}/quota": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "项目配额 + 当前用量",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "配额 + 4 维度用量",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "修改项目配额",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "4 个 max_*（可选，未传保留原值）",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_quota.updateBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的配额",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid body / 越界",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/project-spaces/{id}/releases": {
             "get": {
                 "security": [
@@ -5091,6 +5248,40 @@
                 }
             }
         },
+        "/project-spaces/{id}/team-tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "requirement"
+                ],
+                "summary": "团队任务看板",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "toClaim/inDev/toApprove/toRelease/delivered",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/project-spaces/{id}/test-cases": {
             "get": {
                 "security": [
@@ -5261,6 +5452,53 @@
                     },
                     "500": {
                         "description": "服务端错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/usage/trend": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "项目用量趋势",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "趋势天数（默认30，上限90）",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ai_trend / api_trend / db_size_trend / db_size_current_mb / usage",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5535,10 +5773,24 @@
                 "tags": [
                     "standard"
                 ],
-                "summary": "列出全局规范",
+                "summary": "列出全局规范 / 按层级列",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "platform/app/module",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "scope=module 时：api/form/db/code/ui",
+                        "name": "module",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "全局规范列表",
+                        "description": "规范列表",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5564,7 +5816,7 @@
                 "summary": "新建全局规范",
                 "parameters": [
                     {
-                        "description": "规范(name/content 等)",
+                        "description": "规范(name/content/scope/module 等)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -5583,6 +5835,72 @@
                     },
                     "400": {
                         "description": "invalid body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/standards/agents-md": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "standard"
+                ],
+                "summary": "导出 AGENTS.md（markdown）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "api/form/db/code/ui（空=仅平台+应用）",
+                        "name": "module",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "markdown",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/standards/aggregate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "standard"
+                ],
+                "summary": "聚合规范（分层合并）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "api/form/db/code/ui（空=不附模块级）",
+                        "name": "module",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "聚合规范列表",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5737,15 +6055,23 @@
                 "name"
             ],
             "properties": {
+                "deploy_mode": {
+                    "description": "managed(默认,A类) / external(B类纳管外部应用)",
+                    "type": "string"
+                },
+                "external_url": {
+                    "description": "external 必填：外部应用访问地址 http(s)://host[:port][/path]",
+                    "type": "string"
+                },
                 "internal_port": {
-                    "description": "可选；buildpack 检测或默认 8080",
+                    "description": "managed 可选；buildpack 检测或默认 8080",
                     "type": "integer"
                 },
                 "name": {
                     "type": "string"
                 },
                 "repo_dir": {
-                    "description": "可选；空=平台托管 git 仓库 /data/repos/\u003cname\u003e",
+                    "description": "managed 可选；空=平台托管 git 仓库 /data/repos/\u003cname\u003e",
                     "type": "string"
                 }
             }
@@ -6036,6 +6362,32 @@
                 }
             }
         },
+        "internal_quota.updateBody": {
+            "type": "object",
+            "properties": {
+                "max_apps": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0
+                },
+                "max_capability_calls_per_day": {
+                    "type": "integer",
+                    "maximum": 10000000,
+                    "minimum": 0
+                },
+                "max_databases": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0
+                },
+                "max_total_db_mb": {
+                    "description": "上限 1TB",
+                    "type": "integer",
+                    "maximum": 1048576,
+                    "minimum": 0
+                }
+            }
+        },
         "internal_release.createRequest": {
             "type": "object",
             "required": [
@@ -6230,11 +6582,19 @@
                 "enabled": {
                     "type": "boolean"
                 },
+                "module": {
+                    "description": "scope=module 时：api/form/db/code/ui",
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
                 "priority": {
                     "type": "integer"
+                },
+                "scope": {
+                    "description": "platform/app/module（默认 platform）",
+                    "type": "string"
                 }
             }
         },
@@ -6261,6 +6621,10 @@
                 },
                 "enabled": {
                     "type": "boolean"
+                },
+                "module": {
+                    "description": "scope=module 时可调子模块",
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"

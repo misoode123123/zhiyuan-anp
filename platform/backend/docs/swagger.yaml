@@ -2,13 +2,19 @@ basePath: /api/v1
 definitions:
   internal_appdeploy.createBody:
     properties:
+      deploy_mode:
+        description: managed(默认,A类) / external(B类纳管外部应用)
+        type: string
+      external_url:
+        description: external 必填：外部应用访问地址 http(s)://host[:port][/path]
+        type: string
       internal_port:
-        description: 可选；buildpack 检测或默认 8080
+        description: managed 可选；buildpack 检测或默认 8080
         type: integer
       name:
         type: string
       repo_dir:
-        description: 可选；空=平台托管 git 仓库 /data/repos/<name>
+        description: managed 可选；空=平台托管 git 仓库 /data/repos/<name>
         type: string
     required:
     - name
@@ -205,6 +211,26 @@ definitions:
     - code
     - name
     type: object
+  internal_quota.updateBody:
+    properties:
+      max_apps:
+        maximum: 10000
+        minimum: 0
+        type: integer
+      max_capability_calls_per_day:
+        maximum: 10000000
+        minimum: 0
+        type: integer
+      max_databases:
+        maximum: 10000
+        minimum: 0
+        type: integer
+      max_total_db_mb:
+        description: 上限 1TB
+        maximum: 1048576
+        minimum: 0
+        type: integer
+    type: object
   internal_release.createRequest:
     properties:
       change_id:
@@ -331,10 +357,16 @@ definitions:
         type: string
       enabled:
         type: boolean
+      module:
+        description: scope=module 时：api/form/db/code/ui
+        type: string
       name:
         type: string
       priority:
         type: integer
+      scope:
+        description: platform/app/module（默认 platform）
+        type: string
     required:
     - content
     - name
@@ -352,6 +384,9 @@ definitions:
         type: string
       enabled:
         type: boolean
+      module:
+        description: scope=module 时可调子模块
+        type: string
       name:
         type: string
       priority:
@@ -1029,6 +1064,31 @@ paths:
       tags:
       - workspace
   /project-spaces/{id}:
+    delete:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: project space not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除项目空间
+      tags:
+      - workspace
     get:
       parameters:
       - description: 项目空间ID
@@ -1084,7 +1144,15 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 可选；buildpack 检测或默认 8080
+      - description: managed(默认,A类) / external(B类纳管外部应用)
+        in: path
+        name: deploy_mode
+        type: string
+      - description: external 必填：外部应用访问地址 http(s)://host[:port][/path]
+        in: path
+        name: external_url
+        type: string
+      - description: managed 可选；buildpack 检测或默认 8080
         in: path
         name: internal_port
         type: integer
@@ -1092,7 +1160,7 @@ paths:
         name: name
         required: true
         type: string
-      - description: 可选；空=平台托管 git 仓库 /data/repos/<name>
+      - description: managed 可选；空=平台托管 git 仓库 /data/repos/<name>
         in: path
         name: repo_dir
         type: string
@@ -1112,6 +1180,11 @@ paths:
             type: object
         "400":
           description: invalid body
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 应用数配额超限
           schema:
             additionalProperties: true
             type: object
@@ -3017,6 +3090,70 @@ paths:
       summary: 创建项目
       tags:
       - workspace
+  /project-spaces/{id}/quota:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 配额 + 4 维度用量
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 项目配额 + 当前用量
+      tags:
+      - quota
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 4 个 max_*（可选，未传保留原值）
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_quota.updateBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的配额
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body / 越界
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改项目配额
+      tags:
+      - quota
   /project-spaces/{id}/releases:
     get:
       parameters:
@@ -3664,6 +3801,27 @@ paths:
       summary: 预览生效规范
       tags:
       - standard
+  /project-spaces/{id}/team-tasks:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: toClaim/inDev/toApprove/toRelease/delivered
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 团队任务看板
+      tags:
+      - requirement
   /project-spaces/{id}/test-cases:
     get:
       parameters:
@@ -3778,6 +3936,37 @@ paths:
       summary: 算力用量统计看板
       tags:
       - compute
+  /project-spaces/{id}/usage/trend:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 趋势天数（默认30，上限90）
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ai_trend / api_trend / db_size_trend / db_size_current_mb /
+            usage
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 内部错误
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 项目用量趋势
+      tags:
+      - quota
   /rules:
     get:
       produces:
@@ -3940,24 +4129,33 @@ paths:
       - rule
   /standards:
     get:
+      parameters:
+      - description: platform/app/module
+        in: query
+        name: scope
+        type: string
+      - description: scope=module 时：api/form/db/code/ui
+        in: query
+        name: module
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: 全局规范列表
+          description: 规范列表
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 列出全局规范
+      summary: 列出全局规范 / 按层级列
       tags:
       - standard
     post:
       consumes:
       - application/json
       parameters:
-      - description: 规范(name/content 等)
+      - description: 规范(name/content/scope/module 等)
         in: body
         name: body
         required: true
@@ -4067,6 +4265,46 @@ paths:
       security:
       - BearerAuth: []
       summary: 启用/禁用规范
+      tags:
+      - standard
+  /standards/agents-md:
+    get:
+      parameters:
+      - description: api/form/db/code/ui（空=仅平台+应用）
+        in: query
+        name: module
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: markdown
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导出 AGENTS.md（markdown）
+      tags:
+      - standard
+  /standards/aggregate:
+    get:
+      parameters:
+      - description: api/form/db/code/ui（空=不附模块级）
+        in: query
+        name: module
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 聚合规范列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 聚合规范（分层合并）
       tags:
       - standard
 securityDefinitions:
