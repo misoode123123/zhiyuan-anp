@@ -85,37 +85,48 @@ func (s *Store) CreateFromJSON(ctx context.Context, level, source, msg string, f
 	return s.Create(ctx, e)
 }
 
-// Query 查询日志（支持 level/source/module 筛选 + 分页）。
-func (s *Store) Query(ctx context.Context, level, source, module string, limit, offset int) ([]LogEntry, error) {
+// QueryFilter 日志查询过滤（M5 增强：trace_id 精确、q message 关键词、时间窗）。
+type QueryFilter struct {
+	Level, Source, Module string
+	TraceID, Q            string // Q: message ILIKE 关键词
+	Since, Until          string // 时间范围（ISO8601 字符串）
+	Limit, Offset         int
+}
+
+// Query 按 QueryFilter 查日志（M5）。
+func (s *Store) Query(ctx context.Context, f QueryFilter) ([]LogEntry, error) {
 	q := `SELECT id, timestamp, level, source, module, trace_id, user_id, project_space_id, message, stack_trace, context, resolved, resolved_by, resolved_at
 	      FROM platform_log WHERE 1=1`
 	args := []interface{}{}
 	i := 1
-	if level != "" {
-		q += ` AND level = $` + itoa(i)
-		args = append(args, level)
+	add := func(col, val, op string) {
+		if val != "" {
+			q += " AND " + col + " " + op + " $" + itoa(i)
+			args = append(args, val)
+			i++
+		}
+	}
+	add("level", f.Level, "=")
+	add("source", f.Source, "=")
+	add("module", f.Module, "=")
+	add("trace_id", f.TraceID, "=")
+	if f.Q != "" {
+		q += " AND message ILIKE $" + itoa(i)
+		args = append(args, "%"+f.Q+"%")
 		i++
 	}
-	if source != "" {
-		q += ` AND source = $` + itoa(i)
-		args = append(args, source)
-		i++
+	add("timestamp", f.Since, ">=")
+	add("timestamp", f.Until, "<=")
+	q += " ORDER BY timestamp DESC"
+	if f.Limit <= 0 || f.Limit > 200 {
+		f.Limit = 50
 	}
-	if module != "" {
-		q += ` AND module = $` + itoa(i)
-		args = append(args, module)
-		i++
-	}
-	q += ` ORDER BY timestamp DESC`
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	q += ` LIMIT $` + itoa(i)
-	args = append(args, limit)
+	q += " LIMIT $" + itoa(i)
+	args = append(args, f.Limit)
 	i++
-	if offset > 0 {
-		q += ` OFFSET $` + itoa(i)
-		args = append(args, offset)
+	if f.Offset > 0 {
+		q += " OFFSET $" + itoa(i)
+		args = append(args, f.Offset)
 	}
 	var list []LogEntry
 	err := s.db.SelectContext(ctx, &list, q, args...)

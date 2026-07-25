@@ -19,6 +19,7 @@ func NewHandler(store *Store) *Handler { return &Handler{store: store} }
 // Register 注册路由（受认证保护：查询/统计/处理）。
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/logs", h.List)
+	r.GET("/logs/query", h.QueryLogs) // M5 增强：trace_id 精确 + q 关键词 + 时间窗
 	r.GET("/logs/stats", h.Stats)
 	r.GET("/logs/trend", h.Trend)
 	r.GET("/logs/sources", h.SourceBreakdown)
@@ -65,8 +66,27 @@ func (h *Handler) Create(c *gin.Context) {
 func (h *Handler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, err := h.store.Query(c.Request.Context(),
-		c.Query("level"), c.Query("source"), c.Query("module"), limit, offset)
+	list, err := h.store.Query(c.Request.Context(), QueryFilter{
+		Level: c.Query("level"), Source: c.Query("source"), Module: c.Query("module"),
+		Limit: limit, Offset: offset,
+	})
+	if err != nil {
+		httpx.Err(c, 500, 50012, err.Error())
+		return
+	}
+	httpx.OK(c, list)
+}
+
+// QueryLogs 增强查询（M5）：trace_id 精确 + q message 关键词 + 时间窗。
+func (h *Handler) QueryLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	list, err := h.store.Query(c.Request.Context(), QueryFilter{
+		Level: c.Query("level"), Source: c.Query("source"), Module: c.Query("module"),
+		TraceID: c.Query("trace_id"), Q: c.Query("q"),
+		Since: c.Query("since"), Until: c.Query("until"),
+		Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		httpx.Err(c, 500, 50012, err.Error())
 		return

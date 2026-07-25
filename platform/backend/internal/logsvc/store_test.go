@@ -1,8 +1,12 @@
 package logsvc
 
 import (
+	"context"
 	"strconv"
+	"strings"
 	"testing"
+
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
 // TestItoa 验证 itoa 对两位数正确（之前 bug：只支持 0-9）。
@@ -51,5 +55,32 @@ func TestCreateFromJSONFields(t *testing.T) {
 	}
 	if e.TraceID != "djw123" {
 		t.Errorf("trace_id = %q, want djw123", e.TraceID)
+	}
+}
+
+// TestQuery_TraceIDAndQ Query 按 trace_id 精确 + message 关键词 ILIKE（M5）。
+func TestQuery_TraceIDAndQ(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "platform_log")
+	s := NewStore(db)
+	ctx := context.Background()
+
+	_ = s.CreateFromJSON(ctx, "ERROR", "backend", "build failed: redeclared", map[string]interface{}{"trace_id": "tr_a", "module": "appdeploy"})
+	_ = s.CreateFromJSON(ctx, "ERROR", "backend", "other error", map[string]interface{}{"trace_id": "tr_b", "module": "appdeploy"})
+
+	// 按 trace_id 精确
+	list, err := s.Query(ctx, QueryFilter{TraceID: "tr_a", Limit: 10})
+	if err != nil || len(list) != 1 || list[0].TraceID != "tr_a" {
+		t.Fatalf("trace_id=tr_a 应 1 条，得到 %v err=%v", list, err)
+	}
+	// 按 message 关键词
+	list2, _ := s.Query(ctx, QueryFilter{Q: "redeclared", Limit: 10})
+	if len(list2) != 1 || !strings.Contains(list2[0].Message, "redeclared") {
+		t.Fatalf("q=redeclared 应 1 条，得到 %v", list2)
+	}
+	// 不匹配 q 应 0
+	list3, _ := s.Query(ctx, QueryFilter{Q: "nomatch", Limit: 10})
+	if len(list3) != 0 {
+		t.Fatalf("q=nomatch 应 0 条，得到 %d", len(list3))
 	}
 }
