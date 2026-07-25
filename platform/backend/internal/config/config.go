@@ -24,6 +24,14 @@ type Config struct {
 	GitBashPath        string // Windows 下 opencode 所需 git bash 路径
 	// 应用部署引擎（板块06 M2）：产出应用构建部署后，以此 host 拼 URL
 	AppDeployHost string
+	// 日志（M2：落盘 + JSON 格式）
+	LogFormat     string // console / json（prod 推荐 json）
+	LogOutput     string // stdout / file
+	LogFile       string // 主日志文件（output=file 时）
+	LogErrorFile  string // error.log 独立（Error+ 汇总）
+	LogMaxSizeMB  int    // 单文件最大 MB（lumberjack 滚动）
+	LogMaxBackups int    // 保留旧文件数
+	LogMaxAgeDays int    // 保留天数
 }
 
 // Load 从环境变量（及可选的 .env 文件）读取配置。
@@ -33,6 +41,14 @@ func Load() (*Config, error) {
 
 	v.SetDefault("env", "dev")
 	v.SetDefault("log_level", "info")
+	// 日志输出（M2）：prod 建议 LOG_FORMAT=json LOG_OUTPUT=file
+	v.SetDefault("log_format", "console")
+	v.SetDefault("log_output", "stdout")
+	v.SetDefault("log_file", "/data/logs/app.log")
+	v.SetDefault("log_error_file", "/data/logs/error.log")
+	v.SetDefault("log_max_size_mb", 100)
+	v.SetDefault("log_max_backups", 7)
+	v.SetDefault("log_max_age_days", 30)
 	v.SetDefault("backend_http_addr", ":8080")
 	v.SetDefault("backend_cors_origins", "http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000")
 	// database_url 不设默认:开发/生产强制 PostgreSQL(禁 SQLite)。无 DATABASE_URL 或 sqlite:// → Load 报错。
@@ -56,6 +72,13 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Env:                v.GetString("env"),
 		LogLevel:           v.GetString("log_level"),
+		LogFormat:          v.GetString("log_format"),
+		LogOutput:          v.GetString("log_output"),
+		LogFile:            v.GetString("log_file"),
+		LogErrorFile:       v.GetString("log_error_file"),
+		LogMaxSizeMB:       v.GetInt("log_max_size_mb"),
+		LogMaxBackups:      v.GetInt("log_max_backups"),
+		LogMaxAgeDays:      v.GetInt("log_max_age_days"),
 		HTTPAddr:           v.GetString("backend_http_addr"),
 		CORSOrigins:        splitCSV(v.GetString("backend_cors_origins")),
 		DatabaseURL:        v.GetString("database_url"),
