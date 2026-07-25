@@ -15,6 +15,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.51.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

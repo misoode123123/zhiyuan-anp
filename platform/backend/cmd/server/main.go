@@ -64,7 +64,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	logger := zhlog.New(cfg.LogLevel)
+	logger := zhlog.New(zhlog.Config{
+		Level:      cfg.LogLevel,
+		Format:     cfg.LogFormat,
+		Output:     cfg.LogOutput,
+		File:       cfg.LogFile,
+		ErrorFile:  cfg.LogErrorFile,
+		MaxSizeMB:  cfg.LogMaxSizeMB,
+		MaxBackups: cfg.LogMaxBackups,
+		MaxAgeDays: cfg.LogMaxAgeDays,
+	})
 	defer logger.Sync()
 
 	// 数据层（强制 PG，禁 SQLite——见 config.Load 校验）
@@ -426,7 +435,16 @@ func runMigrateCmd(cmd string) {
 	if err != nil {
 		panic(err)
 	}
-	logger := zhlog.New(cfg.LogLevel)
+	logger := zhlog.New(zhlog.Config{
+		Level:      cfg.LogLevel,
+		Format:     cfg.LogFormat,
+		Output:     cfg.LogOutput,
+		File:       cfg.LogFile,
+		ErrorFile:  cfg.LogErrorFile,
+		MaxSizeMB:  cfg.LogMaxSizeMB,
+		MaxBackups: cfg.LogMaxBackups,
+		MaxAgeDays: cfg.LogMaxAgeDays,
+	})
 	defer logger.Sync()
 	database, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
