@@ -112,16 +112,27 @@ func (s *Store) Login(ctx context.Context, name, password string) (string, *User
 	return token, u, nil
 }
 
-// ValidToken 校验 token，返回用户名（CtxUserID 用 name，与 X-User 一致）。
+// ValidToken 校验 token，返回用户名 + 是否有效。
+// 保持 (string,bool) 签名以满足 appgw.TokenVerifier 接口（gateway.go）；内部委托 ValidTokenFull。
 func (s *Store) ValidToken(ctx context.Context, token string) (string, bool) {
+	name, _, ok := s.ValidTokenFull(ctx, token)
+	return name, ok
+}
+
+// ValidTokenFull 校验 token，返回 (用户名, 用户id, 是否有效)。
+// name 供 CtxUserID（与 X-User 一致，向后兼容）；id 供 CtxUserDBID（写归属列/审计用）。
+func (s *Store) ValidTokenFull(ctx context.Context, token string) (string, string, bool) {
 	if token == "" {
-		return "", false
+		return "", "", false
 	}
-	var name string
-	if err := s.db.GetContext(ctx, &name, `SELECT user_name FROM auth_session WHERE token=$1 AND expires_at > CURRENT_TIMESTAMP`, token); err != nil || name == "" {
-		return "", false
+	var row struct {
+		Name string `db:"user_name"`
+		UID  string `db:"user_id"`
 	}
-	return name, true
+	if err := s.db.GetContext(ctx, &row, `SELECT user_name, user_id FROM auth_session WHERE token=$1 AND expires_at > CURRENT_TIMESTAMP`, token); err != nil || row.Name == "" {
+		return "", "", false
+	}
+	return row.Name, row.UID, true
 }
 
 // Logout 删除 token（登出）。

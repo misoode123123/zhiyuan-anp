@@ -11,8 +11,10 @@ import (
 const (
 	// HeaderUserID 用户标识请求头（M1 模拟登录；后续换 OIDC/SSO token）。
 	HeaderUserID = "X-User"
-	// CtxUserID context key。
+	// CtxUserID context key（存用户名 name，与 X-User 一致；向后兼容）。
 	CtxUserID = "user_id"
+	// CtxUserDBID 用户 DB 主键（usr_xxx），用于写归属列/审计；与 CtxUserID(=name) 并存，零回归。
+	CtxUserDBID = "user_db_id"
 )
 
 // publicPaths 无需登录的白名单（登录接口本身；healthz 不在 /api/v1 下,不受 AuthUser 管）。
@@ -40,13 +42,14 @@ func AuthUser(store *Store) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		name, ok := store.ValidToken(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
+		name, uid, ok := store.ValidTokenFull(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
 		if !ok {
 			httpx.Err(c, 401, 40101, "登录已过期,请重新登录")
 			c.Abort()
 			return
 		}
 		c.Set(CtxUserID, name)
+		c.Set(CtxUserDBID, uid)
 		c.Next()
 	}
 }

@@ -80,6 +80,33 @@ func TestAuthUser_ValidTokenPass(t *testing.T) {
 	}
 }
 
+// TestAuthUser_SetsDBID 有效 token → 同时注入 CtxUserID(=name) 与 CtxUserDBID(=usr_xxx)。
+func TestAuthUser_SetsDBID(t *testing.T) {
+	store := newAuthTestStore(t)
+	store.db.MustExec(`INSERT INTO auth_session (token, user_id, user_name, expires_at) VALUES ('tok_dbid', 'usr_1', 'alice', NOW() + INTERVAL '1 day')`)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(AuthUser(store))
+	var name, dbid string
+	r.GET("/x", func(c *gin.Context) {
+		name = c.GetString(CtxUserID)
+		dbid = c.GetString(CtxUserDBID)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer tok_dbid")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("应 200, 得 %d body=%s", w.Code, w.Body.String())
+	}
+	if name != "alice" {
+		t.Fatalf("CtxUserID 应为 alice, 得 %q", name)
+	}
+	if dbid != "usr_1" {
+		t.Fatalf("CtxUserDBID 应为 usr_1, 得 %q", dbid)
+	}
+}
+
 // TestAuthUser_ExpiredToken_401 过期 token → 401。
 func TestAuthUser_ExpiredToken_401(t *testing.T) {
 	store := newAuthTestStore(t)
