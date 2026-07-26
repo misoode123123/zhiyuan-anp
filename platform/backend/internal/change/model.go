@@ -10,7 +10,8 @@ type ChangeRequest struct {
 	ProjectSpaceID string     `json:"project_space_id" db:"project_space_id"`
 	UserID         string     `json:"user_id,omitempty" db:"user_id"` // 作者（绩效归属；区别于 reviewer 审批人）
 	Kind           string     `json:"kind" db:"kind"`                 // code / dispatch
-	SourceID       string     `json:"source_id" db:"source_id"`
+	SourceID       string     `json:"source_id" db:"source_id"`       // 需求驱动=requirement_id；纯应用变更=application_id
+	ApplicationID  string     `json:"application_id" db:"application_id"` // 归属应用（source_id=reqID 时这里存 appID；列 historically 恒 NULL，闭环收敛后启用）
 	RepoDir        string     `json:"repo_dir" db:"repo_dir"`
 	Prompt         string     `json:"prompt" db:"prompt"`
 	Model          string     `json:"model" db:"model"`

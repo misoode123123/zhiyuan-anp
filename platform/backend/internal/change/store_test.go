@@ -167,3 +167,32 @@ func TestMarkReleased_ViaRequirement(t *testing.T) {
 		t.Fatalf("source_id=req_id 的变更 MarkReleased(app_id) 后应 released,得到 %s", got.Status)
 	}
 }
+
+// TestCreate_WritesApplicationID Create 须写入 application_id 列（列已存在但历史上恒 NULL）。
+// 闭环收敛后 appdeploy 产变更时 source_id=reqID、application_id=appID，发布靠 source_id 回写 delivered，
+// 靠 application_id 关联应用——故该列必须能写能读。见 PRD 2026-07-26 主线闭环收敛 3.1。
+func TestCreate_WritesApplicationID(t *testing.T) {
+	s := newTestStore(t)
+	s.db.MustExec(`INSERT INTO appdeploy_application (id, project_space_id, name) VALUES ('app_9', 'ps_1', 'hello')`)
+	c := mk("ps_1", "req_9")
+	c.ApplicationID = "app_9"
+	if err := s.Create(context.Background(), c); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ApplicationID != "app_9" {
+		t.Fatalf("application_id 往返不一致：得到 %q，想要 app_9", got.ApplicationID)
+	}
+	// 未设置 application_id 时读回应为空串（COALESCE 兜底，非 NULL→string 崩溃）
+	c2 := mk("ps_1", "req_10")
+	if err := s.Create(context.Background(), c2); err != nil {
+		t.Fatalf("create2: %v", err)
+	}
+	got2, _ := s.Get(context.Background(), c2.ID)
+	if got2.ApplicationID != "" {
+		t.Fatalf("未设 application_id 时读回应为空串，得到 %q", got2.ApplicationID)
+	}
+}

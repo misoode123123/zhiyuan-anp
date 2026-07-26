@@ -26,7 +26,7 @@ func nullable(s string) interface{} {
 
 // chgCols 显式列（可空文本列 COALESCE 防 NULL→string 扫描错误）。
 // c. 前缀:LEFT JOIN 后列名需消歧;app_name 派生自 source_id→app 或 source_id→requirement→app。
-const chgCols = `c.id, c.project_space_id, COALESCE(c.user_id,'') AS user_id, COALESCE(c.kind,'') AS kind, COALESCE(c.source_id,'') AS source_id, COALESCE(c.repo_dir,'') AS repo_dir, COALESCE(c.prompt,'') AS prompt, COALESCE(c.model,'') AS model, COALESCE(c.output,'') AS output, c.status, c.reviewer, c.reviewed_at, c.created_at, COALESCE(a.name,'') AS app_name`
+const chgCols = `c.id, c.project_space_id, COALESCE(c.user_id,'') AS user_id, COALESCE(c.kind,'') AS kind, COALESCE(c.source_id,'') AS source_id, COALESCE(c.application_id,'') AS application_id, COALESCE(c.repo_dir,'') AS repo_dir, COALESCE(c.prompt,'') AS prompt, COALESCE(c.model,'') AS model, COALESCE(c.output,'') AS output, c.status, c.reviewer, c.reviewed_at, c.created_at, COALESCE(a.name,'') AS app_name`
 
 // chgFrom change_request LEFT JOIN appdeploy_application(双路径:source_id 直接是 app_id,或经 requirement.application_id)。
 const chgFrom = ` FROM change_request c
@@ -43,9 +43,9 @@ const appSourceCond = `(source_id = $1 OR source_id IN (SELECT id FROM requireme
 func (s *Store) Create(ctx context.Context, c *ChangeRequest) error {
 	c.ID = "chg_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO change_request (id, project_space_id, user_id, kind, source_id, repo_dir, prompt, model, output, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
-		c.ID, c.ProjectSpaceID, nullable(c.UserID), c.Kind, c.SourceID, c.RepoDir, c.Prompt, c.Model, c.Output)
+		`INSERT INTO change_request (id, project_space_id, user_id, kind, source_id, application_id, repo_dir, prompt, model, output, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')`,
+		c.ID, c.ProjectSpaceID, nullable(c.UserID), c.Kind, c.SourceID, nullable(c.ApplicationID), c.RepoDir, c.Prompt, c.Model, c.Output)
 	return err
 }
 
