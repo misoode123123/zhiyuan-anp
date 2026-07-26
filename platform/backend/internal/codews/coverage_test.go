@@ -54,13 +54,13 @@ func TestSanitizeID(t *testing.T) {
 type stubTool struct{ name string }
 
 func (s stubTool) Name() string { return s.name }
-func (s stubTool) Start(string, int) (*exec.Cmd, error) {
+func (s stubTool) Start(string, int, []string) (*exec.Cmd, error) {
 	return nil, fmt.Errorf("stub 不启动")
 }
 
 // TestNewManager_DefaultTools NewManager 应预注册 opencode/claude/codex 三工具。
 func TestNewManager_DefaultTools(t *testing.T) {
-	m := NewManager("127.0.0.1")
+	m := NewManager("127.0.0.1", nil)
 	got := append([]string(nil), m.Tools()...)
 	sort.Strings(got)
 	want := []string{"claude", "codex", "opencode"}
@@ -71,7 +71,7 @@ func TestNewManager_DefaultTools(t *testing.T) {
 
 // TestNewManager_HostPropagated host 字段应存到 Manager，影响后续 Session.URL 推算。
 func TestNewManager_HostPropagated(t *testing.T) {
-	m := NewManager("10.10.0.28")
+	m := NewManager("10.10.0.28", nil)
 	if m.host != "10.10.0.28" {
 		t.Errorf("host = %q, want 10.10.0.28", m.host)
 	}
@@ -79,7 +79,7 @@ func TestNewManager_HostPropagated(t *testing.T) {
 
 // TestRegister_AddsTool Register 后工具应出现在 Tools() 列表中。
 func TestRegister_AddsTool(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.Register(stubTool{name: "custom"})
 	found := false
 	for _, n := range m.Tools() {
@@ -95,7 +95,7 @@ func TestRegister_AddsTool(t *testing.T) {
 
 // TestRegister_Overwrite 同名工具再次 Register 应覆盖（数量不变, 取最新）。
 func TestRegister_Overwrite(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.Register(stubTool{name: "opencode"})
 	if n := len(m.Tools()); n != 3 {
 		t.Errorf("同名覆盖后工具数 = %d, want 3", n)
@@ -108,7 +108,7 @@ func TestRegister_Overwrite(t *testing.T) {
 
 // TestGet_Empty 空 Manager.Get 必返回 nil。
 func TestGet_Empty(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	if s := m.Get("app", "user"); s != nil {
 		t.Errorf("空 Manager.Get 应返回 nil, got %+v", s)
 	}
@@ -116,7 +116,7 @@ func TestGet_Empty(t *testing.T) {
 
 // TestGet_DeadSession Session 无 cmd（已退出或未启动）→ alive()=false → Get 返回 nil。
 func TestGet_DeadSession(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{AppID: "app", UserID: "user"}
 	if s := m.Get("app", "user"); s != nil {
 		t.Errorf("无 cmd 的 Session 应视为已死, got %+v", s)
@@ -125,7 +125,7 @@ func TestGet_DeadSession(t *testing.T) {
 
 // TestGet_AliveSession cmd 非 nil 且 ProcessState==nil → 返回该 Session 实例。
 func TestGet_AliveSession(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	injected := &Session{
 		AppID: "app", UserID: "user",
 		cmd: &exec.Cmd{}, // ProcessState 默认 nil → alive()=true
@@ -138,7 +138,7 @@ func TestGet_AliveSession(t *testing.T) {
 
 // TestGet_KeyAppUserID Get 用 "appID:userID" 拼接 key 查找；混淆 appID/userID 不应命中。
 func TestGet_KeyAppUserID(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	injected := &Session{AppID: "app", UserID: "u", cmd: &exec.Cmd{}}
 	m.sessions["app:u"] = injected
 	// 反着拼成 "u:app" 不应命中
@@ -185,7 +185,7 @@ func TestAlive_ProcessStateSet(t *testing.T) {
 
 // TestAllocPortLocked_Empty 空会话应分配首个端口 portMin。
 func TestAllocPortLocked_Empty(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	if p := m.allocPortLocked(); p != portMin {
 		t.Errorf("空 Manager 首 port = %d, want %d", p, portMin)
 	}
@@ -193,7 +193,7 @@ func TestAllocPortLocked_Empty(t *testing.T) {
 
 // TestAllocPortLocked_SkipUsed 已占用端口应被跳过, 返回最小可用。
 func TestAllocPortLocked_SkipUsed(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["a:u1"] = &Session{Port: portMin}
 	m.sessions["a:u2"] = &Session{Port: portMin + 2}
 	if got := m.allocPortLocked(); got != portMin+1 {
@@ -203,7 +203,7 @@ func TestAllocPortLocked_SkipUsed(t *testing.T) {
 
 // TestAllocPortLocked_Full 所有端口(9400-9450)都占用 → 返回 0（无可用）。
 func TestAllocPortLocked_Full(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
 		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
 	}
@@ -293,7 +293,7 @@ func TestEnsureSession_EmptyList(t *testing.T) {
 
 // TestSessionMessages_NoSession 无活跃会话 → 返回 ("", nil)（非致命）。
 func TestSessionMessages_NoSession(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	out, err := m.SessionMessages("app", "user")
 	if err != nil || out != "" {
 		t.Errorf("无会话应返回 ('',nil), got (%q,%v)", out, err)
@@ -302,7 +302,7 @@ func TestSessionMessages_NoSession(t *testing.T) {
 
 // TestSessionMessages_NoSessionID 会话 alive 但无 SessionID → 返回 ("", nil)。
 func TestSessionMessages_NoSessionID(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user",
 		cmd: &exec.Cmd{}, // alive, 但 SessionID 为空
@@ -327,7 +327,7 @@ func TestSessionMessages_ParsesAndFormats(t *testing.T) {
 	defer srv.Close()
 	port := portOf(t, srv.URL)
 
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user", Port: port,
 		SessionID: "ses_1",
@@ -351,7 +351,7 @@ func TestSessionMessages_DecodeFails(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := portOf(t, srv.URL)
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user", Port: port,
 		SessionID: "ses_1",
@@ -364,7 +364,7 @@ func TestSessionMessages_DecodeFails(t *testing.T) {
 
 // TestSessionMessages_HTTPFetchFails 工作台不可达(Port=1) → GET 失败 → 返回 error。
 func TestSessionMessages_HTTPFetchFails(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user", Port: 1, // 不可达
 		SessionID: "ses_1",
@@ -381,7 +381,7 @@ func TestSessionMessages_HTTPFetchFails(t *testing.T) {
 
 // TestSendPrompt_NoSession 无活跃会话 → 返回"无活跃编码会话"错误。
 func TestSendPrompt_NoSession(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	err := m.SendPrompt("app", "user", "do something")
 	if err == nil {
 		t.Fatal("无会话应返回错误")
@@ -403,7 +403,7 @@ func TestSendPrompt_PostsPrompt(t *testing.T) {
 	defer srv.Close()
 	port := portOf(t, srv.URL)
 
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user", Port: port,
 		SessionID: "ses_1",
@@ -427,7 +427,7 @@ func TestSendPrompt_PostsPrompt(t *testing.T) {
 
 // TestSendPrompt_HTTPError 工作台不可达 → 返回 error（不静默吞）。
 func TestSendPrompt_HTTPError(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	m.sessions["app:user"] = &Session{
 		AppID: "app", UserID: "user", Port: 1, // 不可达
 		SessionID: "ses_1",
@@ -444,7 +444,7 @@ func TestSendPrompt_HTTPError(t *testing.T) {
 
 // TestEnsure_UnknownTool 未注册的工具名 → 立即返回错误, 不启动进程。
 func TestEnsure_UnknownTool(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	_, err := m.Ensure("app", "/tmp/repo", "u", "no-such-tool")
 	if err == nil {
 		t.Fatal("未知工具应返回错误")
@@ -457,7 +457,7 @@ func TestEnsure_UnknownTool(t *testing.T) {
 // TestEnsure_PortExhausted 所有端口已占用 → 返回"无可用工作台端口"。
 // 这里只测错误路径, 不实际启动 opencode。
 func TestEnsure_PortExhausted(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
 		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
 	}
@@ -472,7 +472,7 @@ func TestEnsure_PortExhausted(t *testing.T) {
 
 // TestEnsure_ReuseAliveSameTool 同 appID+userID+tool 的 alive 会话 → 复用, 不重启。
 func TestEnsure_ReuseAliveSameTool(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	existing := &Session{
 		AppID: "app", UserID: "u", Tool: "opencode",
 		Port: 9400,
@@ -490,7 +490,7 @@ func TestEnsure_ReuseAliveSameTool(t *testing.T) {
 
 // TestEnsure_DefaultUserID userID 空 → 默认 "anonymous", 用此 key 命中复用。
 func TestEnsure_DefaultUserID(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	existing := &Session{
 		AppID: "app", UserID: "anonymous", Tool: "opencode",
 		cmd: &exec.Cmd{},
@@ -507,7 +507,7 @@ func TestEnsure_DefaultUserID(t *testing.T) {
 
 // TestEnsure_DefaultToolName toolName 空 → 默认 "opencode"。
 func TestEnsure_DefaultToolName(t *testing.T) {
-	m := NewManager("h")
+	m := NewManager("h", nil)
 	existing := &Session{
 		AppID: "app", UserID: "u", Tool: "opencode",
 		cmd: &exec.Cmd{},

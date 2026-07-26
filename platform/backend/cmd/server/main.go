@@ -124,6 +124,9 @@ func main() {
 		"default_code_model":     {"zai-coding/glm-5.1", "model"},
 		"opencode_config_path":   {cfg.OpencodeConfigPath, "opencode"},
 		"opencode_git_bash_path": {cfg.GitBashPath, "opencode"},
+		// claude（Claude Code via ttyd）走智谱 anthropic 兼容端点；key 复用 zhipuai_api_key
+		"claude_base_url":        {"https://open.bigmodel.cn/api/anthropic", "model"},
+		"claude_model":           {"glm-4.6", "model"},
 	}); err != nil {
 		logger.Fatal("seed system_config", zap.Error(err))
 	}

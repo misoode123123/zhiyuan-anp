@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"zhiyuan-anp/platform/backend/internal/config"
 )
 
 const (
@@ -31,6 +33,7 @@ const (
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
 type Manager struct {
 	host     string
+	cfg      *config.Store // 系统配置（取智谱key/claude端点注入子进程）；nil=不注入
 	mu       sync.Mutex
 	sessions map[string]*Session // appID -> 当前活跃工作台
 	tools    map[string]Tool
@@ -55,12 +58,29 @@ type Session struct {
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
-func NewManager(host string) *Manager {
-	m := &Manager{host: host, sessions: map[string]*Session{}, tools: map[string]Tool{}}
+func NewManager(host string, cfg *config.Store) *Manager {
+	m := &Manager{host: host, cfg: cfg, sessions: map[string]*Session{}, tools: map[string]Tool{}}
 	m.Register(OpenCodeTool{})
 	m.Register(ClaudeTool{})
 	m.Register(CodexTool{})
 	return m
+}
+
+// toolEnv 按工具构造子进程环境变量：claude 注入智谱 anthropic 兼容端点
+// （ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL），key 复用 zhipuai_api_key；其他工具返回 nil（继承 os.Environ）。
+func (m *Manager) toolEnv(toolName string) []string {
+	if m.cfg == nil || toolName != "claude" {
+		return nil
+	}
+	key := m.cfg.Get("zhipuai_api_key", "")
+	if key == "" {
+		return nil
+	}
+	return []string{
+		"ANTHROPIC_BASE_URL=" + m.cfg.Get("claude_base_url", "https://open.bigmodel.cn/api/anthropic"),
+		"ANTHROPIC_AUTH_TOKEN=" + key,
+		"ANTHROPIC_MODEL=" + m.cfg.Get("claude_model", "glm-4.6"),
+	}
 }
 
 // Register 注册一个编码工具（可插拔）。
@@ -116,7 +136,7 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 
 	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
 	workDir := ensureWorktree(repoDir, userID)
-	cmd, err := tool.Start(workDir, port)
+	cmd, err := tool.Start(workDir, port, m.toolEnv(toolName))
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +161,14 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	if !waitListen(port, 6*time.Second) {
 		return nil, fmt.Errorf("%s 工作台启动后未监听 :%d", toolName, port)
 	}
-	// 复用 opencode 已有会话(按 repo 目录匹配,取最近);无则预创建一个带项目上下文的会话。
-	// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
-	s.SessionID = ensureSession(port, repoDir)
-	if s.SessionID != "" {
-		s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
+	// opencode 专属：复用/预创建会话（claude/codex 走 ttyd，无对等 session API，跳过——靠工具自身 --continue 恢复）
+	if toolName == "opencode" {
+		// 复用 opencode 已有会话(按 repo 目录匹配,取最近);无则预创建一个带项目上下文的会话。
+		// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
+		s.SessionID = ensureSession(port, repoDir)
+		if s.SessionID != "" {
+			s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
+		}
 	}
 	return s, nil
 }
