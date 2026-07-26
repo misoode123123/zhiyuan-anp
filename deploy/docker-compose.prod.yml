@@ -39,6 +39,7 @@ services:
       - ../data/repos:/data/repos # 产出应用源码（docker build 上下文）
       - ../data/opencode:/root/.local/share/opencode # opencode 会话/凭据持久化(跨 backend 重建不丢)
       - ../data/claude:/root/.claude # claude(Claude Code) 会话/凭据持久化(ttyd 工作台 --continue 据此恢复)
+      - ../data/codex:/root/.codex # codex 会话/transcript 持久化(绩效互动抓取依赖)
     depends_on:
       - agent-runtime
       - postgres
