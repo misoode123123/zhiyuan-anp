@@ -13,6 +13,8 @@ type ConfigItem struct {
 	Key         string    `json:"key" db:"key"`
 	Value       string    `json:"value" db:"value"`
 	Category    string    `json:"category" db:"category"`
+	// description 列可空（无 NOT NULL/default）；查询须 COALESCE 成 ""，否则 NULL 行扫进 string 会报
+	// "converting NULL to string is unsupported"（曾因手插无 description 的行致 backend 启动 FATAL）。
 	Description string    `json:"description" db:"description"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -33,7 +35,7 @@ func NewStore(db *sqlx.DB) *Store {
 // Load 从 DB 加载全部配置到缓存。
 func (s *Store) Load(ctx context.Context) error {
 	var items []ConfigItem
-	if err := s.db.SelectContext(ctx, &items, `SELECT key, value, category, description, updated_at FROM system_config`); err != nil {
+	if err := s.db.SelectContext(ctx, &items, `SELECT key, value, category, COALESCE(description,'') AS description, updated_at FROM system_config`); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -58,7 +60,7 @@ func (s *Store) Get(key, fallback string) string {
 // All 返回全部配置项（给系统配置页）。
 func (s *Store) All() []ConfigItem {
 	var items []ConfigItem
-	_ = s.db.Select(&items, `SELECT key, value, category, description, updated_at FROM system_config ORDER BY category, key`)
+	_ = s.db.Select(&items, `SELECT key, value, category, COALESCE(description,'') AS description, updated_at FROM system_config ORDER BY category, key`)
 	return items
 }
 
