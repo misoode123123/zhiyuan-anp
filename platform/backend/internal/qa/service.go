@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,12 @@ type Service struct {
 func NewService(store *Store, agentRuntimeURL string) *Service {
 	return &Service{store: store, agentRuntimeURL: agentRuntimeURL}
 }
+
+// 人工验收哨兵（Handler 据此映射 400/409）。
+var (
+	ErrInvalidVerdict      = errors.New("非法的验收结论，仅支持 passed/failed")
+	ErrNotManualVerifiable = errors.New("该用例非人工验收范围（仅 manual 用例支持人工验收）")
+)
 
 // SetGateway 注入算力中心网关（P2：优先用网关调模型）。
 func (s *Service) SetGateway(gw *compute.Gateway) { s.gateway = gw }
@@ -144,9 +151,29 @@ func (s *Service) ListByRequirement(ctx context.Context, rid string) ([]TestCase
 	return s.store.ListByRequirement(ctx, rid)
 }
 
+// RecordManualVerdict 人工验收：校验 verdict + 范围（manual 或已验过），置字段并落库。
+// verifierID 来自 auth.CtxUserDBID（Handler 注入）。
+func (s *Service) RecordManualVerdict(ctx context.Context, tc *TestCase, verdict, note, verifierID string) error {
+	if verdict != "passed" && verdict != "failed" {
+		return ErrInvalidVerdict
+	}
+	if tc.Status != "manual" && tc.VerifierID == "" {
+		return ErrNotManualVerifiable
+	}
+	tc.Status = verdict
+	tc.ManualNote = note
+	tc.VerifierID = verifierID
+	tc.VerifiedAt = nowTime()
+	return s.store.UpdateManualVerdict(ctx, tc)
+}
+
 // RunHTTPRequest 对着 baseURL 执行用例的 HTTP 检查，比对期望，回写 tc 并持久化。
 // 判定：有断言且通过→passed；有断言不通过→failed；无 HTTP 断言或未部署→manual。
 func (s *Service) RunHTTPRequest(ctx context.Context, tc *TestCase, baseURL string) error {
+	// 已人工验收：自动运行不覆盖（防批量验收把人工结论冲回 manual）。
+	if tc.VerifierID != "" {
+		return nil
+	}
 	tc.RunAt = nowTime()
 	// 无 HTTP 断言：标人工
 	if tc.ExpectedStatus == 0 && strings.TrimSpace(tc.ExpectedBody) == "" {

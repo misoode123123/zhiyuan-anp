@@ -2,6 +2,7 @@ package qa
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -410,5 +411,96 @@ func TestService_GetListPassthrough(t *testing.T) {
 	rl, err := svc.ListByRequirement(ctx, "req_1")
 	if err != nil || len(rl) != 1 {
 		t.Fatalf("ListByRequirement 透传错误：err=%v len=%d", err, len(rl))
+	}
+}
+
+// ---------- RecordManualVerdict 人工验收 ----------
+
+// TestRecordManualVerdict_ManualCase manual 用例：录 passed → 字段齐 + 落库。
+func TestRecordManualVerdict_ManualCase(t *testing.T) {
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "m1")
+	tc.ID = "tc_rm1"
+	tc.Status = "manual"
+	_ = svc.store.Create(ctx, tc)
+
+	if err := svc.RecordManualVerdict(ctx, tc, "passed", "看着没问题", "usr_x"); err != nil {
+		t.Fatalf("RecordManualVerdict: %v", err)
+	}
+	if tc.Status != "passed" || tc.ManualNote != "看着没问题" || tc.VerifierID != "usr_x" || tc.VerifiedAt == nil {
+		t.Fatalf("字段未置：status=%s note=%q verifier=%q at=%v", tc.Status, tc.ManualNote, tc.VerifierID, tc.VerifiedAt)
+	}
+	got, _ := svc.store.Get(ctx, tc.ID)
+	if got.Status != "passed" || got.VerifierID != "usr_x" {
+		t.Fatalf("未落库：status=%s verifier=%q", got.Status, got.VerifierID)
+	}
+}
+
+// TestRecordManualVerdict_Reverify 已验过（verifier_id 非空）允许改判。
+func TestRecordManualVerdict_Reverify(t *testing.T) {
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "m2")
+	tc.ID = "tc_rm2"
+	tc.Status = "manual"
+	_ = svc.store.Create(ctx, tc)
+	_ = svc.RecordManualVerdict(ctx, tc, "passed", "", "usr_x") // 先验通过
+	if err := svc.RecordManualVerdict(ctx, tc, "failed", "复测发现 bug", "usr_y"); err != nil {
+		t.Fatalf("改判应允许： %v", err)
+	}
+	if tc.Status != "failed" || tc.VerifierID != "usr_y" || tc.ManualNote != "复测发现 bug" {
+		t.Fatalf("改判字段不符：status=%s verifier=%q note=%q", tc.Status, tc.VerifierID, tc.ManualNote)
+	}
+}
+
+// TestRecordManualVerdict_AutoOnlyRejected auto-only（passed 且无 verifier）→ ErrNotManualVerifiable。
+func TestRecordManualVerdict_AutoOnlyRejected(t *testing.T) {
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "auto")
+	tc.ID = "tc_auto"
+	tc.Status = "passed" // 自动验过的，无 verifier_id
+	_ = svc.store.Create(ctx, tc)
+	err := svc.RecordManualVerdict(ctx, tc, "failed", "x", "usr_x")
+	if !errors.Is(err, ErrNotManualVerifiable) {
+		t.Fatalf("auto-only 应拒，得到 err=%v", err)
+	}
+}
+
+// TestRecordManualVerdict_InvalidVerdict verdict 非法 → ErrInvalidVerdict。
+func TestRecordManualVerdict_InvalidVerdict(t *testing.T) {
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "iv")
+	tc.ID = "tc_iv"
+	tc.Status = "manual"
+	_ = svc.store.Create(ctx, tc)
+	if err := svc.RecordManualVerdict(ctx, tc, "bogus", "", "usr_x"); !errors.Is(err, ErrInvalidVerdict) {
+		t.Fatalf("非法 verdict 应 ErrInvalidVerdict，得到 %v", err)
+	}
+}
+
+// TestRunHTTPRequest_SkipsVerified 已验（verifier_id 非空）用例：RunHTTPRequest 短路，不改写。
+func TestRunHTTPRequest_SkipsVerified(t *testing.T) {
+	svc := newSvcWithStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "skip")
+	tc.ID = "tc_skip"
+	tc.Status = "passed"
+	tc.VerifierID = "usr_already" // 已人工验收
+	_ = svc.store.Create(ctx, tc)
+	// Create 不写 verifier_id，白盒补上使其与内存态一致。
+	_, _ = svc.store.db.ExecContext(ctx, `UPDATE test_case SET verifier_id=$1 WHERE id=$2`, "usr_already", tc.ID)
+	tc.VerifiedAt = nil // 清内存态，避免旧值干扰断言
+
+	if err := svc.RunHTTPRequest(ctx, tc, "http://example.com"); err != nil {
+		t.Fatalf("RunHTTPRequest: %v", err)
+	}
+	if tc.Status != "passed" {
+		t.Fatalf("已验用例不应被改写，得到 status=%s", tc.Status)
+	}
+	if tc.ActualBody != "" {
+		t.Fatalf("已验用例不应写 ActualBody，得到 %q", tc.ActualBody)
 	}
 }
