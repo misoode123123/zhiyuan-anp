@@ -7,7 +7,8 @@ import "time"
 type Task struct {
 	ID             string    `json:"id" db:"id"`
 	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
-	Kind           string    `json:"kind" db:"kind"` // code / dispatch
+	UserID         string    `json:"user_id,omitempty" db:"user_id"` // 创建人（绩效归属）
+	Kind           string    `json:"kind" db:"kind"`                 // code / dispatch
 	SourceID       string    `json:"source_id" db:"source_id"`
 	RepoDir        string    `json:"repo_dir" db:"repo_dir"`
 	Prompt         string    `json:"prompt" db:"prompt"`

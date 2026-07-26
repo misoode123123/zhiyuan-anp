@@ -8,7 +8,8 @@ import "time"
 type Conversation struct {
 	ID             string    `json:"id" db:"id"`
 	ProjectSpaceID string    `json:"project_space_id" db:"project_space_id"`
-	Status         string    `json:"status" db:"status"` // active/submitted
+	UserID         string    `json:"user_id,omitempty" db:"user_id"` // 发起人（绩效归属）
+	Status         string    `json:"status" db:"status"`             // active/submitted
 	Title          *string   `json:"title" db:"title"`
 	RequirementID  *string   `json:"requirement_id" db:"requirement_id"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`

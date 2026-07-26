@@ -41,7 +41,7 @@ func NewCodingAgent(store *config.Store, engine *rule.Engine, tasks *codetask.St
 
 // Submit 异步提交编码任务：规则校验 → 创建 running 任务 → goroutine 跑 opencode → 完成登记变更。
 // HTTP 立即返回 task_id，不阻塞。
-func (a *CodingAgent) Submit(ctx context.Context, psID, kind, sourceID, repoDir, prompt, model string) (*codetask.Task, error) {
+func (a *CodingAgent) Submit(ctx context.Context, psID, userID, kind, sourceID, repoDir, prompt, model string) (*codetask.Task, error) {
 	if err := a.checkRules(ctx, prompt); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (a *CodingAgent) Submit(ctx context.Context, psID, kind, sourceID, repoDir,
 	}
 	t := &codetask.Task{
 		ID:             "ctask_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:19],
-		ProjectSpaceID: psID, Kind: kind, SourceID: sourceID,
+		ProjectSpaceID: psID, UserID: userID, Kind: kind, SourceID: sourceID,
 		RepoDir: repoDir, Prompt: prompt, Model: model,
 	}
 	if err := a.tasks.Create(ctx, t); err != nil {
@@ -121,7 +121,7 @@ func (a *CodingAgent) run(taskID string) {
 	notif.Emit("", t.ProjectSpaceID, "code_done", "编码完成", "任务 "+taskID+" 已完成，待审批", "/approvals")
 	if a.changes != nil {
 		chg := &change.ChangeRequest{
-			ProjectSpaceID: t.ProjectSpaceID, Kind: t.Kind, SourceID: t.SourceID,
+			ProjectSpaceID: t.ProjectSpaceID, UserID: t.UserID, Kind: t.Kind, SourceID: t.SourceID,
 			RepoDir: t.RepoDir, Prompt: t.Prompt, Model: t.Model, Output: out,
 		}
 		if err := a.changes.Create(ctx, chg); err == nil {

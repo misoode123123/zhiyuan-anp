@@ -14,12 +14,20 @@ type Store struct {
 // NewStore 构造 Store。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
+// nullable 空串→NULL（绩效"未归属"桶按 IS NULL 判定；新行总有 user_id，历史行为 NULL）。
+func nullable(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // Create 新建任务（running）。
 func (s *Store) Create(ctx context.Context, t *Task) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO code_task (id, project_space_id, kind, source_id, repo_dir, prompt, model, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'running')`,
-		t.ID, t.ProjectSpaceID, t.Kind, t.SourceID, t.RepoDir, t.Prompt, t.Model)
+		`INSERT INTO code_task (id, project_space_id, user_id, kind, source_id, repo_dir, prompt, model, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running')`,
+		t.ID, t.ProjectSpaceID, nullable(t.UserID), t.Kind, t.SourceID, t.RepoDir, t.Prompt, t.Model)
 	return err
 }
 
@@ -27,7 +35,7 @@ func (s *Store) Create(ctx context.Context, t *Task) error {
 func (s *Store) Get(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.db.GetContext(ctx, &t,
-		`SELECT id, project_space_id, kind, source_id, repo_dir, prompt, model, status, output, change_id, created_at, updated_at
+		`SELECT id, project_space_id, COALESCE(user_id,'') AS user_id, kind, source_id, repo_dir, prompt, model, status, output, change_id, created_at, updated_at
 		 FROM code_task WHERE id = $1`, id)
 	return &t, err
 }
@@ -36,7 +44,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Task, error) {
 func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) ([]Task, error) {
 	var list []Task
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT t.id, t.project_space_id, t.kind, t.source_id, t.repo_dir, t.prompt, t.model, t.status, t.output, t.change_id, t.created_at, t.updated_at,
+		`SELECT t.id, t.project_space_id, COALESCE(t.user_id,'') AS user_id, t.kind, t.source_id, t.repo_dir, t.prompt, t.model, t.status, t.output, t.change_id, t.created_at, t.updated_at,
 		        COALESCE(r.title,'') AS req_title,
 		        COALESCE(a.name,'') AS app_name
 		 FROM code_task t

@@ -130,7 +130,7 @@ func TestExtractJSON(t *testing.T) {
 // 这里以 ListConversations（走 SELECT）的结果为准断言 status，避开该缺陷。
 func TestService_CreateAndList(t *testing.T) {
 	svc := NewService(newTestStore(t), nil, "http://unused")
-	c, err := svc.CreateConversation(context.Background(), "ps_1")
+	c, err := svc.CreateConversation(context.Background(), "ps_1", "usr_test")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestService_GetConversation_FullLifecycle(t *testing.T) {
 	store := newTestStore(t)
 	svc := NewService(store, nil, "http://unused")
 
-	conv, _ := svc.CreateConversation(context.Background(), "ps_1")
+	conv, _ := svc.CreateConversation(context.Background(), "ps_1", "usr_test")
 	// 直接通过 store 追加消息，绕开 SendMessage（它会调 AI）
 	mustAddMsg(t, store, conv.ID, "user", `{"text":"你好"}`)
 	mustAddMsg(t, store, conv.ID, "assistant", `{"text":"请补充"}`)

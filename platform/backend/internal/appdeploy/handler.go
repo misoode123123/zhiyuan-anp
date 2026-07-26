@@ -271,7 +271,7 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 		summary += "【diff】\n" + truncateStr(diff, 3000) + "\n"
 	}
 	chg := &change.ChangeRequest{
-		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
 		Prompt: in.Note, Output: strings.TrimSpace(summary),
 	}
 	if err := h.changes.Create(c.Request.Context(), chg); err != nil {
@@ -470,7 +470,7 @@ func (h *Handler) Submit(c *gin.Context) {
 		return
 	}
 	chg := &change.ChangeRequest{
-		ProjectSpaceID: psID, Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
 		Output: "【需求】" + in.ReqID + "\n【核对】通过\n" + details,
 	}
 	if err := h.changes.Create(c.Request.Context(), chg); err != nil {

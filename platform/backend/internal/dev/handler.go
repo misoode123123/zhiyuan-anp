@@ -3,6 +3,7 @@ package dev
 import (
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
@@ -49,7 +50,7 @@ func (h *Handler) Code(c *gin.Context) {
 		return
 	}
 	psID := c.GetString("project_space_id")
-	t, err := h.agent.Submit(c.Request.Context(), psID, "code", "", req.RepoDir, req.Prompt, req.Model)
+	t, err := h.agent.Submit(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), "code", "", req.RepoDir, req.Prompt, req.Model)
 	if err != nil {
 		httpx.Err(c, 500, 50002, err.Error())
 		return

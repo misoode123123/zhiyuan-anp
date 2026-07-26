@@ -15,14 +15,23 @@ type Store struct {
 // NewStore 构造。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
-const convCols = `id, project_space_id, status, title, requirement_id, created_at, updated_at`
+// nullable 空串→NULL（绩效"未归属"桶按 IS NULL 判定）。
+func nullable(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+const convCols = `id, project_space_id, COALESCE(user_id,'') AS user_id, status, title, requirement_id, created_at, updated_at`
 const msgCols = `id, conversation_id, role, content, media_kind, created_at`
 
 // CreateConv 新建会话（active）。
 func (s *Store) CreateConv(ctx context.Context, c *Conversation) error {
 	c.ID = "conv_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO conversation (id, project_space_id, status) VALUES ($1, $2, 'active')`, c.ID, c.ProjectSpaceID)
+		`INSERT INTO conversation (id, project_space_id, user_id, status) VALUES ($1, $2, $3, 'active')`,
+		c.ID, c.ProjectSpaceID, nullable(c.UserID))
 	return err
 }
 

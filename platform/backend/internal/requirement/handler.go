@@ -298,7 +298,7 @@ func (h *Handler) DispatchCode(c *gin.Context) {
 	}
 	psID := c.Param("id")
 	rid := c.Param("rid")
-	t, err := h.svc.Dispatch(c.Request.Context(), psID, rid, in.RepoDir, in.Model)
+	t, err := h.svc.Dispatch(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), rid, in.RepoDir, in.Model)
 	if err != nil {
 		if errors.Is(err, dev.ErrActiveTaskConflict) {
 			httpx.Err(c, 409, 40902, err.Error())

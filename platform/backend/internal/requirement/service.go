@@ -161,7 +161,7 @@ func (s *Service) ListByApp(ctx context.Context, appID string) ([]Requirement, e
 
 // Dispatch 把需求规格异步派发给编码引擎，返回异步任务。
 // repo_dir 优先级：显式传入 > 需求归属应用的托管仓库（应用一等公民：代码归属确定）。
-func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, model string) (*codetask.Task, error) {
+func (s *Service) Dispatch(ctx context.Context, projectSpaceID, userID, reqID, repoDir, model string) (*codetask.Task, error) {
 	if s.coder == nil {
 		return nil, fmt.Errorf("编码引擎未配置")
 	}
@@ -192,7 +192,7 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, repoDir, 
 		return nil, fmt.Errorf("无法确定代码位置：需求未归属应用且自动创建托管应用失败")
 	}
 	_ = s.repo.UpdateStatus(ctx, reqID, "developing") // 需求进入开发(specified→developing→delivered)
-	return s.coder.Submit(ctx, projectSpaceID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
+	return s.coder.Submit(ctx, projectSpaceID, userID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
 }
 
 // deriveAppName 为未归属应用的需求派生一个友好的托管应用名。

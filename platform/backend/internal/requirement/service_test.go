@@ -165,7 +165,7 @@ func TestService_Dispatch_NoCoder(t *testing.T) {
 	svc := NewService(repo, "", nil, nil, nil)
 	mustCreateRepo(t, repo, mkReq("req_d", "ps_1"))
 
-	_, err := svc.Dispatch(context.Background(), "ps_1", "req_d", "/tmp/repo", "glm-5.1")
+	_, err := svc.Dispatch(context.Background(), "ps_1", "usr_test", "req_d", "/tmp/repo", "glm-5.1")
 	if err == nil || !strings.Contains(err.Error(), "编码引擎未配置") {
 		t.Fatalf("coder=nil 应返回'编码引擎未配置'，得到: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestService_Dispatch_RequirementNotFound(t *testing.T) {
 	// 注意：coder 仍是 nil，所以 Dispatch 会先在 coder 校验处失败；
 	// 但若需走"读取需求"分支，可让 coder 非 nil —— 这里仅验证 nil 路径稳定返回错误，
 	// 避免在单测中引入 dev.CodingAgent 真实依赖（任务约定跳过 opencode 编码相关）。
-	_, err := svc.Dispatch(context.Background(), "ps_1", "req_missing", "/tmp/repo", "glm-5.1")
+	_, err := svc.Dispatch(context.Background(), "ps_1", "usr_test", "req_missing", "/tmp/repo", "glm-5.1")
 	if err == nil {
 		t.Fatal("Dispatch 应返回错误")
 	}

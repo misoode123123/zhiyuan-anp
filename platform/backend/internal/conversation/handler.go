@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
@@ -47,7 +48,7 @@ func (h *Handler) Register(r gin.IRouter) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/conversations [post]
 func (h *Handler) Create(c *gin.Context) {
-	conv, err := h.svc.CreateConversation(c.Request.Context(), c.Param("id"))
+	conv, err := h.svc.CreateConversation(c.Request.Context(), c.Param("id"), c.GetString(auth.CtxUserDBID))
 	if err != nil {
 		httpx.Err(c, 500, 50011, err.Error())
 		return

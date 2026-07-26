@@ -67,8 +67,8 @@ func toChatContent(c msgContent) interface{} {
 }
 
 // CreateConversation 建会话。
-func (s *Service) CreateConversation(ctx context.Context, psID string) (*Conversation, error) {
-	c := &Conversation{ProjectSpaceID: psID}
+func (s *Service) CreateConversation(ctx context.Context, psID, userID string) (*Conversation, error) {
+	c := &Conversation{ProjectSpaceID: psID, UserID: userID}
 	if err := s.store.CreateConv(ctx, c); err != nil {
 		return nil, err
 	}
