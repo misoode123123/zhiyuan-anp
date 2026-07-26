@@ -31,9 +31,13 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 }
 
 // newRouterWith 注册路由到 gin 引擎。
+// 注入 admin 角色：env 敏感的部署操作（Deploy/Stop/Start/Delete）按 roles 自鉴权，
+// 这些测试本意是验 404/400（应用不存在/未部署）等业务逻辑而非 RBAC 拒绝，故给足权限直达目标路径
+// （补 deploy 权限分离工作漏更 test fixture 的预存缺口——否则一律 403，到不了被测分支）。
 func newRouterWith(h *Handler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("roles", []string{"admin"}); c.Next() })
 	h.Register(r.Group("/api/v1"))
 	return r
 }
