@@ -108,3 +108,28 @@ func TestMiddleware_ActorIsUserID(t *testing.T) {
 		t.Fatalf("actor_id 应为 usr_1(非 username alice), 得 %q", actor)
 	}
 }
+
+// TestMiddleware_ManualVerdict 人工验收路由在白名单 → operation_log 记 qa.manual-verdict，
+// resource_type=test_case、resource_id=被验收用例 id（:tcid）。
+func TestMiddleware_ManualVerdict(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "operation_log")
+	store := NewStore(db)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set(auth.CtxUserDBID, "usr_qa"); c.Set("trace_id", "tr_qa"); c.Next() })
+	r.Use(Middleware(store))
+	r.POST("/api/v1/project-spaces/:id/test-cases/:tcid/manual-verdict", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/project-spaces/ps1/test-cases/tc_z/manual-verdict", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	list, _ := store.Query(context.Background(), "", "usr_qa", "qa.manual-verdict", "", "", 10, 0)
+	if len(list) != 1 {
+		t.Fatalf("manual-verdict 应记 1 条，得到 %d", len(list))
+	}
+	if list[0].ResourceType != "test_case" || list[0].ResourceID != "tc_z" {
+		t.Fatalf("审计字段不符：type=%s id=%s", list[0].ResourceType, list[0].ResourceID)
+	}
+}

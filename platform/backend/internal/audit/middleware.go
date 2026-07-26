@@ -11,16 +11,17 @@ import (
 // whitelist 白名单路由（method + FullPath 模板）→ 审计 action。
 // 只记关键操作（部署/删除/审批/发布/配额/配置/登录），避免普通 CRUD 噪音。
 var whitelist = map[string]string{
-	"POST /api/v1/project-spaces/:id/apps/:aid/deploy":        "app.deploy",
-	"POST /api/v1/project-spaces/:id/apps/:aid/promote":       "app.promote",
-	"POST /api/v1/project-spaces/:id/apps/:aid/deploy-commit": "app.deploy-commit",
-	"DELETE /api/v1/project-spaces/:id/apps/:aid":             "app.delete",
-	"POST /api/v1/changes/:id/approve":                        "change.approve",
-	"POST /api/v1/changes/:id/reject":                         "change.reject",
-	"POST /api/v1/project-spaces/:id/releases":                "release.create",
-	"PUT /api/v1/project-spaces/:id/quota":                    "quota.update",
-	"PUT /api/v1/config/:key":                                 "config.set",
-	"POST /api/v1/auth/login":                                 "auth.login",
+	"POST /api/v1/project-spaces/:id/apps/:aid/deploy":                "app.deploy",
+	"POST /api/v1/project-spaces/:id/apps/:aid/promote":               "app.promote",
+	"POST /api/v1/project-spaces/:id/apps/:aid/deploy-commit":         "app.deploy-commit",
+	"DELETE /api/v1/project-spaces/:id/apps/:aid":                     "app.delete",
+	"POST /api/v1/changes/:id/approve":                                "change.approve",
+	"POST /api/v1/changes/:id/reject":                                 "change.reject",
+	"POST /api/v1/project-spaces/:id/releases":                        "release.create",
+	"PUT /api/v1/project-spaces/:id/quota":                            "quota.update",
+	"PUT /api/v1/config/:key":                                         "config.set",
+	"POST /api/v1/auth/login":                                         "auth.login",
+	"POST /api/v1/project-spaces/:id/test-cases/:tcid/manual-verdict": "qa.manual-verdict",
 }
 
 // Middleware 审计中间件：白名单路由在 c.Next() 后记一条 operation_log。
@@ -74,6 +75,8 @@ func deriveResource(action string, c *gin.Context) (rtype, rid string) {
 		return "config", c.Param("key")
 	case strings.HasPrefix(action, "auth."):
 		return "user", c.GetString("user_id")
+	case strings.HasPrefix(action, "qa."):
+		return "test_case", c.Param("tcid")
 	}
 	return "", ""
 }
