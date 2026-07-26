@@ -114,7 +114,7 @@ var StandardSeeds = []standardSeed{
 			"**通用段**：40001 参数错误 / 40101 未登录 / 40301 无权限 / 40401 不存在 / 40901 冲突 / 42901 限流。\n\n" +
 			"**5xx 模块段**（每模块独占一段，避免冲突）：\n" +
 			"- workspace 50001 / dev 50002 / requirement 50003-04 / config 50005 / rule 50006\n" +
-			"- standard 50007 / qa 50008 / release 50009 / auth-appgw-conversation 50010-12 / attendance 50013\n" +
+			"- standard 50007 / qa 50008 / release 50009 / auth-appgw-conversation 50010-12\n" +
 			"- appdeploy 50020-22 / pgsupply 50030-32 / security 50050 / quota 50060-61 / ops 50070 / capability 50090\n\n" +
 			"- body 的 `message` 用中文，面向用户可读（如「应用 xxx 不存在」）。\n" +
 			"- 新模块接入时申领新段（如 500xx），不与他人复用。"},

@@ -106,7 +106,7 @@ INSERT INTO coding_standard (id, project_space_id, name, category, content, prio
 
 **5xx 模块段**（每模块独占一段，避免冲突）：
 - workspace 50001 / dev 50002 / requirement 50003-04 / config 50005 / rule 50006
-- standard 50007 / qa 50008 / release 50009 / auth-appgw-conversation 50010-12 / attendance 50013
+- standard 50007 / qa 50008 / release 50009 / auth-appgw-conversation 50010-12
 - appdeploy 50020-22 / pgsupply 50030-32 / security 50050 / quota 50060-61 / ops 50070 / capability 50090
 
 - body 的 `message` 用中文，面向用户可读（如「应用 xxx 不存在」）。

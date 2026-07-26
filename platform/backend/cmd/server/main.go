@@ -26,7 +26,6 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/appgw"
-	"zhiyuan-anp/platform/backend/internal/attendance"
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
@@ -186,7 +185,6 @@ func main() {
 		logger.Fatal("seed capability_skill", zap.Error(err))
 	}
 	capabilityGateway := capability.NewGateway(capabilityStore, cfg.AgentRuntimeURL, "", quotaSvc)
-	attendanceSvc := attendance.NewService(attendance.NewStore(database))
 
 	// ---- 跨模块枢纽（main 构造，多模块共用：reqRepo/devAgent/appDeployHandler）----
 	reqRepo := requirement.NewRepository(database)
@@ -238,7 +236,6 @@ func main() {
 	notif.SetStore(notifStore)
 	notif.NewHandler(notifStore).Register(v1)
 	security.Register(v1, securityStore)
-	attendance.Register(v1, attendanceSvc)
 	capability.Register(v1, capabilityStore, capabilityGateway)
 	ops.Register(v1, opsStore, cfg.AgentRuntimeURL, v)
 	docs.Register(v1, store)
