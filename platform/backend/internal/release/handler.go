@@ -87,7 +87,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// 🧪 测试门禁：开关开时，来源需求须至少 1 条 passed 测试用例，否则拒绝发布。
 	if h.testGateEnabled() && chg != nil && chg.SourceID != "" {
 		if passed, _ := h.testGate.PassedCountByRequirement(c.Request.Context(), chg.SourceID); passed <= 0 {
-			httpx.Err(c, 409, 40901, "发布被测试门禁拦截：来源需求无 passed 测试用例。请先到「测试中心」生成用例并运行至至少 1 条 passed，或在「系统配置」关闭 release_require_passed_test")
+			httpx.Err(c, 409, 40901, "发布被测试门禁拦截：来源需求无 passed 测试用例。请先到「测试中心」生成用例并运行至至少 1 条 passed（或对 manual 用例做人工验收），或在「系统配置」关闭 release_require_passed_test")
 			return
 		}
 	}
