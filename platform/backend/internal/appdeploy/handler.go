@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -297,12 +298,18 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	httpx.Created(c, chg)
 }
 
-// truncateStr 截断字符串到最多 n 字符(避免变更摘要过长)。
+// truncateStr 截断字符串到最多 n 字节(避免变更摘要过长),但退到完整 UTF-8 边界,
+// 不从多字节字符中间切断——否则产生无效 UTF-8,PG UTF8 列拒收(SQLSTATE 22021),
+// register-change 在含中文 git 内容的应用上必 500。
 func truncateStr(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "...(截断)"
+	end := n
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + "...(截断)"
 }
 
 // summarizeChange 调 GLM 把 diff/对话总结成自然语言(改了什么、为什么、影响),让人看明白。

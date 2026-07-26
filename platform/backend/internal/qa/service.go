@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -233,9 +234,14 @@ func (s *Service) RunHTTPRequest(ctx context.Context, tc *TestCase, baseURL stri
 	return s.store.UpdateRun(ctx, tc)
 }
 
+// truncate 截断到最多 n 字节,退到完整 UTF-8 边界(避免切断多字节字符产生无效 UTF-8)。
 func truncate(s string, n int) string {
 	if len(s) > n {
-		return s[:n] + "…"
+		end := n
+		for end > 0 && !utf8.RuneStart(s[end]) {
+			end--
+		}
+		return s[:end] + "…"
 	}
 	return s
 }
