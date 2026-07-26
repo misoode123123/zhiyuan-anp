@@ -286,9 +286,10 @@ export default function ApplicationsPage() {
       if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`))
         return;
     }
-    const body: Record<string, string> = { env: "prod" };
+    const body: Record<string, string> = {};
     if (nodeID) body.node_id = nodeID;
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/deploy`, {
+    // 部署权限分离：上线统一走 /promote（带变更闸门 + prod 鉴权），不再绕道 /deploy env=prod
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -309,6 +310,9 @@ export default function ApplicationsPage() {
     if (action === "deploy") {
       if (env) body.env = env;
       if (nodeID) body.node_id = nodeID;
+    } else {
+      // stop/start：显式带 env（默认 prod；后端按 env 鉴权，dev 无 prod 权限会被 403）
+      body.env = env || "prod";
     }
     // 进度提示
     if (action === "deploy") {

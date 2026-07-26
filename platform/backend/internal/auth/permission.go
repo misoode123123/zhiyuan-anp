@@ -11,13 +11,23 @@ const (
 
 // OpRoles 操作 → 允许的角色集合（权限矩阵）。
 var OpRoles = map[string][]string{
-	"requirement.create":   {RoleBusiness, RoleAdmin},
-	"requirement.dispatch": {RoleDev, RoleAdmin},
-	"code.run":             {RoleDev, RoleAdmin},
-	"change.approve":       {RoleDev, RoleGatekeeper, RoleAdmin},
-	"release.create":       {RoleGatekeeper, RoleAdmin},
-	"rule.manage":          {RoleRuleArchitect, RoleAdmin},
-	"config.manage":        {RoleAdmin},
+	"requirement.create":     {RoleBusiness, RoleAdmin},
+	"requirement.dispatch":   {RoleDev, RoleAdmin},
+	"code.run":               {RoleDev, RoleAdmin},
+	"change.approve":         {RoleDev, RoleGatekeeper, RoleAdmin},
+	"release.create":         {RoleGatekeeper, RoleAdmin},
+	"rule.manage":            {RoleRuleArchitect, RoleAdmin},
+	"config.manage":          {RoleAdmin},
+	// 部署权限分离（spec 2026-07-26）：dev 可 test，prod 仅 gatekeeper/admin；business 不可部署
+	"app.deploy.test":        {RoleDev, RoleGatekeeper, RoleAdmin},
+	"app.deploy.prod":        {RoleGatekeeper, RoleAdmin},
+	"app.deploy-commit.test": {RoleDev, RoleGatekeeper, RoleAdmin},
+	"app.deploy-commit.prod": {RoleGatekeeper, RoleAdmin},
+	"app.stop.test":          {RoleDev, RoleGatekeeper, RoleAdmin},
+	"app.stop.prod":          {RoleGatekeeper, RoleAdmin},
+	"app.start.test":         {RoleDev, RoleGatekeeper, RoleAdmin},
+	"app.start.prod":         {RoleGatekeeper, RoleAdmin},
+	"app.delete":             {RoleAdmin},
 }
 
 // Allowed 判断角色集合是否可执行某操作（未定义操作默认允许）。

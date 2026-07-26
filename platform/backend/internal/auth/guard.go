@@ -55,6 +55,14 @@ var routeOps = map[string]string{
 	"PUT /api/v1/compute/routes/:task_type": "config.manage",
 	// 日志标记处理（admin）
 	"PATCH /api/v1/logs/:id/resolve": "config.manage",
+	// 部署权限分离（env 敏感）：占位 op 不在 OpRoles 故 AutoRequire 放行，
+	// handler 内读 context roles 后按 env 判 app.deploy.{test,prod} 等真实 op（spec 2026-07-26）。
+	"POST /api/v1/project-spaces/:id/apps/:aid/deploy":        "app.deploy._",
+	"POST /api/v1/project-spaces/:id/apps/:aid/promote":       "app.promote._",
+	"POST /api/v1/project-spaces/:id/apps/:aid/deploy-commit": "app.deploy-commit._",
+	"POST /api/v1/project-spaces/:id/apps/:aid/stop":          "app.stop._",
+	"POST /api/v1/project-spaces/:id/apps/:aid/start":         "app.start._",
+	"DELETE /api/v1/project-spaces/:id/apps/:aid":             "app.delete._",
 }
 
 // RouteOp 返回某「方法+路由模板」对应的操作；未登记返回空串（不强制）。
@@ -97,6 +105,7 @@ func AutoRequire(store *Store) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		c.Set("roles", roles) // 注入 roles，供 env 敏感的部署 handler 按 env 自行鉴权
 		if !Allowed(op, roles) {
 			httpx.Err(c, 403, 40301, "无权限执行「"+op+"」（用户 "+user+"，角色: "+strings.Join(roles, ",")+"）")
 			c.Abort()

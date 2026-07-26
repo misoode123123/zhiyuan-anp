@@ -919,6 +919,21 @@ func (h *Handler) Deploy(c *gin.Context) {
 	if !IsValidEnv(env) {
 		env = EnvTest
 	}
+	// 部署权限分离（spec 2026-07-26）：按 env 鉴权
+	if !auth.Allowed("app.deploy."+env, rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限部署到 "+env+" 环境")
+		return
+	}
+	// prod 额外要求变更已审批（变更闸门，与 Promote 一致，防 /deploy env=prod 绕过 /promote）
+	if env == EnvProd && h.changes != nil {
+		if hasAny, _ := h.changes.HasAny(c.Request.Context(), aid); hasAny {
+			if ok, _ := h.changes.HasApproved(c.Request.Context(), aid); !ok {
+				httpx.Err(c, 409, 40920, "需先登记变更并审批通过才能上线 prod（变更闸门）")
+				return
+			}
+			_ = h.changes.MarkReleased(c.Request.Context(), aid)
+		}
+	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
 	go h.buildAndDeploy(psID, aid, "", env, in.NodeID)
 	noteSuffix := ""
@@ -946,6 +961,15 @@ func (h *Handler) Promote(c *gin.Context) {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
+	// 部署权限分离：上线 prod 需 gatekeeper/admin
+	if !auth.Allowed("app.deploy.prod", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限上线 prod（仅 gatekeeper/admin）")
+		return
+	}
+	var in struct {
+		NodeID string `json:"node_id"`
+	}
+	_ = c.ShouldBindJSON(&in)
 	// 🚪 变更闸门（grandfather）：登记过变更的应用，必须有 approved 变更才能上线 prod。
 	// 从未登记过的老应用不受约束——一旦开始登记变更，即进入治理流程。
 	if h.changes != nil {
@@ -959,7 +983,7 @@ func (h *Handler) Promote(c *gin.Context) {
 		}
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, EnvProd) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, "", EnvProd, "")
+	go h.buildAndDeploy(psID, aid, "", EnvProd, in.NodeID)
 	httpx.OK(c, gin.H{"id": aid, "env": EnvProd, "status": "building", "note": "上线中：部署到 prod 环境"})
 }
 
@@ -987,6 +1011,11 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 	env := in.Env
 	if !IsValidEnv(env) {
 		env = EnvTest
+	}
+	// 部署权限分离：按 env 鉴权
+	if !auth.Allowed("app.deploy-commit."+env, rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限部署到 "+env+" 环境")
+		return
 	}
 	if _, err := h.store.Get(c.Request.Context(), psID, aid); err != nil {
 		httpx.Err(c, 404, 40420, "应用不存在")
@@ -1149,19 +1178,34 @@ func min(a, b int) int {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid}/stop [post]
 func (h *Handler) Stop(c *gin.Context) {
+	var in struct {
+		Env string `json:"env"`
+	}
+	_ = c.ShouldBindJSON(&in)
+	env := in.Env
+	if !IsValidEnv(env) {
+		env = EnvProd // 默认 prod（向后兼容现有调用）
+	}
+	// 部署权限分离：按 env 鉴权
+	if !auth.Allowed("app.stop."+env, rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限停止 "+env+" 实例")
+		return
+	}
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
-	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), EnvProd)
+	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), env)
 	if a == nil || ins == nil || ins.ContainerName == "" {
-		httpx.Err(c, 400, 50020, "应用未在 prod 部署")
+		httpx.Err(c, 400, 50020, "应用未在 "+env+" 部署")
 		return
 	}
 	if _, err := h.deployer.Stop(c.Request.Context(), ins.ContainerName); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
-	_ = h.store.SetInstanceStatus(c.Request.Context(), a.ID, EnvProd, "stopped", "", "")
-	_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, "stopped", "", "")
-	httpx.OK(c, gin.H{"id": a.ID, "status": "stopped"})
+	_ = h.store.SetInstanceStatus(c.Request.Context(), a.ID, env, "stopped", "", "")
+	if env == EnvProd {
+		_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, "stopped", "", "")
+	}
+	httpx.OK(c, gin.H{"id": a.ID, "env": env, "status": "stopped"})
 }
 
 // Start 启动应用(prod 实例)。
@@ -1177,19 +1221,34 @@ func (h *Handler) Stop(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid}/start [post]
 func (h *Handler) Start(c *gin.Context) {
+	var in struct {
+		Env string `json:"env"`
+	}
+	_ = c.ShouldBindJSON(&in)
+	env := in.Env
+	if !IsValidEnv(env) {
+		env = EnvProd // 默认 prod（向后兼容现有调用）
+	}
+	// 部署权限分离：按 env 鉴权
+	if !auth.Allowed("app.start."+env, rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限启动 "+env+" 实例")
+		return
+	}
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
-	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), EnvProd)
+	ins, _ := h.store.GetInstance(c.Request.Context(), c.Param("aid"), env)
 	if a == nil || ins == nil || ins.ContainerName == "" {
-		httpx.Err(c, 400, 50020, "应用未在 prod 部署")
+		httpx.Err(c, 400, 50020, "应用未在 "+env+" 部署")
 		return
 	}
 	if _, err := h.deployer.Start(c.Request.Context(), ins.ContainerName); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
-	_ = h.store.SetInstanceStatus(c.Request.Context(), a.ID, EnvProd, "running", "", "")
-	_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, "running", "", "")
-	httpx.OK(c, gin.H{"id": a.ID, "status": "running"})
+	_ = h.store.SetInstanceStatus(c.Request.Context(), a.ID, env, "running", "", "")
+	if env == EnvProd {
+		_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, "running", "", "")
+	}
+	httpx.OK(c, gin.H{"id": a.ID, "env": env, "status": "running"})
 }
 
 // Delete 删除应用 + 清理所有环境实例容器。
@@ -1204,6 +1263,11 @@ func (h *Handler) Start(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid} [delete]
 func (h *Handler) Delete(c *gin.Context) {
+	// 部署权限分离：删除应用仅管理员
+	if !auth.Allowed("app.delete", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限删除应用（仅管理员）")
+		return
+	}
 	a, _ := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
 	if a != nil {
 		// 先删应用库（DropDatabase/Role；库记录在 Store.Delete 级联删 appdeploy_database 前先清）
