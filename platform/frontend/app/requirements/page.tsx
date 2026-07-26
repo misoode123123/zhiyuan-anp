@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
 
@@ -26,12 +26,15 @@ export default function RequirementsPage() {
   const [selApp, setSelApp] = useState(""); // 创建需求时指定的归属应用
   const [desc, setDesc] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [textFiles, setTextFiles] = useState<{ name: string; content: string }[]>([]);
+  const [binFiles, setBinFiles] = useState<{ name: string }[]>([]);
   const [last, setLast] = useState<Requirement | null>(null);
   const [list, setList] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [dispatching, setDispatching] = useState("");
+  const dispatchingRef = useRef(false); // 同步锁：堵住 dispatching state 堵不住的同 tick 连点竞态
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -58,14 +61,37 @@ export default function RequirementsPage() {
     loadList(psID);
   }, [psID]);
 
+  // 文本类附件（md/txt/markdown）读内容拼入业务描述，参与规格生成；图片走 dataURL 多模态；
+  // 二进制（pdf/doc/docx 等）仅留档展示（不参与生成，避免被当图片喂视觉模型报错）。
+  const TEXT_EXTS = [".md", ".markdown", ".txt"];
+  const IMG_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+  function fileKind(name: string): "text" | "image" | "file" {
+    const low = name.toLowerCase();
+    if (TEXT_EXTS.some((e) => low.endsWith(e))) return "text";
+    if (IMG_EXTS.some((e) => low.endsWith(e))) return "image";
+    return "file";
+  }
   function onFiles(files: FileList | null) {
     if (!files) return;
     Array.from(files)
-      .slice(0, 4)
+      .slice(0, 8)
       .forEach((f) => {
-        const reader = new FileReader();
-        reader.onload = () => setImages((p) => [...p, reader.result as string]);
-        reader.readAsDataURL(f);
+        const k = fileKind(f.name);
+        if (k === "text") {
+          const reader = new FileReader();
+          reader.onload = () =>
+            setTextFiles((p) => [
+              ...p,
+              { name: f.name, content: String(reader.result).slice(0, 20000) },
+            ]);
+          reader.readAsText(f);
+        } else if (k === "image") {
+          const reader = new FileReader();
+          reader.onload = () => setImages((p) => [...p, reader.result as string]);
+          reader.readAsDataURL(f);
+        } else {
+          setBinFiles((p) => [...p, { name: f.name }]);
+        }
       });
   }
 
@@ -74,16 +100,24 @@ export default function RequirementsPage() {
     setLoading(true);
     setErr("");
     try {
+      // 文本类附件内容拼入业务描述，随规格生成一并交给 AI（实现"附件参与规格生成"）。
+      const textPart = textFiles.map((t) => `\n\n【附件 ${t.name}】\n${t.content}`).join("");
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: desc, images, application_id: selApp || undefined }),
+        body: JSON.stringify({
+          description: desc + textPart,
+          images,
+          application_id: selApp || undefined,
+        }),
       });
       const r = await res.json();
       if (r.data) {
         setLast(r.data);
         setDesc("");
         setImages([]);
+        setTextFiles([]);
+        setBinFiles([]);
         loadList(psID);
         setMsg(
           selApp
@@ -99,7 +133,8 @@ export default function RequirementsPage() {
   }
 
   async function dispatch(rid: string) {
-    if (!psID || dispatching) return;
+    if (!psID || dispatching || dispatchingRef.current) return;
+    dispatchingRef.current = true; // 同步锁：堵住 dispatching state 堵不住的同 tick 连点竞态
     const req = list.find((x) => x.id === rid) ?? (last?.id === rid ? last : null);
     const appBound = !!req?.application_id;
     setDispatching(rid);
@@ -128,6 +163,7 @@ export default function RequirementsPage() {
       setMsg(`✗ ${e}`);
     } finally {
       setDispatching("");
+      dispatchingRef.current = false;
     }
   }
 
@@ -214,18 +250,34 @@ export default function RequirementsPage() {
       />
 
       <div className="mt-2">
-        <label className="text-xs text-neutral-500">附件截图（可选，多模态，最多 4 张）</label>
+        <label className="text-xs text-neutral-500">
+          附件（可选，支持 md/txt/doc/docx/pdf/图片等，最多 8 个；文本类参与规格生成）
+        </label>
         <input
           type="file"
-          accept="image/*"
+          accept=".md,.markdown,.txt,.doc,.docx,.pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,image/*"
           multiple
           onChange={(e) => onFiles(e.target.files)}
           className="mt-1 block text-sm"
         />
-        {images.length > 0 && (
-          <div className="mt-2 flex gap-2">
+        {(images.length > 0 || textFiles.length > 0 || binFiles.length > 0) && (
+          <div className="mt-2 flex flex-wrap gap-2">
             {images.map((img, i) => (
-              <img key={i} src={img} alt="" className="h-16 rounded border" />
+              <img key={`img-${i}`} src={img} alt="" className="h-16 rounded border" />
+            ))}
+            {textFiles.map((t, i) => (
+              <span key={`txt-${i}`} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                📄 {t.name}（{t.content.length} 字，参与生成）
+              </span>
+            ))}
+            {binFiles.map((t, i) => (
+              <span
+                key={`bin-${i}`}
+                className="rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-500"
+                title="二进制附件仅留档，不参与规格生成"
+              >
+                📎 {t.name}（留档）
+              </span>
             ))}
           </div>
         )}

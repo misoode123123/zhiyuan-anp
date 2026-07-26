@@ -243,10 +243,20 @@ func SeedBootstrapMembers(ctx context.Context, db *sqlx.DB) error {
 		{"biz1", "business"},
 	}
 	for _, m := range demo {
+		// user_id 必须用 user.id（usr_xxx），而非用户名。早期实现误把用户名写入 user_id 列，导致
+		// 按 user_id 查询（如首页 my-tasks 的 roles）永远匹配不到（存量错位由迁移 000016 修复）。
+		var uid string
+		err := db.GetContext(ctx, &uid, `SELECT id FROM "user" WHERE name = $1`, m.user)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // 该演示用户尚未创建（SeedUsers 未跑或环境无此用户），跳过避免再写错位数据
+		}
+		if err != nil {
+			return fmt.Errorf("查演示用户 %s: %w", m.user, err)
+		}
 		if _, err := db.ExecContext(ctx,
 			`INSERT INTO membership (id, project_space_id, user_id, role) VALUES ($1, $2, $3, $4)
 			 ON CONFLICT DO NOTHING`,
-			"mbr_"+uuid.NewString()[:20], "ps_default", m.user, m.role); err != nil {
+			"mbr_"+uuid.NewString()[:20], "ps_default", uid, m.role); err != nil {
 			return err
 		}
 	}

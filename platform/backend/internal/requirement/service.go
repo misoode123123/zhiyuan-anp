@@ -66,7 +66,7 @@ type usageInfo struct {
 	TotalTokens      int
 }
 
-const specSystemPrompt = `你是资深需求分析师。把用户的业务描述（可能附带界面截图/原型图）转为结构化需求规格。
+const specSystemPrompt = `你是资深需求分析师。把用户的业务描述（可能附带界面截图/原型图/需求文档/规格稿等附件）转为结构化需求规格。
 严格只返回纯 JSON（不要 markdown、不要解释），格式：
 {"title":"简洁需求标题","user_story":"作为<角色>，我希望<功能>，以便<价值>","acceptance_criteria":["可验证的验收点1","验收点2","验收点3"]}`
 

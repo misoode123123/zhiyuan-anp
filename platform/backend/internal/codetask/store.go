@@ -66,3 +66,15 @@ func (s *Store) SetChangeID(ctx context.Context, id, changeID string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE code_task SET change_id=$1 WHERE id=$2`, changeID, id)
 	return err
 }
+
+// CountActiveBySource 统计某来源（需求派发时 source_id=requirement_id）下仍在 running 的任务数，
+// 用于派发编码的幂等判重，避免同一需求被连点生成多个并发编码任务。
+func (s *Store) CountActiveBySource(ctx context.Context, sourceID string) (int, error) {
+	if sourceID == "" {
+		return 0, nil
+	}
+	var n int
+	err := s.db.GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM code_task WHERE source_id = $1 AND status = 'running'`, sourceID)
+	return n, err
+}

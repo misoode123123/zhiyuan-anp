@@ -167,14 +167,37 @@ export default function ChatPage() {
     }
     setSending(false);
   }
+  // 文本类附件（md/txt）读内容追加到输入框，让 AI 在对话中理解；图片走 dataURL 多模态；
+  // 二进制（pdf/doc 等）对话暂不支持解析，提示用户改用文本描述。
+  const TEXT_EXTS = [".md", ".markdown", ".txt"];
+  const IMG_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+  function fileKind(name: string): "text" | "image" | "file" {
+    const low = name.toLowerCase();
+    if (TEXT_EXTS.some((e) => low.endsWith(e))) return "text";
+    if (IMG_EXTS.some((e) => low.endsWith(e))) return "image";
+    return "file";
+  }
   function onFiles(files: FileList | null) {
     if (!files) return;
     Array.from(files)
-      .slice(0, 4)
+      .slice(0, 8)
       .forEach((f) => {
-        const rd = new FileReader();
-        rd.onload = () => setImages((p) => [...p, rd.result as string]);
-        rd.readAsDataURL(f);
+        const k = fileKind(f.name);
+        if (k === "text") {
+          const rd = new FileReader();
+          rd.onload = () =>
+            setText(
+              (t) =>
+                (t ? t + "\n" : "") + `【附件 ${f.name}】\n${String(rd.result).slice(0, 20000)}`
+            );
+          rd.readAsText(f);
+        } else if (k === "image") {
+          const rd = new FileReader();
+          rd.onload = () => setImages((p) => [...p, rd.result as string]);
+          rd.readAsDataURL(f);
+        } else {
+          setMsg(`📎 ${f.name} 为二进制附件，对话暂不支持解析，请改用文本描述`);
+        }
       });
   }
   async function genSpec() {
@@ -376,10 +399,11 @@ export default function ChatPage() {
                   </button>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept=".md,.markdown,.txt,.doc,.docx,.pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,image/*"
                     multiple
                     onChange={(e) => onFiles(e.target.files)}
                     className="text-xs"
+                    title="附件：md/txt 读入对话，图片多模态"
                   />
                   <input
                     value={text}

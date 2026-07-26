@@ -1,6 +1,8 @@
 package requirement
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
@@ -298,6 +300,10 @@ func (h *Handler) DispatchCode(c *gin.Context) {
 	rid := c.Param("rid")
 	t, err := h.svc.Dispatch(c.Request.Context(), psID, rid, in.RepoDir, in.Model)
 	if err != nil {
+		if errors.Is(err, dev.ErrActiveTaskConflict) {
+			httpx.Err(c, 409, 40902, err.Error())
+			return
+		}
 		httpx.Err(c, 500, 50004, err.Error())
 		return
 	}

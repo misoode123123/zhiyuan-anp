@@ -85,7 +85,13 @@ func AutoRequire(store *Store) gin.HandlerFunc {
 		}
 		user := c.GetString(CtxUserID)
 		psID := c.GetString("project_space_id")
-		roles, err := store.Roles(c.Request.Context(), user, psID)
+		// membership.user_id 存的是 user.id（usr_xxx），非用户名；先 name→id 解析再查角色，
+		// 否则用用户名查 user_id 永远匹配不到（与 my-tasks 的解析保持一致）。
+		uid := user
+		if u, gErr := store.GetUserByName(c.Request.Context(), user); gErr == nil && u != nil {
+			uid = u.ID
+		}
+		roles, err := store.Roles(c.Request.Context(), uid, psID)
 		if err != nil {
 			httpx.Err(c, 500, 50012, "查询用户角色失败: "+err.Error())
 			c.Abort()

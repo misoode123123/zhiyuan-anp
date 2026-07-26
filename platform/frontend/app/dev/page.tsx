@@ -203,14 +203,29 @@ export default function DevPage() {
               <div className="mt-1 text-xs text-neutral-400">
                 {t.model} · {t.repo_dir}
               </div>
-              {t.output && (
+              {t.status === "failed" ? (
+                <details open className="mt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-red-600">
+                    ❌ 失败原因
+                  </summary>
+                  {t.output ? (
+                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-red-950 p-2 text-xs text-red-200">
+                      {t.output}
+                    </pre>
+                  ) : (
+                    <div className="mt-1 rounded bg-red-50 p-2 text-xs text-red-700">
+                      任务异常终止，未产生输出（可能进程崩溃或被系统杀死）。
+                    </div>
+                  )}
+                </details>
+              ) : t.output ? (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-xs text-neutral-500">产出/日志</summary>
                   <pre className="mt-1 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
                     {t.output}
                   </pre>
                 </details>
-              )}
+              ) : null}
             </div>
           );
         })}

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE_URL, currentProjectSpace } from "@/lib/api";
+import { apiGet, currentProjectSpace } from "@/lib/api";
 
-type Envelope<T> = { code: number; data: T };
+type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
 type Overview = {
   space: PS;
@@ -64,11 +64,11 @@ export default function Home() {
     toRelease: [],
   });
   const [appNames, setAppNames] = useState<Record<string, string>>({});
+  const [loadErr, setLoadErr] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/project-spaces`)
-      .then((r) => r.json())
-      .then((r: Envelope<PS[]>) => {
+    apiGet<Envelope<PS[]>>(`/project-spaces`)
+      .then((r) => {
         setSpaces(r.data ?? []);
         const cur = currentProjectSpace();
         const def =
@@ -76,28 +76,34 @@ export default function Home() {
           (r.data ?? []).find((s) => s.id === "ps_default") ??
           (r.data ?? [])[0];
         if (def) setPsID(def.id);
-      });
+      })
+      .catch((e) => setLoadErr(`加载项目空间失败：${e.message || e}`));
   }, []);
 
   useEffect(() => {
     if (!psID) return;
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/overview`)
-      .then((r) => r.json())
-      .then((r: Envelope<Overview>) => setOv(r.data ?? null));
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/my-tasks`)
-      .then((r) => r.json())
-      .then((r: Envelope<MyTasks>) =>
-        setTasks(r.data ?? { roles: [], toClaim: [], myDev: [], toApprove: [], toRelease: [] })
-      );
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/apps`)
-      .then((r) => r.json())
-      .then((r: Envelope<{ id: string; name: string }[]>) => {
+    setLoadErr("");
+    apiGet<Envelope<Overview>>(`/project-spaces/${psID}/overview`)
+      .then((r) => setOv(r.data ?? null))
+      .catch((e) => setLoadErr(`加载概览失败：${e.message || e}`));
+    apiGet<Envelope<MyTasks>>(`/project-spaces/${psID}/my-tasks`)
+      .then((r) => {
+        if (r.code !== 0) {
+          setLoadErr(`加载我的任务失败：${r.message || "未知错误"}`);
+          return;
+        }
+        setTasks(r.data ?? { roles: [], toClaim: [], myDev: [], toApprove: [], toRelease: [] });
+      })
+      .catch((e) => setLoadErr(`加载我的任务失败：${e.message || e}`));
+    apiGet<Envelope<{ id: string; name: string }[]>>(`/project-spaces/${psID}/apps`)
+      .then((r) => {
         const m: Record<string, string> = {};
         (r.data ?? []).forEach((a) => {
           m[a.id] = a.name;
         });
         setAppNames(m);
-      });
+      })
+      .catch((e) => setLoadErr(`加载应用列表失败：${e.message || e}`));
   }, [psID]);
 
   const { roles, toClaim, myDev, toApprove, toRelease } = tasks;
@@ -163,6 +169,12 @@ export default function Home() {
           <span className="text-xs text-neutral-400">角色:{roles.join(",")}</span>
         )}
       </div>
+
+      {loadErr && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          ⚠️ {loadErr}（请检查登录状态或稍后重试）
+        </div>
+      )}
 
       {/* 流程向导(全8步可见,非角色灰显) */}
       <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">

@@ -3,6 +3,7 @@ package dev
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,6 +20,10 @@ import (
 	"zhiyuan-anp/platform/backend/internal/rule"
 	"zhiyuan-anp/platform/backend/internal/standard"
 )
+
+// ErrActiveTaskConflict 派发幂等冲突：同一来源（需求）已有进行中的编码任务，拒绝重复创建。
+// handler 据此返回 409，避免"派发编码"连点生成多个并发 opencode 抢同一仓库导致卡死。
+var ErrActiveTaskConflict = errors.New("该需求已有进行中的编码任务，请勿重复派发")
 
 // CodingAgent 封装 opencode，支持同步 Run 与异步 Submit。
 type CodingAgent struct {
@@ -40,12 +45,25 @@ func (a *CodingAgent) Submit(ctx context.Context, psID, kind, sourceID, repoDir,
 	if err := a.checkRules(ctx, prompt); err != nil {
 		return nil, err
 	}
+	// 派发幂等（快速路径）：同一来源已有 running 任务则拒绝，避免连点生成多个并发 opencode。
+	if sourceID != "" {
+		if n, err := a.tasks.CountActiveBySource(ctx, sourceID); err == nil && n > 0 {
+			return nil, ErrActiveTaskConflict
+		}
+	}
 	t := &codetask.Task{
 		ID:             "ctask_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:19],
 		ProjectSpaceID: psID, Kind: kind, SourceID: sourceID,
 		RepoDir: repoDir, Prompt: prompt, Model: model,
 	}
 	if err := a.tasks.Create(ctx, t); err != nil {
+		// 并发兜底：极端并发下两条请求同时通过上面的计数判重，DB 部分唯一索引（迁移 000017）会拦下
+		// 第二条 Create；此时再确认一次存在 running，转为友好冲突错误（让 handler 返回 409 而非 500）。
+		if sourceID != "" {
+			if n, qerr := a.tasks.CountActiveBySource(ctx, sourceID); qerr == nil && n > 0 {
+				return nil, ErrActiveTaskConflict
+			}
+		}
 		return nil, err
 	}
 	go a.run(t.ID)
@@ -73,8 +91,16 @@ func (a *CodingAgent) checkRules(ctx context.Context, prompt string) error {
 // run goroutine：跑 opencode → 更新任务 → 登记变更（脱离 HTTP context）。
 func (a *CodingAgent) run(taskID string) {
 	ctx := context.Background()
+	// panic 兜底：goroutine 内任何 panic 都回写失败，避免任务永卡 running、output 为空（历史卡 running 根因之一）。
+	defer func() {
+		if r := recover(); r != nil {
+			_ = a.tasks.MarkFailed(ctx, taskID, fmt.Sprintf("[panic] 编码任务异常崩溃: %v", r))
+		}
+	}()
 	t, err := a.tasks.Get(ctx, taskID)
 	if err != nil {
+		// 任务记录读取失败也要回写失败，否则任务无声卡 running（output 为空，前端永远转圈）。
+		_ = a.tasks.MarkFailed(ctx, taskID, "[系统]任务记录读取失败: "+err.Error())
 		return
 	}
 	prompt := t.Prompt
@@ -141,7 +167,7 @@ func (a *CodingAgent) opencodeRun(ctx context.Context, repoDir, prompt, model st
 	defer cleanup()
 	absConfig, _ := filepath.Abs(configPath)
 
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "opencode", "run", prompt, "-m", model, "--auto", "--dir", workDir)
 	cmd.Dir = workDir
