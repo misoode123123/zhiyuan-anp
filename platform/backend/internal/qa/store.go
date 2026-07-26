@@ -16,7 +16,7 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 // tcCols 显式列（可空文本/数值列 COALESCE 防 NULL→string/int 扫描错误）。
-const tcCols = `id, project_space_id, COALESCE(requirement_id,'') AS requirement_id, title, COALESCE(steps,'') AS steps, COALESCE(expected,'') AS expected, status, COALESCE(method,'') AS method, COALESCE(path,'') AS path, COALESCE(expected_status,0) AS expected_status, COALESCE(expected_body,'') AS expected_body, COALESCE(actual_status,0) AS actual_status, COALESCE(actual_body,'') AS actual_body, run_at, created_at`
+const tcCols = `t.id, t.project_space_id, COALESCE(t.requirement_id,'') AS requirement_id, t.title, COALESCE(t.steps,'') AS steps, COALESCE(t.expected,'') AS expected, t.status, COALESCE(t.method,'') AS method, COALESCE(t.path,'') AS path, COALESCE(t.expected_status,0) AS expected_status, COALESCE(t.expected_body,'') AS expected_body, COALESCE(t.actual_status,0) AS actual_status, COALESCE(t.actual_body,'') AS actual_body, t.run_at, t.created_at, COALESCE(t.manual_note,'') AS manual_note, COALESCE(t.verifier_id,'') AS verifier_id, t.verified_at, COALESCE(ver.name,'') AS verifier_name`
 
 // Create 新建测试用例。
 func (s *Store) Create(ctx context.Context, tc *TestCase) error {
@@ -31,7 +31,7 @@ func (s *Store) Create(ctx context.Context, tc *TestCase) error {
 // Get 取单条。
 func (s *Store) Get(ctx context.Context, id string) (*TestCase, error) {
 	var tc TestCase
-	err := s.db.GetContext(ctx, &tc, `SELECT `+tcCols+` FROM test_case WHERE id = $1`, id)
+	err := s.db.GetContext(ctx, &tc, `SELECT `+tcCols+` FROM test_case t LEFT JOIN "user" ver ON ver.id = t.verifier_id WHERE t.id = $1`, id)
 	return &tc, err
 }
 
@@ -39,7 +39,7 @@ func (s *Store) Get(ctx context.Context, id string) (*TestCase, error) {
 func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) ([]TestCase, error) {
 	var list []TestCase
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+tcCols+` FROM test_case WHERE project_space_id = $1 ORDER BY created_at DESC`, projectSpaceID)
+		`SELECT `+tcCols+` FROM test_case t LEFT JOIN "user" ver ON ver.id = t.verifier_id WHERE t.project_space_id = $1 ORDER BY t.created_at DESC`, projectSpaceID)
 	return list, err
 }
 
@@ -47,7 +47,7 @@ func (s *Store) ListByProjectSpace(ctx context.Context, projectSpaceID string) (
 func (s *Store) ListByRequirement(ctx context.Context, requirementID string) ([]TestCase, error) {
 	var list []TestCase
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT `+tcCols+` FROM test_case WHERE requirement_id = $1 ORDER BY created_at DESC`, requirementID)
+		`SELECT `+tcCols+` FROM test_case t LEFT JOIN "user" ver ON ver.id = t.verifier_id WHERE t.requirement_id = $1 ORDER BY t.created_at DESC`, requirementID)
 	return list, err
 }
 

@@ -274,3 +274,57 @@ func TestNowTime_ReturnsNonNil(t *testing.T) {
 		t.Fatalf("nowTime 偏差过大：%v", d)
 	}
 }
+
+// TestManualVerdictFields_DefaultEmpty 新列默认空：新建用例读回 verifier_id/manual_note 为空串、verified_at 为 nil。
+func TestManualVerdictFields_DefaultEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "defaults")
+	if err := s.Create(ctx, tc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get(ctx, tc.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ManualNote != "" || got.VerifierID != "" {
+		t.Fatalf("新列默认应空：note=%q verifier=%q", got.ManualNote, got.VerifierID)
+	}
+	if got.VerifiedAt != nil {
+		t.Fatalf("VerifiedAt 默认应为 nil，得到 %v", *got.VerifiedAt)
+	}
+	if got.VerifierName != "" {
+		t.Fatalf("无 verifier 时 VerifierName 应空，得到 %q", got.VerifierName)
+	}
+}
+
+// TestList_VerifierNameJoin verifier_id 指向的用户名经 LEFT JOIN 回填到 VerifierName。
+func TestList_VerifierNameJoin(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// 白盒插入一个用户 + 把用例 verifier_id 指过去（Create 不写 verifier_id，用 raw UPDATE）。
+	const uid = "usr_verifier_join"
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO "user" (id, name, email, status) VALUES ($1, $2, $3, 'active')`,
+		uid, "张三", "z3@example.com"); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	tc := mkTC("ps_1", "req_1", "joined")
+	if err := s.Create(ctx, tc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE test_case SET verifier_id=$1 WHERE id=$2`, uid, tc.ID); err != nil {
+		t.Fatalf("set verifier_id: %v", err)
+	}
+	got, err := s.Get(ctx, tc.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.VerifierID != uid {
+		t.Fatalf("VerifierID 应为 %s，得到 %s", uid, got.VerifierID)
+	}
+	if got.VerifierName != "张三" {
+		t.Fatalf("VerifierName 应为 张三，得到 %q", got.VerifierName)
+	}
+}
