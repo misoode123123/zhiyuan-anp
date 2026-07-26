@@ -6,12 +6,18 @@ import "time"
 
 // Metrics 单人单周期的产出计数。
 type Metrics struct {
-	ReqClaimed, ReqCompleted                                int    // 需求认领/已完成
-	CodeTaskDone, CodeTaskFailed                            int    // 编码任务完成/失败
-	ChangeSubmitted, ChangeApproved, ChangeRejected         int    // 变更提交/通过/驳回
-	Releases                                                int    // 发布次数
-	Conversations                                           int    // 需求梳理会话数
-	WsSessions, WsPrompts, WsSeconds                        int    // 编码工作台互动（置顶维度）
+	ReqClaimed        int `json:"req_claimed"`
+	ReqCompleted      int `json:"req_completed"`
+	CodeTaskDone      int `json:"code_task_done"`
+	CodeTaskFailed    int `json:"code_task_failed"`
+	ChangeSubmitted   int `json:"change_submitted"`
+	ChangeApproved    int `json:"change_approved"`
+	ChangeRejected    int `json:"change_rejected"`
+	Releases          int `json:"releases"`
+	Conversations     int `json:"conversations"`
+	WsSessions        int `json:"ws_sessions"`
+	WsPrompts         int `json:"ws_prompts"`
+	WsSeconds         int `json:"ws_seconds"`
 }
 
 // SessionSummary 互动会话摘要（绩效页下钻列表）。
