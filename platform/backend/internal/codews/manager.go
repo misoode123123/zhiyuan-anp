@@ -8,6 +8,7 @@ package codews
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -32,11 +33,12 @@ const (
 
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
 type Manager struct {
-	host     string
-	cfg      *config.Store // 系统配置（取智谱key/claude端点注入子进程）；nil=不注入
-	mu       sync.Mutex
-	sessions map[string]*Session // appID -> 当前活跃工作台
-	tools    map[string]Tool
+	host       string
+	cfg        *config.Store // 系统配置（取智谱key/claude端点注入子进程）；nil=不注入
+	sessionLog SessionStore  // 会话持久化（绩效/互动统计）；nil=纯内存兼容
+	mu         sync.Mutex
+	sessions   map[string]*Session // appID -> 当前活跃工作台
+	tools      map[string]Tool
 }
 
 // Session 一个开发者在一个应用上的编码工作台实例（per user × app × tool）。
@@ -55,6 +57,7 @@ type Session struct {
 	DeepURL string `json:"deep_url,omitempty"`
 	cmd     *exec.Cmd
 	started time.Time
+	logID   string // 落库的 codews_session.id（sessionLog 持久化用）
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
@@ -65,6 +68,10 @@ func NewManager(host string, cfg *config.Store) *Manager {
 	m.Register(CodexTool{})
 	return m
 }
+
+// SetSessionLogger 注入会话持久化（绩效/互动统计）。nil=纯内存兼容（测试/未启用）。
+// 单独 setter 避免 NewManager 签名变更波及大量既有调用方与测试。
+func (m *Manager) SetSessionLogger(l SessionStore) { m.sessionLog = l }
 
 // toolEnv 按工具构造子进程环境变量：claude 注入智谱 anthropic 兼容端点
 // （ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL），key 复用 zhipuai_api_key；其他工具返回 nil（继承 os.Environ）。
@@ -103,7 +110,7 @@ func (m *Manager) Tools() []string {
 
 // Ensure 启动或复用某开发者在某应用的编码工作台。toolName 空=默认 opencode；
 // 同一开发者切换工具会停旧起新；不同开发者各自独立工作台（可不同工具）。
-func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, error) {
+func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Session, error) {
 	if toolName == "" {
 		toolName = defaultTool
 	}
@@ -148,9 +155,12 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 	m.sessions[key] = s
 	m.mu.Unlock()
 
-	// 进程退出时清理（端口回收）
+	// 进程退出时清理（端口回收 + 会话计数回填）
 	go func() {
 		_ = cmd.Wait()
+		if m.sessionLog != nil && s.logID != "" {
+			_ = m.sessionLog.FinishSession(context.Background(), s.logID, m.finishCounts(s))
+		}
 		m.mu.Lock()
 		if cur, ok := m.sessions[key]; ok && cur == s {
 			delete(m.sessions, key)
@@ -170,7 +180,21 @@ func (m *Manager) Ensure(appID, repoDir, userID, toolName string) (*Session, err
 			s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
 		}
 	}
+	// 落库 codews_session（绩效/互动统计；失败仅 log，不阻塞工作台）
+	if m.sessionLog != nil {
+		rec := &SessionRecord{ProjectSpaceID: psID, AppID: appID, UserID: userID, Tool: toolName, RepoDir: repoDir, Port: port, SessionID: s.SessionID}
+		if err := m.sessionLog.StartSession(context.Background(), rec); err == nil {
+			s.logID = rec.ID
+		} else {
+			log.Printf("[codews] 落库 codews_session 失败(非致命): %v", err)
+		}
+	}
 	return s, nil
+}
+
+// finishCounts 统计会话交互计数（Task 6 接 TranscriptReader；本任务返回零值，仅 ended_at 回填）。
+func (m *Manager) finishCounts(s *Session) SessionCounts {
+	return SessionCounts{}
 }
 
 // sessionDeepURL 生成直达 opencode 预创建会话的深链接: /<base64url(repoDir)>/session/<sessionID>。

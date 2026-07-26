@@ -67,7 +67,11 @@ func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, change
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
 func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
-	h := NewHandler(store, NewDeployer(appDeployHost), codews.NewManager(appDeployHost, configStore), changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota)
+	codeWS := codews.NewManager(appDeployHost, configStore)
+	if store != nil {
+		codeWS.SetSessionLogger(codews.NewPGSessionStore(store.db)) // 会话落库供绩效/互动统计
+	}
+	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota)
 	h.Register(r)
 	return h
 }
@@ -186,7 +190,7 @@ func (h *Handler) Workspace(c *gin.Context) {
 	if user == "" {
 		user = "anonymous"
 	}
-	s, err := h.codeWS.Ensure(aid, a.RepoDir, user, in.Tool)
+	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool)
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
