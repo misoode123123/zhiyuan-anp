@@ -77,6 +77,8 @@ func (s *Store) Summary(ctx context.Context, psID, userID string, from, to time.
 	p.Metrics.ReqClaimed, p.Metrics.ReqCompleted = rq.Claimed, rq.Done
 
 	// 编码工作台互动（codews_session）
+	// 注：codews_session.user_id 存的是用户名（与 worktree 命名/requirement.assignee 一致），
+	// 非 usr_xxx；故按 name 子查询匹配（与 requirement 认领同法）。
 	ws, wsa := winClause("started_at", from, to)
 	var wsm struct{ Sess, Prompts, Secs int }
 	args = append([]interface{}{psID, userID}, wsa...)
@@ -84,14 +86,14 @@ func (s *Store) Summary(ctx context.Context, psID, userID string, from, to time.
 		`SELECT COUNT(*) sess,
 		        COALESCE(SUM(prompt_count),0) prompts,
 		        COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at,NOW())-started_at))::int),0) secs
-		 FROM codews_session WHERE project_space_id=? AND user_id=?`+ws), args...)
+		 FROM codews_session WHERE project_space_id=? AND user_id=(SELECT name FROM "user" WHERE id=?)`+ws), args...)
 	p.Metrics.WsSessions, p.Metrics.WsPrompts, p.Metrics.WsSeconds = wsm.Sess, wsm.Prompts, wsm.Secs
 
 	// 最近会话列表（最近 20）
 	args = []interface{}{psID, userID}
 	_ = s.db.SelectContext(ctx, &p.Sessions, rebind(
 		`SELECT id, tool, repo_dir, started_at, ended_at, prompt_count
-		 FROM codews_session WHERE project_space_id=? AND user_id=?
+		 FROM codews_session WHERE project_space_id=? AND user_id=(SELECT name FROM "user" WHERE id=?)
 		 ORDER BY started_at DESC LIMIT 20`), args...)
 	return p, nil
 }
@@ -108,12 +110,13 @@ func (s *Store) Members(ctx context.Context, psID string, from, to time.Time) ([
 	var ids []struct {
 		UID string `db:"uid"`
 	}
+	// 空间内出现过的 user_id 并集（成员 + 各工作表；codews_session.user_id 是用户名不在此并集，
+	// 工作台用户必为空间成员，经 membership 覆盖，其会话由 Summary 按 name 匹配挂载）
 	q := `SELECT user_id uid FROM membership WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''
 	      UNION SELECT user_id FROM code_task WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''
 	      UNION SELECT user_id FROM change_request WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''
-	      UNION SELECT user_id FROM conversation WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''
-	      UNION SELECT user_id FROM codews_session WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''`
-	if err := s.db.SelectContext(ctx, &ids, rebind(q), psID, psID, psID, psID, psID); err != nil {
+	      UNION SELECT user_id FROM conversation WHERE project_space_id=? AND user_id IS NOT NULL AND user_id <> ''`
+	if err := s.db.SelectContext(ctx, &ids, rebind(q), psID, psID, psID, psID); err != nil {
 		return nil, err
 	}
 	out := make([]Profile, 0, len(ids)+1)

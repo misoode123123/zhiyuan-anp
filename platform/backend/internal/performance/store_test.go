@@ -25,8 +25,9 @@ func TestSummary_AggregatesByUser(t *testing.T) {
 	db.MustExec(`INSERT INTO code_task(id,project_space_id,user_id,status) VALUES('ct3','ps1',NULL,'completed')`)
 	db.MustExec(`INSERT INTO change_request(id,project_space_id,user_id,status) VALUES('ch1','ps1','usr_a','approved')`)
 	db.MustExec(`INSERT INTO change_request(id,project_space_id,user_id,status) VALUES('ch2','ps1','usr_a','rejected')`)
+	// codews_session.user_id 存用户名（与 worktree/requirement.assignee 一致），非 usr_xxx
 	db.MustExec(`INSERT INTO codews_session(id,project_space_id,app_id,user_id,tool,repo_dir,prompt_count,ended_at)
-	            VALUES('cws1','ps1','app1','usr_a','claude','/r',3,NOW())`)
+	            VALUES('cws1','ps1','app1','alice','claude','/r',3,NOW())`)
 
 	p, err := s.Summary(context.Background(), "ps1", "usr_a", time.Time{}, time.Time{})
 	if err != nil {
