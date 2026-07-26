@@ -20,6 +20,10 @@ type TC = {
   actual_status?: number;
   actual_body?: string;
   run_at?: string;
+  manual_note?: string;
+  verifier_id?: string;
+  verified_at?: string;
+  verifier_name?: string;
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -43,6 +47,9 @@ export default function TestingPage() {
   const [genID, setGenID] = useState("");
   const [runID, setRunID] = useState("");
   const [runReqID, setRunReqID] = useState("");
+  const [verdictID, setVerdictID] = useState(""); // 正在提交人工验收的 tcid
+  const [editTC, setEditTC] = useState(""); // 展开人工验收录入（含改判）的 tcid
+  const [note, setNote] = useState(""); // 人工验收备注文本
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -135,6 +142,35 @@ export default function TestingPage() {
       setMsg(`✗ ${e}`);
     } finally {
       setRunReqID("");
+    }
+  }
+
+  async function recordVerdict(tcid: string, verdict: string) {
+    setVerdictID(tcid);
+    setMsg("");
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/test-cases/${tcid}/manual-verdict`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ verdict, note }),
+        }
+      );
+      const r = await res.json();
+      if (r.code === 0) {
+        const tc: TC = r.data;
+        setMsg(`「${tc.title}」→ ${STATUS_LABEL[tc.status] ?? tc.status}（人工验收）`);
+        setEditTC("");
+        setNote("");
+      } else {
+        setMsg(`✗ ${r.message}`);
+      }
+      load(psID);
+    } catch (e) {
+      setMsg(`✗ ${e}`);
+    } finally {
+      setVerdictID("");
     }
   }
 
@@ -241,13 +277,75 @@ export default function TestingPage() {
                       {STATUS_LABEL[c.status] ?? c.status}
                     </span>
                   </div>
-                  <button
-                    onClick={() => runOne(c.id)}
-                    disabled={!!runID}
-                    className="rounded bg-neutral-800 px-2 py-1 text-xs text-white disabled:opacity-50"
-                  >
-                    {runID === c.id ? "运行中…" : "▶ 运行"}
-                  </button>
+                  {c.status === "manual" || c.verifier_id ? (
+                    editTC === c.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={note}
+                          onChange={(e) => setNote(e.target.value)}
+                          placeholder="备注（可选）"
+                          className="w-32 rounded border border-neutral-300 px-2 py-1 text-xs"
+                        />
+                        <button
+                          onClick={() => recordVerdict(c.id, "passed")}
+                          disabled={!!verdictID}
+                          className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          {verdictID === c.id ? "…" : "✓ 通过"}
+                        </button>
+                        <button
+                          onClick={() => recordVerdict(c.id, "failed")}
+                          disabled={!!verdictID}
+                          className="rounded bg-red-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          {verdictID === c.id ? "…" : "✗ 失败"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditTC("");
+                            setNote("");
+                          }}
+                          className="rounded bg-neutral-200 px-2 py-1 text-xs"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : c.verifier_id ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-neutral-500">
+                          {c.verifier_name || c.verifier_id} 验收 ·{" "}
+                          {c.verified_at?.slice(0, 16).replace("T", " ")}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setEditTC(c.id);
+                            setNote(c.manual_note ?? "");
+                          }}
+                          className="rounded bg-neutral-200 px-2 py-1 text-xs"
+                        >
+                          改判
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditTC(c.id);
+                          setNote("");
+                        }}
+                        className="rounded bg-amber-500 px-2 py-1 text-xs text-white"
+                      >
+                        ⊙ 人工验收
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      onClick={() => runOne(c.id)}
+                      disabled={!!runID}
+                      className="rounded bg-neutral-800 px-2 py-1 text-xs text-white disabled:opacity-50"
+                    >
+                      {runID === c.id ? "运行中…" : "▶ 运行"}
+                    </button>
+                  )}
                 </div>
 
                 {hasHTTP && (
@@ -293,6 +391,11 @@ export default function TestingPage() {
                     {c.actual_body && (
                       <span className="ml-1 text-neutral-500">· {c.actual_body.slice(0, 160)}</span>
                     )}
+                  </div>
+                )}
+                {c.verifier_id && c.manual_note && (
+                  <div className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-xs">
+                    <span className="text-neutral-400">验收备注：</span> {c.manual_note}
                   </div>
                 )}
                 <div className="mt-1 text-[11px] text-neutral-300">
