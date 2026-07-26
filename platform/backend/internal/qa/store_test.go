@@ -303,9 +303,11 @@ func TestList_VerifierNameJoin(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	// 白盒插入一个用户 + 把用例 verifier_id 指过去（Create 不写 verifier_id，用 raw UPDATE）。
+	// ON CONFLICT：newTestStore 只 truncate test_case 不清 user，anp_test 持久，重跑会 PK 冲突。
 	const uid = "usr_verifier_join"
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO "user" (id, name, email, status) VALUES ($1, $2, $3, 'active')`,
+		`INSERT INTO "user" (id, name, email, status) VALUES ($1, $2, $3, 'active')
+		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, email=EXCLUDED.email`,
 		uid, "张三", "z3@example.com"); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
