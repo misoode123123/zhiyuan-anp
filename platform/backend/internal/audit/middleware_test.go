@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
@@ -75,5 +76,35 @@ func TestMiddleware_NonWhitelisted(t *testing.T) {
 	list, _ := store.Query(context.Background(), "", "", "", "", "", 10, 0)
 	if len(list) != 0 {
 		t.Fatalf("非白名单不应记，得到 %d", len(list))
+	}
+}
+
+// TestMiddleware_ActorIsUserID 白名单操作落 operation_log 时，actor_id 应为 user id（usr_xxx），不是 username。
+// AuthUser 现同时注入 CtxUserID(name) 与 CtxUserDBID(usr_xxx)；审计优先取后者。
+func TestMiddleware_ActorIsUserID(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "operation_log")
+	store := NewStore(db)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(auth.CtxUserID, "alice")   // name（旧键 user_id，向后兼容）
+		c.Set(auth.CtxUserDBID, "usr_1") // db id（新键 user_db_id）
+		c.Set("trace_id", "tr_x")
+		c.Next()
+	})
+	r.Use(Middleware(store))
+	r.PUT("/api/v1/config/:key", func(c *gin.Context) { c.Status(200) })
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/config/foo", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	var actor string
+	if err := db.Get(&actor, `SELECT actor_id FROM operation_log ORDER BY id DESC LIMIT 1`); err != nil {
+		t.Fatalf("query operation_log: %v", err)
+	}
+	if actor != "usr_1" {
+		t.Fatalf("actor_id 应为 usr_1(非 username alice), 得 %q", actor)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"zhiyuan-anp/platform/backend/internal/auth"
 )
 
 // whitelist 白名单路由（method + FullPath 模板）→ 审计 action。
@@ -41,7 +43,12 @@ func Middleware(store *Store) gin.HandlerFunc {
 		if actorType == "" {
 			actorType = "user"
 		}
-		_ = store.CreateDetail(c.Request.Context(), actorType, c.GetString("user_id"), action,
+		// actor 优先取 user id（usr_xxx，AuthUser 注入的 CtxUserDBID）；缺省回退 username（旧键 user_id）。
+		actor := c.GetString(auth.CtxUserDBID)
+		if actor == "" {
+			actor = c.GetString("user_id")
+		}
+		_ = store.CreateDetail(c.Request.Context(), actorType, actor, action,
 			resourceType, resourceID, c.GetString("project_space_id"), c.GetString("trace_id"),
 			status, "",
 			map[string]interface{}{
