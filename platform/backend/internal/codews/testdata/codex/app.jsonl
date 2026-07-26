@@ -1,0 +1,2 @@
+{"type":"message","role":"user","content":[{"type":"input_text","text":"写脚本"}],"cwd":"/repo/app","session_id":"r1","timestamp":"2026-07-26T03:00:00Z"}
+{"type":"message","role":"assistant","content":[{"type":"output_text","text":"已写"}],"cwd":"/repo/app","session_id":"r1","timestamp":"2026-07-26T03:00:10Z"}

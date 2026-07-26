@@ -192,9 +192,24 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Sessio
 	return s, nil
 }
 
-// finishCounts 统计会话交互计数（Task 6 接 TranscriptReader；本任务返回零值，仅 ended_at 回填）。
+// finishCounts 会话结束时统计交互计数：用 TranscriptReader 读工具原生 transcript，
+// 数 user 消息=prompt 数、总消息数=message 数。读失败/无 reader → 零值（仅 ended_at 回填）。
 func (m *Manager) finishCounts(s *Session) SessionCounts {
-	return SessionCounts{}
+	r := ReaderFor(s.Tool)
+	if r == nil {
+		return SessionCounts{} // opencode 走 live HTTP，磁盘 reader 无（计数 best-effort 留 0）
+	}
+	msgs, err := r.Messages(s.RepoDir, s.SessionID)
+	if err != nil || len(msgs) == 0 {
+		return SessionCounts{}
+	}
+	var prompts int
+	for _, mm := range msgs {
+		if mm.Role == "user" {
+			prompts++
+		}
+	}
+	return SessionCounts{PromptCount: prompts, MessageCount: len(msgs)}
 }
 
 // sessionDeepURL 生成直达 opencode 预创建会话的深链接: /<base64url(repoDir)>/session/<sessionID>。
