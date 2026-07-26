@@ -77,9 +77,15 @@ func (r *Repository) Get(ctx context.Context, id string) (*Requirement, error) {
 }
 
 // UpdateStatus 更新需求状态（发布后→delivered，闭环需求生命周期）。
-func (r *Repository) UpdateStatus(ctx context.Context, id, status string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, status, id)
-	return err
+// 返回受影响行数：调用方（发布回写）据此判断 source_id 是否真解析到需求，
+// 避免匹配 0 行时静默无效却谎报「已交付」（见 PRD 2026-07-26 主线闭环收敛 3.3）。
+func (r *Repository) UpdateStatus(ctx context.Context, id, status string) (int, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE requirement SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, status, id)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // SetApplication 把需求归属到某应用（发布自动部署后回填 application_id）。

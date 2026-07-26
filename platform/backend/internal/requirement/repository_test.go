@@ -143,16 +143,36 @@ func TestRepository_ListByApp(t *testing.T) {
 }
 
 // TestRepository_UpdateStatus 更新状态（生命周期：specified→developing→delivered）。
+// UpdateStatus 返回受影响行数：发布回写据此判断「需求是否真被标记 delivered」，
+// 避免 source_id 匹配不到需求时静默无效却谎报成功（见 PRD 2026-07-26 主线闭环收敛 3.3）。
 func TestRepository_UpdateStatus(t *testing.T) {
 	r := newTestRepo(t)
 	mustCreateRepo(t, r, mkReq("req_s", "ps_1"))
 
-	if err := r.UpdateStatus(context.Background(), "req_s", "developing"); err != nil {
+	n, err := r.UpdateStatus(context.Background(), "req_s", "developing")
+	if err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("存在需求应影响 1 行，得到 %d", n)
 	}
 	got, _ := r.Get(context.Background(), "req_s")
 	if got.Status != "developing" {
 		t.Fatalf("status 应为 developing，得到 %s", got.Status)
+	}
+}
+
+// TestRepository_UpdateStatus_NotFoundRowsAffected 不存在的需求 → 0 行受影响、无 error。
+// 发布回写靠这个区分「真交付」与「source_id 没解析到需求」。
+func TestRepository_UpdateStatus_NotFoundRowsAffected(t *testing.T) {
+	r := newTestRepo(t)
+
+	n, err := r.UpdateStatus(context.Background(), "req_missing", "delivered")
+	if err != nil {
+		t.Fatalf("不存在的需求 UpdateStatus 不应报错（UPDATE 0 行），得到: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("不存在的需求应影响 0 行，得到 %d", n)
 	}
 }
 

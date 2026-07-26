@@ -84,6 +84,12 @@ func (h *Handler) Create(c *gin.Context) {
 	if h.changes != nil {
 		chg, _ = h.changes.Get(c.Request.Context(), in.ChangeID)
 	}
+	// 🚪G3 审批前置：发布中心是 G5（审批后），变更须为 approved 才可发布，堵住「pending 变更直接发布」绕过
+	// （见 PRD 2026-07-26 主线闭环收敛 3.2）。
+	if chg == nil || chg.Status != "approved" {
+		httpx.Err(c, 409, 40902, "发布前置未满足：变更需先经 🚪G3 审批（approved）。")
+		return
+	}
 	// 🧪 测试门禁：开关开时，来源需求须至少 1 条 passed 测试用例，否则拒绝发布。
 	if h.testGateEnabled() && chg != nil && chg.SourceID != "" {
 		if passed, _ := h.testGate.PassedCountByRequirement(c.Request.Context(), chg.SourceID); passed <= 0 {
@@ -106,11 +112,12 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Err(c, 500, 50009, err.Error())
 		return
 	}
-	// 追溯 change → 标记来源需求"已交付"
-	if h.changes != nil && chg != nil && chg.ID != "" && chg.SourceID != "" {
-		if h.reqRepo != nil {
-			_ = h.reqRepo.UpdateStatus(c.Request.Context(), chg.SourceID, "delivered")
-		}
+	// 闭环回写：追溯 change.source_id → 标记来源需求 delivered。
+	// UpdateStatus 返回受影响行数：source_id 未解析到需求时 0 行（appdeploy 修复前的 appID 路径会命中），
+	// 据此生成诚实 note，绝不谎报「已交付」（见 PRD 2026-07-26 主线闭环收敛 3.3）。
+	rowsDelivered := 0
+	if h.reqRepo != nil && chg != nil && chg.ID != "" && chg.SourceID != "" {
+		rowsDelivered, _ = h.reqRepo.UpdateStatus(c.Request.Context(), chg.SourceID, "delivered")
 	}
 	// 可选：部署来源需求归属的应用（应用一等公民：只部署已存在的应用，不在发布时创建/改名）。
 	// 发布即部署到 test 环境（发布=测试验证；上线 prod 由「应用部署」页「上线」按钮触发）
@@ -125,11 +132,22 @@ func (h *Handler) Create(c *gin.Context) {
 	httpx.Created(c, gin.H{
 		"id": r.ID, "version": r.Version, "status": r.Status,
 		"deploy_triggered": deployed,
-		"note": ternary(deployed == "",
-			"需求已交付（来源需求未归属应用，未部署到 test；请在「应用部署」创建应用或派发编码自动归属）",
-			"应用 "+deployed+" 已发布，异步部署到 test 验证；确认无误后到「应用部署」点「上线」推 prod"),
+		"delivered":        rowsDelivered > 0,
+		"note":             releaseNote(rowsDelivered, deployed),
 	})
-	notif.EmitBroadcast("release", "发布成功 "+r.Version, "版本 "+r.Version+" 已发布"+ternary(deployed=="", "", "，应用 "+deployed+" 已部署"), "/release")
+	notif.EmitBroadcast("release", "发布成功 "+r.Version, "版本 "+r.Version+" 已发布"+ternary(deployed == "", "", "，应用 "+deployed+" 已部署"), "/release")
+}
+
+// releaseNote 据「是否真回写 delivered」+「是否触发部署」生成诚实 note。
+// rowsDelivered=0 时绝不写「已交付」（修复前：source_id 匹配 0 行却谎报已交付，状态实际没变）。
+func releaseNote(rowsDelivered int, deployed string) string {
+	if rowsDelivered == 0 {
+		return "⚠️ 未关联到需求（变更 source_id 未解析到 requirement），需求状态未变更；请确认变更已关联需求（派发编码 dispatch-code，或带 req_id 的登记/核对）。"
+	}
+	if deployed == "" {
+		return "需求已交付（来源需求未归属应用，未部署到 test；请在「应用部署」创建应用或派发编码自动归属）"
+	}
+	return "需求已交付；应用 " + deployed + " 已发布，异步部署到 test 验证；确认无误后到「应用部署」点「上线」推 prod"
 }
 //
 // @Summary      发布历史
