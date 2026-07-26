@@ -131,12 +131,21 @@ func TestSubmit_PassAndRegister(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("核对通过应 200,得到 %d: %s", w.Code, w.Body.String())
 	}
+	// 闭环收敛（PRD 2026-07-26）：Submit 现把 source_id 写成 requirement_id（发布中心据此回写 delivered），
+	// 故按 source_id='req_1' 计数；application_id=app_1（应用闸门走它）。
 	var n int
-	if err := db.Get(&n, "SELECT COUNT(*) FROM change_request WHERE source_id='app_1' AND status='pending'"); err != nil {
+	if err := db.Get(&n, "SELECT COUNT(*) FROM change_request WHERE source_id='req_1' AND status='pending'"); err != nil {
 		t.Fatalf("查 change: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("应自动登记 1 条 pending change,得到 %d", n)
+	}
+	var appID string
+	if err := db.Get(&appID, "SELECT COALESCE(application_id,'') FROM change_request WHERE source_id='req_1' AND status='pending' LIMIT 1"); err != nil {
+		t.Fatalf("查 change application_id: %v", err)
+	}
+	if appID != "app_1" {
+		t.Fatalf("change.application_id 应为 app_1，得到 %q", appID)
 	}
 	if !strings.Contains(w.Body.String(), "change_id") {
 		t.Fatalf("响应应含 change_id: %s", w.Body.String())

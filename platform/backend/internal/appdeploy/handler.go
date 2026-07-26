@@ -277,8 +277,14 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	if diff != "" {
 		summary += "【diff】\n" + truncateStr(diff, 3000) + "\n"
 	}
+	// 闭环收敛（PRD 2026-07-26）：带 req_id 时 source_id=requirement_id（发布中心据此回写 delivered/过门禁/触发部署），
+	// application_id=aid（激活 historically 恒 NULL 的列，应用闸门/部署关联走它）。无 req_id 时维持 source_id=aid。
+	sourceID := aid
+	if in.ReqID != "" {
+		sourceID = in.ReqID
+	}
 	chg := &change.ChangeRequest{
-		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: sourceID, ApplicationID: aid, RepoDir: a.RepoDir,
 		Prompt: in.Note, Output: strings.TrimSpace(summary),
 	}
 	if err := h.changes.Create(c.Request.Context(), chg); err != nil {
@@ -476,8 +482,9 @@ func (h *Handler) Submit(c *gin.Context) {
 		httpx.OK(c, gin.H{"passed": true, "details": details, "note": "✅ 核对通过(变更闸门未启用,未自动登记)"})
 		return
 	}
+	// 闭环收敛：Submit 的 req_id 必填（上方已校验），source_id=reqID 让发布中心能闭环；application_id=aid。
 	chg := &change.ChangeRequest{
-		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: aid, RepoDir: a.RepoDir,
+		ProjectSpaceID: psID, UserID: c.GetString(auth.CtxUserDBID), Kind: "code", SourceID: in.ReqID, ApplicationID: aid, RepoDir: a.RepoDir,
 		Output: "【需求】" + in.ReqID + "\n【核对】通过\n" + details,
 	}
 	if err := h.changes.Create(c.Request.Context(), chg); err != nil {
@@ -540,7 +547,7 @@ func (h *Handler) Merge(c *gin.Context) {
 		if err := h.reqRepo.Release(ctx, in.ReqID); err == nil {
 			released = in.ReqID
 		}
-		if err := h.reqRepo.UpdateStatus(ctx, in.ReqID, "delivered"); err == nil {
+		if n, err := h.reqRepo.UpdateStatus(ctx, in.ReqID, "delivered"); err == nil && n > 0 {
 			delivered = "delivered"
 		}
 	}
