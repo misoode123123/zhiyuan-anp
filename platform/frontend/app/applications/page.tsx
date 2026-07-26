@@ -655,13 +655,13 @@ export default function ApplicationsPage() {
                         title="选择交互编码工具"
                       >
                         <option value="opencode">opencode</option>
-                        <option value="claude">claude*</option>
-                        <option value="codex">codex*</option>
+                        <option value="claude">claude</option>
+                        <option value="codex">codex</option>
                       </select>
                       <button
                         onClick={() => openWorkspace(a.id, wsTool)}
                         className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700"
-                        title="打开该工具的官方交互编码界面（*为预留）"
+                        title="打开该工具的官方交互编码界面"
                       >
                         🧑‍💻 编码
                       </button>

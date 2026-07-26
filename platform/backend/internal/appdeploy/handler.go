@@ -172,8 +172,8 @@ func (h *Handler) Workspace(c *gin.Context) {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
-	// 启动 opencode 前刷新应用 AGENTS.md：opencode 工具自动读 repo 根 AGENTS.md，
-	// 故此处只负责把最新聚合规范写进去（规范单一载体 = AGENTS.md，dev 和 opencode 都基于它）。
+	// 启动工作台前刷新应用 AGENTS.md：opencode/claude/codex 都原生读 repo 根 AGENTS.md，
+	// 故此处只负责把最新聚合规范写进去（规范单一载体 = AGENTS.md，三工具都基于它）。
 	// 失败不阻塞工作台启动（规范缺失不应让开发者无法编码）。
 	if h.standards != nil && a.RepoDir != "" {
 		_ = h.standards.RefreshAgentsMD(c.Request.Context(), a.RepoDir, psID, "")
@@ -228,15 +228,18 @@ func (h *Handler) RegisterChange(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&in)
 
-	// 自动获取 opencode 对话内容(免手填)
+	// 自动获取 opencode 对话内容(免手填)。仅 opencode 有平台侧 session API 可拉对话；
+	// claude/codex 走 ttyd 终端无对等接口，跳过（变更总结降级为基于 diff/commits，登记变更本身仍可用）。
 	conversation := ""
 	if h.codeWS != nil {
 		user := c.GetString(auth.CtxUserID)
 		if user == "" {
 			user = "anonymous"
 		}
-		if conv, err := h.codeWS.SessionMessages(aid, user); err == nil {
-			conversation = conv
+		if s := h.codeWS.Get(aid, user); s != nil && s.Tool == "opencode" {
+			if conv, err := h.codeWS.SessionMessages(aid, user); err == nil {
+				conversation = conv
+			}
 		}
 	}
 
@@ -371,6 +374,12 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 	user := c.GetString(auth.CtxUserID)
 	if user == "" {
 		user = "anonymous"
+	}
+	// claude/codex 走 ttyd 终端，无平台侧 session API（不支持 prompt 注入）；仅 opencode 可注入。
+	// 若当前活跃工作台是 claude/codex，提示用户在终端手动操作（而非误报"无活跃会话"）。
+	if s := h.codeWS.Get(aid, user); s != nil && s.Tool != "opencode" {
+		httpx.Err(c, 400, 40001, "该工具（"+s.Tool+"）不支持平台侧需求注入，请在工作台终端手动粘贴需求编码")
+		return
 	}
 	if err := h.codeWS.SendPrompt(aid, user, in.Prompt); err != nil {
 		httpx.Err(c, 500, 50021, err.Error())

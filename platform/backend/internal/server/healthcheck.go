@@ -50,14 +50,17 @@ func (hc *HealthChecker) DeepHealthz(c *gin.Context) {
 	// 2. agent-runtime
 	checks = append(checks, hc.checkHTTP(ctx, "agent-runtime", hc.agentRuntimeURL+"/healthz"))
 
-	// 3. opencode（检查二进制是否可执行）
-	start = time.Now()
-	_, err = exec.LookPath("opencode")
-	latency = time.Since(start).Milliseconds()
-	if err != nil {
-		checks = append(checks, HealthStatus{Name: "opencode", Status: "warn", Detail: "opencode not in PATH"})
-	} else {
-		checks = append(checks, HealthStatus{Name: "opencode", Status: "ok", Latency: int(latency)})
+	// 3. 编码工具 CLI（检查二进制是否可执行）：opencode 自带 web UI；claude/ttyd 组成 ttyd web 终端工作台。
+	// warn 不拖垮整体（某工具缺失只影响该工具工作台，其他功能不受影响）。
+	for _, bin := range []string{"opencode", "claude", "ttyd"} {
+		start = time.Now()
+		_, err = exec.LookPath(bin)
+		latency = time.Since(start).Milliseconds()
+		if err != nil {
+			checks = append(checks, HealthStatus{Name: bin, Status: "warn", Detail: bin + " not in PATH"})
+		} else {
+			checks = append(checks, HealthStatus{Name: bin, Status: "ok", Latency: int(latency)})
+		}
 	}
 
 	// 4. 磁盘空间（/data 挂载点）
