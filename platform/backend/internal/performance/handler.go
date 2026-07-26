@@ -56,7 +56,7 @@ func (h *Handler) Me(c *gin.Context) {
 		httpx.Err(c, 500, 50080, err.Error())
 		return
 	}
-	c.JSON(200, p)
+	httpx.OK(c, p)
 }
 
 // Members 全员绩效排行榜（admin）。
@@ -67,7 +67,7 @@ func (h *Handler) Members(c *gin.Context) {
 		httpx.Err(c, 500, 50080, err.Error())
 		return
 	}
-	c.JSON(200, list)
+	httpx.OK(c, list)
 }
 
 // MemberDetail 某人明细（admin）。
@@ -78,7 +78,7 @@ func (h *Handler) MemberDetail(c *gin.Context) {
 		httpx.Err(c, 500, 50080, err.Error())
 		return
 	}
-	c.JSON(200, p)
+	httpx.OK(c, p)
 }
 
 // SessionMessages 某次互动的完整聊天记录（admin）：
@@ -95,7 +95,7 @@ func (h *Handler) SessionMessages(c *gin.Context) {
 			httpx.Err(c, 500, 50081, err.Error())
 			return
 		}
-		c.JSON(200, gin.H{"tool": "opencode", "transcript": txt})
+		httpx.OK(c, gin.H{"tool": "opencode", "transcript": txt})
 		return
 	}
 	if r := codews.ReaderFor(rec.Tool); r != nil {
@@ -104,7 +104,7 @@ func (h *Handler) SessionMessages(c *gin.Context) {
 			httpx.Err(c, 500, 50081, err.Error())
 			return
 		}
-		c.JSON(200, gin.H{"tool": rec.Tool, "messages": msgs})
+		httpx.OK(c, gin.H{"tool": rec.Tool, "messages": msgs})
 		return
 	}
 	httpx.Err(c, 400, 40001, "该工具不支持查看聊天记录")

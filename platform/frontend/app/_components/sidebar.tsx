@@ -4,6 +4,7 @@ const NAV = [
   { href: "/", label: "概览", icon: "📊" },
   { href: "/requirements", label: "需求工作台", icon: "💬" },
   { href: "/team", label: "团队看板", icon: "📋" },
+  { href: "/performance", label: "绩效记录", icon: "📈" },
   { href: "/dev", label: "研发工作台", icon: "💻" },
   { href: "/testing", label: "测试中心", icon: "🧪" },
   { href: "/release", label: "发布中心", icon: "🚀" },
