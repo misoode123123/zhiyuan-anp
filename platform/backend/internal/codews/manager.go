@@ -181,8 +181,9 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Sessio
 		}
 	}
 	// 落库 codews_session（绩效/互动统计；失败仅 log，不阻塞工作台）
+	// RepoDir 记 worktree 路径（工具实际 cwd = transcript 的 cwd），ReaderFor 据此匹配 transcript。
 	if m.sessionLog != nil {
-		rec := &SessionRecord{ProjectSpaceID: psID, AppID: appID, UserID: userID, Tool: toolName, RepoDir: repoDir, Port: port, SessionID: s.SessionID}
+		rec := &SessionRecord{ProjectSpaceID: psID, AppID: appID, UserID: userID, Tool: toolName, RepoDir: workDir, Port: port, SessionID: s.SessionID}
 		if err := m.sessionLog.StartSession(context.Background(), rec); err == nil {
 			s.logID = rec.ID
 		} else {
