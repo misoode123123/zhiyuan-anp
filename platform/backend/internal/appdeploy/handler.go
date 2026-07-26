@@ -53,6 +53,9 @@ type Handler struct {
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
 type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (passed bool, err error, details string)
 
+// CodeWS 暴露交互编码工作台 Manager（供 performance 模块读 live opencode 会话消息）。
+func (h *Handler) CodeWS() *codews.Manager { return h.codeWS }
+
 // NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
 func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
 	var nodeStore *NodeStore

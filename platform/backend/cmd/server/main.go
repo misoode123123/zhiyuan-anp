@@ -42,6 +42,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/logsvc"
 	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/ops"
+	"zhiyuan-anp/platform/backend/internal/performance"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/quota"
@@ -248,6 +249,8 @@ func main() {
 	qaSvc := qa.Register(v1, database, cfg.AgentRuntimeURL, reqRepo, appDeployStore)
 	qaSvc.SetGateway(computeGateway)
 	release.Register(v1, database, changeStore, reqRepo, appDeployHandler, store, qaStore)
+	// 绩效记录：admin 看全员/某人/互动聊天，本人看自己；复用 appdeploy 的 codews.Manager 读 live opencode 会话。
+	performance.Register(v1, performance.NewStore(database), appDeployHandler.CodeWS())
 
 	// ---- appgw 路由组：/apps/*path 反代到应用容器（不在 /api/v1 下，不挂 AuthUser 全局）----
 	// appgw.ReverseProxy 内部按 route.auth_required 决定是否验 JWT。

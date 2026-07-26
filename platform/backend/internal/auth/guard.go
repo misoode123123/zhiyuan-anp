@@ -63,6 +63,10 @@ var routeOps = map[string]string{
 	"POST /api/v1/project-spaces/:id/apps/:aid/stop":          "app.stop._",
 	"POST /api/v1/project-spaces/:id/apps/:aid/start":         "app.start._",
 	"DELETE /api/v1/project-spaces/:id/apps/:aid":             "app.delete._",
+	// 绩效（admin 看全员/某人/互动聊天；me 不登记→任意登录自校验）
+	"GET /api/v1/project-spaces/:id/performance/members":                      "performance.view.all",
+	"GET /api/v1/project-spaces/:id/performance/members/:userID":              "performance.view.all",
+	"GET /api/v1/project-spaces/:id/performance/sessions/:sessionID/messages": "performance.view.all",
 }
 
 // RouteOp 返回某「方法+路由模板」对应的操作；未登记返回空串（不强制）。

@@ -28,6 +28,8 @@ var OpRoles = map[string][]string{
 	"app.start.test":         {RoleDev, RoleGatekeeper, RoleAdmin},
 	"app.start.prod":         {RoleGatekeeper, RoleAdmin},
 	"app.delete":             {RoleAdmin},
+	// 绩效（admin 看全员/某人/互动聊天；me 自校验不登记）
+	"performance.view.all": {RoleAdmin},
 }
 
 // Allowed 判断角色集合是否可执行某操作（未定义操作默认允许）。
