@@ -59,6 +59,15 @@ func (s *Store) UpdateRun(ctx context.Context, tc *TestCase) error {
 	return err
 }
 
+// UpdateManualVerdict 回写人工验收结论（状态 + 备注 + 验收人 + 时间）。
+// 与 UpdateRun 职责不同：后者写 HTTP 自动运行结果，不写验收三列。
+func (s *Store) UpdateManualVerdict(ctx context.Context, tc *TestCase) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE test_case SET status=$1, manual_note=$2, verifier_id=$3, verified_at=$4 WHERE id=$5`,
+		tc.Status, tc.ManualNote, tc.VerifierID, tc.VerifiedAt, tc.ID)
+	return err
+}
+
 // nowTime 当前时间指针（便于 RunAt 赋值；抽出便于测试）。
 func nowTime() *time.Time { t := time.Now(); return &t }
 

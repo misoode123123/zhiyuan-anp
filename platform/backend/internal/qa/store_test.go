@@ -328,3 +328,29 @@ func TestList_VerifierNameJoin(t *testing.T) {
 		t.Fatalf("VerifierName 应为 张三，得到 %q", got.VerifierName)
 	}
 }
+
+// TestUpdateManualVerdict 回写人工验收：status/manual_note/verifier_id/verified_at 四字段落库。
+func TestUpdateManualVerdict(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	tc := mkTC("ps_1", "req_1", "mv")
+	tc.Status = "manual"
+	if err := s.Create(ctx, tc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second) // 截到秒：PG TIMESTAMPTZ 微秒精度会丢亚微秒，Equal 会判不等
+	tc.Status = "passed"
+	tc.ManualNote = "界面正常，手动确认"
+	tc.VerifierID = "usr_a"
+	tc.VerifiedAt = &now
+	if err := s.UpdateManualVerdict(ctx, tc); err != nil {
+		t.Fatalf("UpdateManualVerdict: %v", err)
+	}
+	got, _ := s.Get(ctx, tc.ID)
+	if got.Status != "passed" || got.ManualNote != "界面正常，手动确认" || got.VerifierID != "usr_a" {
+		t.Fatalf("回写不符：status=%s note=%q verifier=%q", got.Status, got.ManualNote, got.VerifierID)
+	}
+	if got.VerifiedAt == nil || !got.VerifiedAt.Equal(now) {
+		t.Fatalf("VerifiedAt 应等于 %v，得到 %v", now, got.VerifiedAt)
+	}
+}
