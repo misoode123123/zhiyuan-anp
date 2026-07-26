@@ -2,10 +2,12 @@ package qa
 
 import (
 	"context"
+	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 )
@@ -42,6 +44,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/test-cases", h.List)
 	r.POST("/project-spaces/:id/test-cases/:tcid/run", h.Run)              // 单条自动验收
 	r.POST("/project-spaces/:id/requirements/:rid/run-tests", h.RunForReq) // 批量验收某需求的用例
+	r.POST("/project-spaces/:id/test-cases/:tcid/manual-verdict", h.ManualVerdict) // 人工验收：manual 用例录结论
 }
 
 // Generate 把需求验收标准转为测试用例并入库。
@@ -150,6 +153,56 @@ func (h *Handler) RunForReq(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, gin.H{"total": len(list), "passed": passed, "failed": failed, "manual": manual, "base_url": base})
+}
+
+// ManualVerdict 人工验收：manual 用例（或已验过改判）录 passed/failed + 备注。
+//
+// @Summary      人工验收测试用例
+// @Tags         qa
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        tcid  path  string  true  "测试用例ID"
+// @Param        body  body  object  true  "{verdict:string,note:string}"
+// @Success      200  {object}  map[string]interface{}  "更新后的用例(含 verifier_name)"
+// @Failure      400  {object}  map[string]interface{}  "verdict 非法"
+// @Failure      404  {object}  map[string]interface{}  "用例不存在"
+// @Failure      409  {object}  map[string]interface{}  "非人工验收范围"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/test-cases/{tcid}/manual-verdict [post]
+func (h *Handler) ManualVerdict(c *gin.Context) {
+	tc, err := h.svc.GetCase(c.Request.Context(), c.Param("tcid"))
+	if err != nil || tc == nil || tc.ID == "" {
+		httpx.Err(c, 404, 40402, "用例不存在")
+		return
+	}
+	var body struct {
+		Verdict string `json:"verdict"`
+		Note    string `json:"note"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		httpx.Err(c, 400, 40001, "请求体格式错误")
+		return
+	}
+	verifierID := c.GetString(auth.CtxUserDBID)
+	if err := h.svc.RecordManualVerdict(c.Request.Context(), tc, body.Verdict, body.Note, verifierID); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidVerdict):
+			httpx.Err(c, 400, 40001, err.Error())
+		case errors.Is(err, ErrNotManualVerifiable):
+			httpx.Err(c, 409, 40902, err.Error())
+		default:
+			httpx.Err(c, 500, 50008, err.Error())
+		}
+		return
+	}
+	// re-Get 回填 verifier_name（UpdateManualVerdict 不写 join 列）。
+	refreshed, err := h.svc.GetCase(c.Request.Context(), tc.ID)
+	if err != nil || refreshed == nil || refreshed.ID == "" {
+		httpx.OK(c, tc) // 回退内存态
+		return
+	}
+	httpx.OK(c, refreshed)
 }
 
 // baseURLForReq 按需求归属应用解析其运行 URL；未归属/未部署返回空（由 RunHTTPRequest 判为 manual）。
