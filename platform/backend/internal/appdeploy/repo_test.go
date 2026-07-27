@@ -350,3 +350,62 @@ func TestImportFromZip_TooLarge(t *testing.T) {
 		t.Fatalf("超过 MaxZipSize 须被拒")
 	}
 }
+
+// TestImportFromDir_Copy 纯目录复制 + git init（源无 .git）。
+func TestImportFromDir_Copy(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	// 临时把白名单加上 t.TempDir() 派生的根
+	srcRoot := t.TempDir()
+	oldRoots := AllowedDirRoots
+	AllowedDirRoots = []string{srcRoot + "/"}
+	defer func() { AllowedDirRoots = oldRoots }()
+
+	src := filepath.Join(srcRoot, "proj")
+	_ = os.MkdirAll(src, 0755)
+	_ = os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0644)
+
+	repoDir, err := ImportFromDir(context.Background(), "fromdir", src)
+	if err != nil {
+		t.Fatalf("ImportFromDir: %v", err)
+	}
+	b, _ := os.ReadFile(filepath.Join(repoDir, "main.go"))
+	if string(b) != "package main" {
+		t.Fatalf("main.go 内容不符: %q", string(b))
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
+		t.Fatalf("无 .git 源应 git init: %v", err)
+	}
+}
+
+// TestImportFromDir_GitClone 源是 git 仓时本地 clone（保留历史）。
+func TestImportFromDir_GitClone(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	srcRoot := t.TempDir()
+	oldRoots := AllowedDirRoots
+	AllowedDirRoots = []string{srcRoot + "/"}
+	defer func() { AllowedDirRoots = oldRoots }()
+
+	src := filepath.Join(srcRoot, "grepo")
+	makeLocalGitRepo(t, src)
+
+	repoDir, err := ImportFromDir(context.Background(), "fromgit", src)
+	if err != nil {
+		t.Fatalf("ImportFromDir git: %v", err)
+	}
+	b, _ := os.ReadFile(filepath.Join(repoDir, "hello.txt"))
+	if string(b) != "hi" {
+		t.Fatalf("git clone 内容不符: %q", string(b))
+	}
+}
+
+// TestImportFromDir_Traversal 非白名单路径须被拒。
+func TestImportFromDir_Traversal(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	_, err := ImportFromDir(context.Background(), "evil", "/etc/passwd")
+	if err == nil {
+		t.Fatalf("非白名单路径须被拒")
+	}
+}

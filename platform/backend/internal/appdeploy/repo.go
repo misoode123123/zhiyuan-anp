@@ -365,3 +365,50 @@ func copyZipFile(dest string, f *zip.File) error {
 	_, err = io.Copy(out, rc)
 	return err
 }
+
+// AllowedDirRoots 服务器目录导入白名单根（可配置）。
+var AllowedDirRoots = []string{"/data/", "/opt/legacy/"}
+
+// isUnderAllowedRoot 路径是否在某白名单根下（path 经 Clean+ToSlash；root 仅 ToSlash 保留尾斜杠，
+// 跨平台一致：白名单根统一用正斜杠 /data/ /opt/legacy/）。
+func isUnderAllowedRoot(p string) bool {
+	p = filepath.ToSlash(filepath.Clean(p))
+	for _, root := range AllowedDirRoots {
+		if strings.HasPrefix(p, filepath.ToSlash(root)) {
+			return true
+		}
+	}
+	return false
+}
+
+// ImportFromDir 把服务器已有目录导入托管仓。srcPath 须在白名单下（防 ../ 穿越）；
+// 源含 .git → 本地 clone 保留历史；否则 cp -r + git init。
+func ImportFromDir(ctx context.Context, name, srcPath string) (string, error) {
+	cleanSrc := filepath.Clean(srcPath)
+	if !isUnderAllowedRoot(cleanSrc) {
+		return "", fmt.Errorf("目录不在允许的根目录下: %s", srcPath)
+	}
+	if _, err := os.Stat(cleanSrc); err != nil {
+		return "", fmt.Errorf("源目录不存在: %s", srcPath)
+	}
+	target := ManagedRepoDir(name)
+	if _, err := os.Stat(target); err == nil {
+		return "", fmt.Errorf("目标目录已存在: %s", target)
+	}
+	if _, err := os.Stat(filepath.Join(cleanSrc, ".git")); err == nil {
+		if _, err := runGit(ctx, ManagedRepoBase, "clone", cleanSrc, target); err != nil {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("本地 clone 失败: %w", err)
+		}
+	} else {
+		if err := exec.CommandContext(ctx, "cp", "-r", cleanSrc, target).Run(); err != nil {
+			return "", fmt.Errorf("复制目录失败: %w", err)
+		}
+		_, _ = runGit(ctx, target, "init", "-q")
+		_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
+		_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
+		_, _ = runGit(ctx, target, "add", "-A")
+		_, _ = runGit(ctx, target, "commit", "-q", "-m", "import: 初始导入")
+	}
+	return target, nil
+}
