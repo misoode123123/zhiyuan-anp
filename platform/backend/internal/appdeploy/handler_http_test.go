@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1051,5 +1052,72 @@ func TestHandler_Stats_External(t *testing.T) {
 	}
 	if data["health"] != "up" {
 		t.Fatalf("健康应 up，得到 %v", data["health"])
+	}
+}
+
+// --- ImportUpload 端点（multipart zip）测试 ---
+
+// doMultipart 构造 multipart/form-data 请求（file 字段 + 表单字段），返回状态码与 body。
+func doMultipart(t *testing.T, r http.Handler, target, fileField, fileName string, fileContent []byte, fields map[string]string) (int, map[string]interface{}) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		_ = mw.WriteField(k, v)
+	}
+	fw, err := mw.CreateFormFile(fileField, fileName)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	_, _ = fw.Write(fileContent)
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, target, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w.Code, resp
+}
+
+// TestHandler_ImportUpload zip 上传 → 异步解压 → registered。
+func TestHandler_ImportUpload(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	_, restore := withImportRepoBase(t)
+	defer restore()
+	zipBytes, _ := writeZip(t, map[string]string{"index.html": "<h1>hi</h1>"})
+
+	r := newRouterWith(h)
+	code, resp := doMultipart(t, r, "/api/v1/project-spaces/ps_1/import/apps/upload",
+		"file", "app.zip", zipBytes, map[string]string{"name": "zipapp"})
+	if code != 201 {
+		t.Fatalf("状态码 %d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	got := waitImport(t, h, appID)
+	if got.Status != "registered" {
+		t.Fatalf("zip 导入应 registered，得到 %q err=%q", got.Status, got.LastError)
+	}
+	if got.ImportSource != "dir" {
+		t.Fatalf("zip 归 import_source=dir，得到 %q", got.ImportSource)
+	}
+}
+
+// TestHandler_ImportUpload_NoFile 未带 file → 400。
+func TestHandler_ImportUpload_NoFile(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	// 空表单（无 file）
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("name", "nofile")
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/project-spaces/ps_1/import/apps/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("未带 file 应 400，得到 %d", w.Code)
 	}
 }

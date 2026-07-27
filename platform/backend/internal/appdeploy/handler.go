@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -85,6 +86,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)
 	r.POST("/project-spaces/:id/apps", h.Create)
 	r.POST("/project-spaces/:id/import/apps", h.Import) // 导入已有项目（git/dir）；放 /import/apps 避开 /apps/:aid 冲突
+	r.POST("/project-spaces/:id/import/apps/upload", h.ImportUpload) // 本机 zip 上传导入
 	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
 	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)   // 部署到 test（默认）或指定 env
 	r.POST("/project-spaces/:id/apps/:aid/promote", h.Promote) // 上线 = 部署到 prod
@@ -1064,6 +1066,103 @@ func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, server
 		return
 	}
 	// 供给独立库（失败不阻塞导入，仅记 last_error）
+	if h.provisioner != nil {
+		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
+			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
+		}
+	}
+}
+
+// ImportUpload 本机 zip 上传导入。multipart: file=zip + 表单 name/internal_port。
+// 路由 /import/apps/upload。
+//
+// @Summary      上传 zip 导入应用
+// @Tags         appdeploy
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        id    path   string  true  "项目空间ID"
+// @Param        name  formData string  true  "应用名"
+// @Param        internal_port formData int  false "内部端口(默认 8080)"
+// @Param        file  formData file  true  "zip 压缩包"
+// @Success      200   {object}  map[string]interface{}  "占位应用(importing态)"
+// @Failure      400   {object}  map[string]interface{}  "缺 file / 超大小 / 名非法"
+// @Failure      409   {object}  map[string]interface{}  "同名应用已存在/配额超限"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/import/apps/upload [post]
+func (h *Handler) ImportUpload(c *gin.Context) {
+	name := strings.TrimSpace(c.PostForm("name"))
+	if msg := validateAppName(name); msg != "" {
+		httpx.Err(c, 400, 40001, msg)
+		return
+	}
+	psID := c.Param("id")
+	if h.quota != nil {
+		if err := h.quota.CheckApps(c.Request.Context(), psID); err != nil {
+			httpx.Err(c, 409, 40950, err.Error())
+			return
+		}
+	}
+	if ex, _ := h.store.GetByName(c.Request.Context(), psID, name); ex != nil && ex.ID != "" {
+		httpx.Err(c, 409, 40950, "应用名已存在: "+name)
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		httpx.Err(c, 400, 40001, "未收到 zip 文件（字段名 file）")
+		return
+	}
+	if fh.Size > MaxZipSize {
+		httpx.Err(c, 400, 40001, fmt.Sprintf("zip 超过 %d 限制", MaxZipSize))
+		return
+	}
+	port := 8080
+	if v := strings.TrimSpace(c.PostForm("internal_port")); v != "" {
+		if n, e := strconv.Atoi(v); e == nil && n > 0 {
+			port = n
+		}
+	}
+	a := &Application{
+		ProjectSpaceID: psID, Name: name, RepoDir: ManagedRepoDir(name),
+		InternalPort: port, DeployMode: AppManaged,
+		ImportSource: ImportSourceDir, ImportRef: fh.Filename, Status: StatusImporting,
+	}
+	if err := h.store.Create(c.Request.Context(), a); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	// 读取上传内容到内存（已过 MaxZipSize 校验）供异步解压
+	src, err := fh.Open()
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	data, err := io.ReadAll(src)
+	src.Close()
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	appID := a.ID
+	go h.runImportZip(appID, psID, name, data, fh.Size)
+	httpx.Created(c, a)
+}
+
+// runImportZip 异步解压 zip 导入（zip 归 import_source=dir 语义）。context.Background 派生。
+func (h *Handler) runImportZip(appID, psID, name string, data []byte, size int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	_ = h.store.SetStatus(ctx, psID, appID, StatusImporting, "正在解压 zip...", "")
+	repoDir, err := ImportFromZip(ctx, name, bytes.NewReader(data), size)
+	if err != nil {
+		_ = os.RemoveAll(ManagedRepoDir(name))
+		_ = h.store.SetStatus(ctx, psID, appID, "failed", err.Error(), "")
+		return
+	}
+	if e := h.store.UpdateImportDone(ctx, psID, appID, repoDir); e != nil {
+		_ = os.RemoveAll(ManagedRepoDir(name))
+		_ = h.store.SetStatus(ctx, psID, appID, "failed", e.Error(), "")
+		return
+	}
 	if h.provisioner != nil {
 		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
 			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
