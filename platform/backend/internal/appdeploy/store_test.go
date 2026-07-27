@@ -610,3 +610,28 @@ func TestStore_CreateImportDefault(t *testing.T) {
 		t.Fatalf("未设导入字段应为空，得到 source=%q ref=%q", got.ImportSource, got.ImportRef)
 	}
 }
+
+// TestStore_UpdateImportDone 导入完成写 registered + imported_at + repo_dir，清 last_error。
+func TestStore_UpdateImportDone(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Application{ProjectSpaceID: "ps_1", Name: "imp", RepoDir: "/data/repos/imp",
+		DeployMode: AppManaged, ImportSource: ImportSourceGit, Status: StatusImporting}
+	_ = s.Create(ctx, a)
+	// 先写个 last_error 模拟进度
+	_ = s.SetStatus(ctx, "ps_1", a.ID, StatusImporting, "正在克隆...", "")
+
+	if err := s.UpdateImportDone(ctx, "ps_1", a.ID, "/data/repos/imp"); err != nil {
+		t.Fatalf("UpdateImportDone: %v", err)
+	}
+	got, _ := s.GetByAppID(ctx, a.ID)
+	if got.Status != "registered" {
+		t.Fatalf("完成应 registered，得到 %q", got.Status)
+	}
+	if got.ImportedAt == nil {
+		t.Fatalf("imported_at 应已填，得到 nil")
+	}
+	if got.LastError != "" {
+		t.Fatalf("last_error 应清空，得到 %q", got.LastError)
+	}
+}

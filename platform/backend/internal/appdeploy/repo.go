@@ -16,7 +16,8 @@ import (
 // "应用代码在哪" 由此明确：app.repo_dir 指向其托管 git 仓库，平台全权管理。
 
 // ManagedRepoBase 托管仓库根目录（后端容器内路径，挂载自宿主 /opt/anp/data/repos）。
-const ManagedRepoBase = "/data/repos"
+// var（非 const）：测试可用 t.TempDir() 覆盖，避免本机无 /data/repos。
+var ManagedRepoBase = "/data/repos"
 
 // ManagedRepoDir 应用名的确定性托管仓库路径。
 func ManagedRepoDir(appName string) string {

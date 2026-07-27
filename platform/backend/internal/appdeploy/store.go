@@ -20,7 +20,7 @@ func appCols() string {
 	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
 }
 
-// Create 注册应用（registered 状态）。
+// Create 注册应用（默认 registered；导入流程传 StatusImporting）。
 // 落 deploy_mode + external_url：managed 默认走 registered + 空串；external 直接 running + external_url。
 func (s *Store) Create(ctx context.Context, a *Application) error {
 	a.ID = "app_" + uuid.NewString()[:20]
@@ -221,6 +221,14 @@ func (s *Store) SetStatus(ctx context.Context, psID, id, status, lastErr, buildL
 		return fmt.Errorf("应用 %s 不存在", id)
 	}
 	return nil
+}
+
+// UpdateImportDone 导入完成：置 registered + imported_at=now + repo_dir，清 last_error。
+func (s *Store) UpdateImportDone(ctx context.Context, psID, id, repoDir string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_application SET status='registered', imported_at=CURRENT_TIMESTAMP, repo_dir=$1, last_error='', updated_at=CURRENT_TIMESTAMP WHERE id=$2 AND project_space_id=$3`,
+		repoDir, id, psID)
+	return err
 }
 
 // UpdateAppStatus 只更新 app 状态（部署进度用，跨环境）。
