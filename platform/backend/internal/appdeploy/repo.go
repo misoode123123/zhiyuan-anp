@@ -249,3 +249,30 @@ func sanitizeName(s string) string {
 	}
 	return s
 }
+
+// buildCloneArgs 构造 git clone 参数。HTTPS 私有仓用 -c http.extraHeader 注入 token（不落 URL/config）；
+// SSH 仓（git@）走部署机 ~/.ssh，不注入。
+func buildCloneArgs(gitURL, authToken, target string) []string {
+	args := []string{"clone", "--progress", gitURL, target}
+	if authToken != "" && !strings.HasPrefix(gitURL, "git@") {
+		args = append([]string{"-c", "http.extraHeader=Authorization: Bearer " + authToken}, args...)
+	}
+	return args
+}
+
+// ImportFromGit 把远程仓库 clone 到 ManagedRepoDir(name)。authToken 仅此处用，不落库。
+// clone 在 ManagedRepoBase（父目录）执行，target 作为最后参数（target 此刻不存在）。
+func ImportFromGit(ctx context.Context, name, gitURL, authToken string) (string, error) {
+	target := ManagedRepoDir(name)
+	if _, err := os.Stat(target); err == nil {
+		return "", fmt.Errorf("目标目录已存在: %s（应用名冲突）", target)
+	}
+	args := buildCloneArgs(gitURL, authToken, target)
+	if _, err := runGit(ctx, ManagedRepoBase, args...); err != nil {
+		_ = os.RemoveAll(target)
+		return "", fmt.Errorf("git clone 失败: %w（检查 URL/认证/网络）", err)
+	}
+	_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
+	_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
+	return target, nil
+}

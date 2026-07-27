@@ -1,6 +1,7 @@
 package appdeploy
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -212,5 +213,77 @@ func TestReadRepoFile_PathTraversal(t *testing.T) {
 	// 绝对路径也不应越权
 	if _, err := ReadRepoFile(dir, secretPath); err == nil {
 		t.Fatal("绝对路径越权访问必须被拒")
+	}
+}
+
+// withTempRepoBase 临时把 ManagedRepoBase 指向 t.TempDir()，返回还原函数。
+func withTempRepoBase(t *testing.T) func() {
+	t.Helper()
+	old := ManagedRepoBase
+	base := t.TempDir()
+	ManagedRepoBase = base
+	return func() { ManagedRepoBase = old }
+}
+
+// makeLocalGitRepo 在 dir 建一个含一个文件的本地 git 仓（作 clone 源）。
+func makeLocalGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0644)
+	runGit(context.Background(), dir, "init", "-q")
+	runGit(context.Background(), dir, "config", "user.email", "t@t")
+	runGit(context.Background(), dir, "config", "user.name", "t")
+	runGit(context.Background(), dir, "add", "-A")
+	runGit(context.Background(), dir, "commit", "-q", "-m", "init")
+}
+
+// TestImportFromGit_LocalClone clone 本地源仓到 ManagedRepoDir(name)，含 .git 与文件。
+func TestImportFromGit_LocalClone(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	src := filepath.Join(t.TempDir(), "src")
+	makeLocalGitRepo(t, src)
+
+	repoDir, err := ImportFromGit(context.Background(), "legacy", src, "")
+	if err != nil {
+		t.Fatalf("ImportFromGit: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
+		t.Fatalf("clone 后应有 .git: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(repoDir, "hello.txt"))
+	if err != nil || string(b) != "hi" {
+		t.Fatalf("clone 文件内容应 hi，得到 %q err=%v", string(b), err)
+	}
+}
+
+// TestImportFromGit_TargetExists 目标已存在则拒绝（防覆盖）。
+func TestImportFromGit_TargetExists(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	name := "dup"
+	_ = os.MkdirAll(ManagedRepoDir(name), 0755)
+	_, err := ImportFromGit(context.Background(), name, "/nonexistent/src", "")
+	if err == nil {
+		t.Fatalf("目标已存在应报错")
+	}
+}
+
+// TestBuildCloneArgs_Token HTTPS+token 时首参为 -c extraHeader（注入认证，不落 URL/config）。
+func TestBuildCloneArgs_Token(t *testing.T) {
+	args := buildCloneArgs("https://gitlab.com/x/y.git", "tok123", "/data/repos/y")
+	// 期望: ["-c", "http.extraHeader=Authorization: Bearer tok123", "clone", "--progress", url, target]
+	if len(args) < 2 || args[0] != "-c" || !strings.Contains(args[1], "Bearer tok123") {
+		t.Fatalf("HTTPS+token 应注入 extraHeader，得到 %v", args)
+	}
+}
+
+// TestBuildCloneArgs_SSH git@ 开头时不注入 extraHeader（走部署机 key）。
+func TestBuildCloneArgs_SSH(t *testing.T) {
+	args := buildCloneArgs("git@github.com:x/y.git", "tok123", "/data/repos/y")
+	for _, a := range args {
+		if strings.Contains(a, "extraHeader") {
+			t.Fatalf("SSH 仓不应注入 extraHeader，得到 %v", args)
+		}
 	}
 }
