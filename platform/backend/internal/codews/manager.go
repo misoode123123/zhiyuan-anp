@@ -126,13 +126,13 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 		m.mu.Unlock()
 		return nil, fmt.Errorf("未知编码工具: %s（已注册: %v）", toolName, m.Tools())
 	}
-	// 同开发者同工具同需求 活跃会话 → 复用
-	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && s.RequirementID == reqID {
+	// 同开发者同工具 且 需求未变 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
+	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && (reqID == "" || s.RequirementID == reqID) {
 		m.mu.Unlock()
 		return s, nil
 	}
-	// 同开发者 换工具 或 换需求 → 停旧起新（换需求=新会话，杜绝多需求串台）
-	if old, exists := m.sessions[key]; exists && old.cmd != nil && old.cmd.Process != nil {
+	// 换工具 或 显式换需求（reqID 非空且不同）→ 停旧起新（换需求=新会话，杜绝多需求串台）
+	if old, exists := m.sessions[key]; exists && old.cmd != nil && old.cmd.Process != nil && (old.Tool != toolName || (reqID != "" && old.RequirementID != reqID)) {
 		_ = old.cmd.Process.Kill()
 		delete(m.sessions, key)
 	}

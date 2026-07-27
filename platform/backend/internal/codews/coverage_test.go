@@ -522,6 +522,42 @@ func TestEnsure_DefaultToolName(t *testing.T) {
 	}
 }
 
+// TestEnsure_ReuseSameRequirement 已绑定 reqA 的 alive 会话，Ensure 同 reqA → 复用。
+func TestEnsure_ReuseSameRequirement(t *testing.T) {
+	m := NewManager("h", nil)
+	existing := &Session{
+		AppID: "app", UserID: "u", Tool: "opencode",
+		RequirementID: "reqA",
+		cmd:           &exec.Cmd{},
+	}
+	m.sessions["app:u"] = existing
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "reqA")
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if got != existing {
+		t.Errorf("同需求 reqA 应复用现有会话, got %+v", got)
+	}
+}
+
+// TestEnsure_RefreshEmptyReqReusesBound 刷新场景：reqID 空 → 沿用已绑定 reqA 的会话（不 kill，保留绑定）。
+func TestEnsure_RefreshEmptyReqReusesBound(t *testing.T) {
+	m := NewManager("h", nil)
+	existing := &Session{
+		AppID: "app", UserID: "u", Tool: "opencode",
+		RequirementID: "reqA",
+		cmd:           &exec.Cmd{},
+	}
+	m.sessions["app:u"] = existing
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "")
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if got != existing {
+		t.Errorf("空 reqID 刷新应沿用已绑定会话(保留 requirement_id), got %+v", got)
+	}
+}
+
 // ============================================================
 // ensureWorktree（路径推算 + 已存在分支, 不真实跑 git）
 // ============================================================
