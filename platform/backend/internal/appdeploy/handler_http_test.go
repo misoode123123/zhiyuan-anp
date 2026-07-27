@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -929,10 +931,10 @@ func waitImport(t *testing.T, h *Handler, appID string) *Application {
 // TestHandler_Import_Git git 来源：占位 importing → 异步 clone 本地源仓 → registered。
 func TestHandler_Import_Git(t *testing.T) {
 	h, _ := newHTTPHandler(t)
-	_, restore := withImportRepoBase(t)
+	base, restore := withImportRepoBase(t)
 	defer restore()
-	// 建本地源仓作 git_url
-	src := filepath.Join(t.TempDir(), "src")
+	// 建本地源仓作 git_url；源仓须在 base 下（白名单已放开到 base，本地 git_url 走 isUnderAllowedRoot）
+	src := filepath.Join(base, "src")
 	makeLocalGitRepo(t, src)
 
 	r := newRouterWith(h)
@@ -977,6 +979,35 @@ func TestHandler_Import_NameConflict(t *testing.T) {
 		map[string]interface{}{"source": "git", "name": "dup", "git_url": "/tmp/x"})
 	if code != 409 {
 		t.Fatalf("同名应 409，得到 %d", code)
+	}
+}
+
+// TestHandler_Import_TokenRedaction clone 失败时 last_error 须脱敏不含 auth_token（PRD §8 安全路径）。
+// 用一个存在但非 git 仓的目录作 git_url 强制 clone 失败；token 经 runImport 闭包不落库，
+// 失败信息写入前应 ReplaceAll 脱敏。验空 token 不乱码 + 非空 token 不泄露两条路径。
+func TestHandler_Import_TokenRedaction(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	base, restore := withImportRepoBase(t)
+	defer restore()
+	// 存在但非 git 仓的目录（须在白名单 base 下）→ clone 必失败
+	notGit := filepath.Join(base, "notgit")
+	if err := os.MkdirAll(notGit, 0755); err != nil {
+		t.Fatalf("mkdir notgit: %v", err)
+	}
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/import/apps",
+		map[string]interface{}{"source": "git", "name": "redact", "git_url": notGit, "auth_token": "SECRET-TOKEN"})
+	if code != 201 {
+		t.Fatalf("状态码 %d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	got := waitImport(t, h, appID)
+	if got.Status != "failed" {
+		t.Fatalf("应 failed（非 git 仓 clone 失败），得到 %q", got.Status)
+	}
+	if strings.Contains(got.LastError, "SECRET-TOKEN") {
+		t.Fatalf("last_error 须脱敏不含 token，得到 %q", got.LastError)
 	}
 }
 

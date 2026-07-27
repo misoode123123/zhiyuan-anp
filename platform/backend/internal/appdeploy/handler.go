@@ -993,17 +993,23 @@ func (h *Handler) Import(c *gin.Context) {
 func validateImportSource(in *importBody) (src, ref, msg string) {
 	switch in.Source {
 	case ImportSourceGit:
-		// 允许 http(s)://host、git@host:path（生产远程仓）或本地存盘路径（同机/测试 clone）
-		if strings.HasPrefix(in.GitURL, "git@") {
-			return ImportSourceGit, in.GitURL, ""
+		// 允许 http(s)://host、git@host:path（生产远程仓）。本地路径须在白名单下——
+		// 否则 git_url 接受任意存在目录会绕过 dir 分支的 isUnderAllowedRoot 白名单（../ 穿越）。
+		u, err := url.Parse(in.GitURL)
+		isRemote := err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https")
+		isSSH := strings.HasPrefix(in.GitURL, "git@")
+		if isRemote || isSSH {
+			return ImportSourceGit, in.GitURL, "" // 远程：放行
 		}
-		if u, err := url.Parse(in.GitURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
-			return ImportSourceGit, in.GitURL, ""
+		// 本地路径：须在白名单下（防绕过 dir 白名单）
+		clean := filepath.Clean(in.GitURL)
+		if !isUnderAllowedRoot(clean) {
+			return "", "", "本地 git_url 须在允许根目录下（/data/、/opt/legacy/）"
 		}
-		if fi, e := os.Stat(in.GitURL); e == nil && fi.IsDir() {
-			return ImportSourceGit, in.GitURL, ""
+		if _, err := os.Stat(clean); err != nil {
+			return "", "", "git_url 不存在: " + in.GitURL
 		}
-		return "", "", "git_url 非法（需 http(s)://host 或 git@host:path）"
+		return ImportSourceGit, in.GitURL, ""
 	case ImportSourceDir:
 		clean := filepath.Clean(in.ServerPath)
 		if !isUnderAllowedRoot(clean) {
@@ -1037,14 +1043,22 @@ func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, server
 		repoDir, err = ImportFromDir(ctx, name, serverPath)
 	}
 	if err != nil {
-		// token 脱敏：git clone 失败信息可能回显 extraHeader 中的 token，写入 DB 前替换掉
-		msg := strings.ReplaceAll(err.Error(), authToken, "***")
+		// token 脱敏：git clone 失败信息可能回显 extraHeader 中的 token，写入 DB 前替换掉。
+		// 注意：authToken==""（SSH/公开仓）时 ReplaceAll 不是 no-op——Go 语义空 old 在每 rune 间匹配，
+		// 结果 "克***隆***失***败..." 乱码，故先判空。
+		msg := err.Error()
+		if authToken != "" {
+			msg = strings.ReplaceAll(msg, authToken, "***")
+		}
 		_ = os.RemoveAll(ManagedRepoDir(name))
 		_ = h.store.SetStatus(ctx, psID, appID, "failed", msg, "")
 		return
 	}
 	if e := h.store.UpdateImportDone(ctx, psID, appID, repoDir); e != nil {
-		msg := strings.ReplaceAll(e.Error(), authToken, "***")
+		msg := e.Error()
+		if authToken != "" {
+			msg = strings.ReplaceAll(msg, authToken, "***")
+		}
 		_ = os.RemoveAll(ManagedRepoDir(name))
 		_ = h.store.SetStatus(ctx, psID, appID, "failed", msg, "")
 		return
