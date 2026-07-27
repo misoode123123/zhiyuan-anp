@@ -15,6 +15,7 @@ type Requirement = {
   acceptance_criteria: string;
   status: string;
   application_id?: string;
+  assignee?: string;
 };
 
 const STEPS = ["需求", "编码", "审批", "发布"];
@@ -164,6 +165,27 @@ export default function RequirementsPage() {
     } finally {
       setDispatching("");
       dispatchingRef.current = false;
+    }
+  }
+
+  // 认领需求（人）：POST /assign 空 body=自助认领（互斥，被他人认领会 409）。
+  // 认领后去「编码工作台」为此需求开发（工作台会绑定 requirement_id）。
+  async function claim(rid: string) {
+    if (!psID) return;
+    try {
+      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }).then((rr) => rr.json());
+      if (r.code !== 0) {
+        setMsg(`✗ ${r.message ?? "认领失败"}`);
+        return;
+      }
+      setMsg("✅ 已认领，去「编码工作台」为此需求编码");
+      loadList(psID);
+    } catch (e) {
+      setMsg(`✗ ${e}`);
     }
   }
 
@@ -356,14 +378,28 @@ export default function RequirementsPage() {
                       📦 {apps.find((a) => a.id === r.application_id)?.name ?? "应用"}
                     </span>
                   )}
+                  {r.assignee && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
+                      👤 {r.assignee}
+                    </span>
+                  )}
                 </div>
-                <button
-                  onClick={() => dispatch(r.id)}
-                  disabled={!!dispatching}
-                  className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
-                >
-                  {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
-                </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => claim(r.id)}
+                    className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
+                    title="认领此需求（人），去编码工作台开发"
+                  >
+                    👤 认领
+                  </button>
+                  <button
+                    onClick={() => dispatch(r.id)}
+                    disabled={!!dispatching}
+                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                  >
+                    {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
+                  </button>
+                </div>
               </div>
               <div className="mt-1 text-xs text-neutral-500">{r.user_story}</div>
             </div>
