@@ -311,11 +311,17 @@ func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) 
 			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("zip 文件数超限 %d", MaxZipFiles)
 		}
+		if f.Mode()&os.ModeSymlink != 0 {
+			continue // 跳过符号链接 entry（防 zip symlink 攻击）
+		}
 		dest := filepath.Clean(filepath.Join(target, f.Name))
 		// 防 zip slip：解压目标必须严格在 target 之下
 		if dest != cleanRoot && !strings.HasPrefix(dest, cleanRoot+string(os.PathSeparator)) {
 			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("zip slip 非法路径: %s", f.Name)
+		}
+		if dest == cleanRoot {
+			continue // 跳过 "." 或空名 entry（dest 落到根，slip 检查旁路）
 		}
 		if f.FileInfo().IsDir() {
 			_ = os.MkdirAll(dest, 0755)
