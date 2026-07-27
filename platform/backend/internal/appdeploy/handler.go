@@ -84,6 +84,7 @@ func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *ch
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)
 	r.POST("/project-spaces/:id/apps", h.Create)
+	r.POST("/project-spaces/:id/import/apps", h.Import) // 导入已有项目（git/dir）；放 /import/apps 避开 /apps/:aid 冲突
 	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
 	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)   // 部署到 test（默认）或指定 env
 	r.POST("/project-spaces/:id/apps/:aid/promote", h.Promote) // 上线 = 部署到 prod
@@ -783,6 +784,16 @@ type createBody struct {
 	ExternalURL  string `json:"external_url"`  // external 必填：外部应用访问地址 http(s)://host[:port][/path]
 }
 
+// importBody 导入已有项目请求体（zip 走 ImportUpload multipart 端点）。
+type importBody struct {
+	Source       string `json:"source" binding:"required,oneof=git dir"` // git=远程仓库 dir=服务器目录
+	Name         string `json:"name" binding:"required"`
+	InternalPort int    `json:"internal_port"` // 可选，默认 8080
+	GitURL       string `json:"git_url"`       // source=git 必填
+	AuthToken    string `json:"auth_token"`    // 私有 HTTPS 仓 token（不落库）；SSH 仓留空
+	ServerPath   string `json:"server_path"`   // source=dir 必填，须在白名单下
+}
+
 // validateAppName 应用名必须人工起名(非随机数/ID):trim 非空、≥2 字符、不带 ID 前缀(chg_/app_/req_/rel_/ps_)、非纯数字。
 // 返回错误消息(空串=合法)。各中心显示应用名的前提是 name 本身可读。
 func validateAppName(name string) string {
@@ -916,6 +927,134 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 	httpx.Created(c, a)
+}
+
+// Import 导入已有项目（git 仓库 / 服务器目录）。占位落库后异步执行，前端轮询 status。
+// 路由用 /import/apps 避开 /apps/:aid 的 Gin 同层冲突。
+//
+// @Summary      导入已有项目
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string      true  "项目空间ID"
+// @Param        body  body  importBody  true  "导入参数(source/name/git_url|server_path)"
+// @Success      200   {object}  map[string]interface{}  "占位应用(importing态)"
+// @Failure      400   {object}  map[string]interface{}  "invalid body/来源参数非法"
+// @Failure      409   {object}  map[string]interface{}  "同名应用已存在/配额超限"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/import/apps [post]
+func (h *Handler) Import(c *gin.Context) {
+	var in importBody
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if msg := validateAppName(in.Name); msg != "" {
+		httpx.Err(c, 400, 40001, msg)
+		return
+	}
+	psID := c.Param("id")
+	if h.quota != nil {
+		if err := h.quota.CheckApps(c.Request.Context(), psID); err != nil {
+			httpx.Err(c, 409, 40950, err.Error())
+			return
+		}
+	}
+	// 预检名字唯一（避免先 clone 再冲突浪费）
+	if ex, _ := h.store.GetByName(c.Request.Context(), psID, in.Name); ex != nil && ex.ID != "" {
+		httpx.Err(c, 409, 40950, "应用名已存在: "+in.Name)
+		return
+	}
+	// 校验来源参数 + 定位 import_source/ref
+	src, ref, msg := validateImportSource(&in)
+	if msg != "" {
+		httpx.Err(c, 400, 40001, msg)
+		return
+	}
+	port := in.InternalPort
+	if port == 0 {
+		port = 8080
+	}
+	a := &Application{
+		ProjectSpaceID: psID, Name: in.Name, RepoDir: ManagedRepoDir(in.Name),
+		InternalPort: port, DeployMode: AppManaged,
+		ImportSource: src, ImportRef: ref, Status: StatusImporting,
+	}
+	if err := h.store.Create(c.Request.Context(), a); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	// 异步：context.Background 派生 + 超时；token 仅闭包内（不落库）
+	go h.runImport(a.ID, psID, in.Name, in.Source, in.GitURL, in.AuthToken, in.ServerPath)
+	httpx.Created(c, a)
+}
+
+// validateImportSource 校验 git/dir 来源参数，返回 (import_source, import_ref, errMsg)。
+func validateImportSource(in *importBody) (src, ref, msg string) {
+	switch in.Source {
+	case ImportSourceGit:
+		// 允许 http(s)://host、git@host:path（生产远程仓）或本地存盘路径（同机/测试 clone）
+		if strings.HasPrefix(in.GitURL, "git@") {
+			return ImportSourceGit, in.GitURL, ""
+		}
+		if u, err := url.Parse(in.GitURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+			return ImportSourceGit, in.GitURL, ""
+		}
+		if fi, e := os.Stat(in.GitURL); e == nil && fi.IsDir() {
+			return ImportSourceGit, in.GitURL, ""
+		}
+		return "", "", "git_url 非法（需 http(s)://host 或 git@host:path）"
+	case ImportSourceDir:
+		clean := filepath.Clean(in.ServerPath)
+		if !isUnderAllowedRoot(clean) {
+			return "", "", "server_path 不在允许根目录下（/data/、/opt/legacy/）"
+		}
+		if _, err := os.Stat(clean); err != nil {
+			return "", "", "server_path 不存在: " + in.ServerPath
+		}
+		return ImportSourceDir, in.ServerPath, ""
+	}
+	return "", "", "未知来源: " + in.Source
+}
+
+// runImport 异步执行导入。用 context.Background（禁 request context，HTTP 返回即取消）。
+// token 在写入 last_error 前脱敏（PRD §8 安全要求）。
+func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, serverPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	label := "克隆仓库"
+	if source == ImportSourceDir {
+		label = "复制目录"
+	}
+	_ = h.store.SetStatus(ctx, psID, appID, StatusImporting, "正在"+label+"...", "")
+
+	var repoDir string
+	var err error
+	switch source {
+	case ImportSourceGit:
+		repoDir, err = ImportFromGit(ctx, name, gitURL, authToken)
+	case ImportSourceDir:
+		repoDir, err = ImportFromDir(ctx, name, serverPath)
+	}
+	if err != nil {
+		// token 脱敏：git clone 失败信息可能回显 extraHeader 中的 token，写入 DB 前替换掉
+		msg := strings.ReplaceAll(err.Error(), authToken, "***")
+		_ = os.RemoveAll(ManagedRepoDir(name))
+		_ = h.store.SetStatus(ctx, psID, appID, "failed", msg, "")
+		return
+	}
+	if e := h.store.UpdateImportDone(ctx, psID, appID, repoDir); e != nil {
+		msg := strings.ReplaceAll(e.Error(), authToken, "***")
+		_ = os.RemoveAll(ManagedRepoDir(name))
+		_ = h.store.SetStatus(ctx, psID, appID, "failed", msg, "")
+		return
+	}
+	// 供给独立库（失败不阻塞导入，仅记 last_error）
+	if h.provisioner != nil {
+		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
+			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
+		}
+	}
 }
 
 // deployBody 部署请求体（均可选）。

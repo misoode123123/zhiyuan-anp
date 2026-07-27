@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -893,6 +895,88 @@ func TestHandler_CreateExternal_BadURL(t *testing.T) {
 	}
 	if rw.called {
 		t.Fatal("非法 URL 时不应调 UpsertExternalRoute")
+	}
+}
+
+// --- Import 端点（JSON：git/dir）测试 ---
+// importMultipart 不需要；本任务测 JSON 端点。helper: 覆盖 ManagedRepoBase 到临时目录 + 建本地源仓。
+func withImportRepoBase(t *testing.T) (string, func()) {
+	t.Helper()
+	old := ManagedRepoBase
+	base := t.TempDir()
+	ManagedRepoBase = base
+	// 白名单放开到 base（dir 来源测试用）
+	oldRoots := AllowedDirRoots
+	AllowedDirRoots = []string{base + "/"}
+	return base, func() { ManagedRepoBase = old; AllowedDirRoots = oldRoots }
+}
+
+// waitImport 轮询 app 至非 importing（registered/failed），最多 8s。
+func waitImport(t *testing.T, h *Handler, appID string) *Application {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		got, _ := h.store.GetByAppID(context.Background(), appID)
+		if got != nil && got.Status != StatusImporting {
+			return got
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("导入超时未完成 app=%s", appID)
+	return nil
+}
+
+// TestHandler_Import_Git git 来源：占位 importing → 异步 clone 本地源仓 → registered。
+func TestHandler_Import_Git(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	_, restore := withImportRepoBase(t)
+	defer restore()
+	// 建本地源仓作 git_url
+	src := filepath.Join(t.TempDir(), "src")
+	makeLocalGitRepo(t, src)
+
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/import/apps",
+		map[string]interface{}{"source": "git", "name": "legacy-api", "git_url": src})
+	if code != 201 {
+		t.Fatalf("状态码 %d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	if appID == "" {
+		t.Fatalf("未返回 app id: %v", data)
+	}
+	got := waitImport(t, h, appID)
+	if got.Status != "registered" {
+		t.Fatalf("git 导入应 registered，得到 %q err=%q", got.Status, got.LastError)
+	}
+	if got.ImportSource != "git" {
+		t.Fatalf("import_source 应 git，得到 %q", got.ImportSource)
+	}
+}
+
+// TestHandler_Import_BadURL git_url 非法 → 400。
+func TestHandler_Import_BadURL(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/import/apps",
+		map[string]interface{}{"source": "git", "name": "bad", "git_url": "not-a-url"})
+	if code != 400 {
+		t.Fatalf("非法 git_url 应 400，得到 %d body=%v", code, resp)
+	}
+}
+
+// TestHandler_Import_NameConflict 同空间同名 → 409。
+func TestHandler_Import_NameConflict(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	_, restore := withImportRepoBase(t)
+	defer restore()
+	seedApp(t, h, "ps_1", "dup", "/tmp/dup") // 已存在
+	r := newRouterWith(h)
+	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/import/apps",
+		map[string]interface{}{"source": "git", "name": "dup", "git_url": "/tmp/x"})
+	if code != 409 {
+		t.Fatalf("同名应 409，得到 %d", code)
 	}
 }
 
