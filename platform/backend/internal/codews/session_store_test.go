@@ -37,3 +37,28 @@ func TestPGSessionStore_Lifecycle(t *testing.T) {
 		t.Fatalf("prompt_count 应=3, 得 %d", pc)
 	}
 }
+
+// TestStartSession_PersistsRequirementID 绑定需求：StartSession 把 requirement_id 落库。
+func TestStartSession_PersistsRequirementID(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "codews_session")
+	store := NewPGSessionStore(db)
+	ctx := context.Background()
+
+	rec := &SessionRecord{
+		ProjectSpaceID: "ps_t", AppID: "app_t", UserID: "usr_alice",
+		Tool: "opencode", RepoDir: "/repo", Port: 9401,
+		RequirementID: "req_123",
+	}
+	if err := store.StartSession(ctx, rec); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	var got string
+	if err := db.GetContext(ctx, &got,
+		`SELECT requirement_id FROM codews_session WHERE id=$1`, rec.ID); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if got != "req_123" {
+		t.Fatalf("requirement_id want req_123 got %q", got)
+	}
+}

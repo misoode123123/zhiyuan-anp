@@ -18,6 +18,7 @@ type SessionRecord struct {
 	RepoDir        string     `json:"repo_dir" db:"repo_dir"`
 	Port           int        `json:"port" db:"port"`
 	SessionID      string     `json:"session_id,omitempty" db:"session_id"` // 工具原生会话 id（opencode 有；claude/codex 按 repo_dir 解析）
+	RequirementID  string     `json:"requirement_id,omitempty" db:"requirement_id"` // 绑定的需求（工作直播按此查；空=application 页老入口）
 	StartedAt      time.Time  `json:"started_at" db:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty" db:"ended_at"`
 	PromptCount    int        `json:"prompt_count" db:"prompt_count"`
@@ -48,9 +49,9 @@ func nullableStr(s string) interface{} {
 func (p *pgSessionStore) StartSession(ctx context.Context, s *SessionRecord) error {
 	s.ID = "cws_" + uuid.NewString()[:20]
 	_, err := p.db.ExecContext(ctx,
-		`INSERT INTO codews_session (id, project_space_id, app_id, user_id, tool, repo_dir, port, session_id, started_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)`,
-		s.ID, s.ProjectSpaceID, s.AppID, nullableStr(s.UserID), s.Tool, s.RepoDir, s.Port, nullableStr(s.SessionID))
+		`INSERT INTO codews_session (id, project_space_id, app_id, user_id, tool, repo_dir, port, session_id, requirement_id, started_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CURRENT_TIMESTAMP)`,
+		s.ID, s.ProjectSpaceID, s.AppID, nullableStr(s.UserID), s.Tool, s.RepoDir, s.Port, nullableStr(s.SessionID), nullableStr(s.RequirementID))
 	return err
 }
 
