@@ -265,6 +265,69 @@ func TestHandler_Deploy_appNotFound(t *testing.T) {
 	}
 }
 
+// TestHandler_DeployProd_forbidden 非 gatekeeper/admin → 403(app.deploy.prod 拒绝)。
+// newRouterWith 固定注入 admin,此处 inline 一个空 roles 的 router 覆盖。
+// 对称 TestHandler_Promote_forbidden,确认 Deploy env=prod 同样按部署权限分离鉴权。
+func TestHandler_DeployProd_forbidden(t *testing.T) {
+	h, _ := newHTTPHandlerWithGates(t)
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("roles", []string{}); c.Next() })
+	h.Register(r.Group("/api/v1"))
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deploy", map[string]string{"env": "prod"})
+	if code != 403 {
+		t.Fatalf("非 admin 应 403,得到 %d body=%v", code, resp)
+	}
+}
+
+// TestHandler_DeployProd_changeGateRejected 登记变更未审批 → 409/40920(变更闸门)。
+// 对称 TestHandler_Promote_changeGateRejected,确认 /deploy env=prod 同走变更闸门。
+func TestHandler_DeployProd_changeGateRejected(t *testing.T) {
+	h, db := newHTTPHandlerWithGates(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
+		 VALUES ('chg_1', 'ps_1', $1, 'code', 'diff', 'pending')`, a.ID); err != nil {
+		t.Fatalf("seed change: %v", err)
+	}
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deploy", map[string]string{"env": "prod"})
+	if code != 409 {
+		t.Fatalf("未审批变更应 409,得到 %d", code)
+	}
+	if resp["code"].(float64) != 40920 {
+		t.Fatalf("业务码应 40920(变更闸门),得到 %v", resp["code"])
+	}
+}
+
+// TestHandler_DeployProd_deliveredGateRejected approved 变更 + 来源需求未 delivered → 409/40921。
+// 对称 TestHandler_Promote_deliveredGateRejected(AC7):堵 /deploy env=prod 绕过 /promote 的 delivered 漏检。
+func TestHandler_DeployProd_deliveredGateRejected(t *testing.T) {
+	h, db := newHTTPHandlerWithGates(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO requirement (id, project_space_id, application_id, title, status)
+		 VALUES ('req_1', 'ps_1', $1, 't', 'developing')`, a.ID); err != nil {
+		t.Fatalf("seed req: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
+		 VALUES ('chg_1', 'ps_1', 'req_1', 'code', 'diff', 'approved')`); err != nil {
+		t.Fatalf("seed change: %v", err)
+	}
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deploy", map[string]string{"env": "prod"})
+	if code != 409 {
+		t.Fatalf("approved+未delivered 应 409,得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40921 {
+		t.Fatalf("业务码应 40921(对称 AC7 delivered),得到 %v", resp["code"])
+	}
+}
+
 // TestHandler_ListEnv 应用无环境变量 → 空列表。
 func TestHandler_ListEnv_empty(t *testing.T) {
 	h, _ := newHTTPHandler(t)

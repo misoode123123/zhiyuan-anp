@@ -961,6 +961,15 @@ func (h *Handler) Deploy(c *gin.Context) {
 				httpx.Err(c, 409, 40920, "需先登记变更并审批通过才能上线 prod（变更闸门）")
 				return
 			}
+			// 🚪 AC7 delivered 前置（对称 Promote，防 /deploy env=prod 绕过 /promote）：
+			// approved 变更关联的需求须已 delivered（即已走 release/merge 发布）。
+			// 查不到需求时放行（grandfather，对称 release 回写）。
+			if h.reqRepo != nil {
+				if undelivered, _ := h.reqRepo.HasUnDeliveredApprovedByApp(c.Request.Context(), aid); undelivered {
+					httpx.Err(c, 409, 40921, "来源需求未交付，请先在发布中心发布上线后再部署 prod")
+					return
+				}
+			}
 			_ = h.changes.MarkReleased(c.Request.Context(), aid)
 		}
 	}
