@@ -11,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 
+	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
@@ -190,6 +192,66 @@ func TestHandler_Promote_appNotFound(t *testing.T) {
 	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/app_ghost/promote", nil)
 	if code != 404 {
 		t.Fatalf("不存在应用应 404，得到 %d", code)
+	}
+}
+
+// TestHandler_Promote_forbidden 非 gatekeeper/admin → 403(部署权限分离)。
+// newRouterWith 固定注入 admin,此处 inline 一个空 roles 的 router 覆盖。
+func TestHandler_Promote_forbidden(t *testing.T) {
+	h, _ := newHTTPHandlerWithGates(t)
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("roles", []string{}); c.Next() })
+	h.Register(r.Group("/api/v1"))
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/promote", nil)
+	if code != 403 {
+		t.Fatalf("非 admin 应 403,得到 %d body=%v", code, resp)
+	}
+}
+
+// TestHandler_Promote_changeGateRejected 登记变更未审批 → 409/40920(变更闸门)。
+func TestHandler_Promote_changeGateRejected(t *testing.T) {
+	h, db := newHTTPHandlerWithGates(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
+		 VALUES ('chg_1', 'ps_1', $1, 'code', 'diff', 'pending')`, a.ID); err != nil {
+		t.Fatalf("seed change: %v", err)
+	}
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/promote", nil)
+	if code != 409 {
+		t.Fatalf("未审批变更应 409,得到 %d", code)
+	}
+	if resp["code"].(float64) != 40920 {
+		t.Fatalf("业务码应 40920(变更闸门),得到 %v", resp["code"])
+	}
+}
+
+// TestHandler_Promote_deliveredGateRejected approved 变更 + 来源需求未 delivered → 409/40921(AC7 核心)。
+func TestHandler_Promote_deliveredGateRejected(t *testing.T) {
+	h, db := newHTTPHandlerWithGates(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO requirement (id, project_space_id, application_id, title, status)
+		 VALUES ('req_1', 'ps_1', $1, 't', 'developing')`, a.ID); err != nil {
+		t.Fatalf("seed req: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
+		 VALUES ('chg_1', 'ps_1', 'req_1', 'code', 'diff', 'approved')`); err != nil {
+		t.Fatalf("seed change: %v", err)
+	}
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/promote", nil)
+	if code != 409 {
+		t.Fatalf("approved+未delivered 应 409,得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40921 {
+		t.Fatalf("业务码应 40921(AC7 delivered),得到 %v", resp["code"])
 	}
 }
 
@@ -432,6 +494,23 @@ func newHTTPHandlerWithTables(t *testing.T) (*Handler, *sqlx.DB) {
 	return newHTTPHandler(t)
 }
 
+// newHTTPHandlerWithGates 同 newHTTPHandler,但注入 changes+reqRepo,
+// 供 Promote 变更闸门(40920)/AC7 delivered 前置(40921)测试——这两个依赖真实 Store/Repository。
+// 不复用 newHTTPHandler:后者 changes=nil 被 TestHandler_RegisterChange_changesNil 的 nil-gate 测试依赖。
+func newHTTPHandlerWithGates(t *testing.T) (*Handler, *sqlx.DB) {
+	t.Helper()
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db,
+		"release_record", "change_request", "requirement",
+		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+	)
+	store := NewStore(db)
+	changes := change.NewStore(db)
+	reqRepo := requirement.NewRepository(db)
+	h := NewHandler(store, NewDeployer("test"), nil, changes, nil, reqRepo, nil, nil, nil, nil)
+	return h, db
+}
+
 // TestStore_Detail_Aggregation Detail 聚合：本体 + 需求/变更/发布/实例。
 // 验证 source_id=appID 与 source_id=reqID（属同 app）的变更都能被聚合。
 func TestStore_Detail_Aggregation(t *testing.T) {
@@ -649,10 +728,10 @@ func TestHandler_Register(t *testing.T) {
 // extRouteStore 采集 Create external 时 routeWriter.UpsertExternalRoute 的入参，
 // 验证 appdeploy handler 调对了 external 分支（而不是 managed 的 UpsertRoute）。
 type extRouteStore struct {
-	called      bool
-	gotAppID    string
-	gotEnv      string
-	gotExtURL   string
+	called    bool
+	gotAppID  string
+	gotEnv    string
+	gotExtURL string
 }
 
 func (s *extRouteStore) UpsertRoute(_ context.Context, _, _, _ string, _ string, _ int) error {

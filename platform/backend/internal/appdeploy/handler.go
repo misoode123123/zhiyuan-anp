@@ -38,16 +38,16 @@ type AppQuotaChecker interface {
 type Handler struct {
 	store       *Store
 	deployer    *Deployer
-	codeWS      *codews.Manager          // 交互编码工作台（opencode serve）；nil=未启用
-	changes     *change.Store            // 变更闸门（期2）；nil=未启用
-	cfg         *config.Store            // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
-	reqRepo     *requirement.Repository  // 需求-代码核对门禁:读 requirement 的验收标准
-	provisioner *pgsupply.Provisioner    // 应用库供给（Create 建库 / Delete 删库）
-	routeWriter appgw.RouteWriter        // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
-	standards   *standard.Store          // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
-	quota       AppQuotaChecker          // 应用数配额检查；nil=不强制
-	nodeStore   *NodeStore               // 部署节点（多机）；nil=仅本地
-	checkFn     checkFunc                // 可 mock 的核对函数(默认 checkRequirement);测试可注入
+	codeWS      *codews.Manager         // 交互编码工作台（opencode serve）；nil=未启用
+	changes     *change.Store           // 变更闸门（期2）；nil=未启用
+	cfg         *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
+	reqRepo     *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
+	provisioner *pgsupply.Provisioner   // 应用库供给（Create 建库 / Delete 删库）
+	routeWriter appgw.RouteWriter       // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
+	standards   *standard.Store         // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
+	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
+	nodeStore   *NodeStore              // 部署节点（多机）；nil=仅本地
+	checkFn     checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 }
 
 // checkFunc 需求-代码核对的函数签名(便于测试 mock)。
@@ -921,7 +921,7 @@ func (h *Handler) Create(c *gin.Context) {
 type deployBody struct {
 	Env    string `json:"env"`     // test / prod；空默认 test
 	SHA    string `json:"sha"`     // 可选：部署指定历史版本（回滚）
-	NodeID string `json:"node_id"`  // 可选：部署到指定节点（空=本地 .28，如 node_30）
+	NodeID string `json:"node_id"` // 可选：部署到指定节点（空=本地 .28，如 node_30）
 }
 
 // Deploy 构建+部署到指定环境（默认 test=测试验证）。立即返回 building，后台完成。
@@ -1007,6 +1007,15 @@ func (h *Handler) Promote(c *gin.Context) {
 			if ok, _ := h.changes.HasApproved(c.Request.Context(), aid); !ok {
 				httpx.Err(c, 409, 40920, "需先登记变更并审批通过才能上线 prod（变更闸门）")
 				return
+			}
+			// 🚪 AC7 delivered 前置（PRD 2026-07-26 主线闭环收敛 AC7）：
+			// approved 变更关联的需求须已 delivered（即已走 release/merge 发布），
+			// 堵「变更一审批就 promote、跳过发布」的绕过。查不到需求时放行（grandfather，对称 release 回写）。
+			if h.reqRepo != nil {
+				if undelivered, _ := h.reqRepo.HasUnDeliveredApprovedByApp(c.Request.Context(), aid); undelivered {
+					httpx.Err(c, 409, 40921, "来源需求未交付，请先在发布中心发布上线后再 promote")
+					return
+				}
 			}
 			// 上线后:把该应用的 approved 变更标记为 released（从待上线列表消失）
 			_ = h.changes.MarkReleased(c.Request.Context(), aid) // 上线后标记 released;失败不阻塞(下次上线再标)
