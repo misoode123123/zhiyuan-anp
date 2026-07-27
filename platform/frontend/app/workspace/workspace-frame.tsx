@@ -75,10 +75,10 @@ export default function WorkspaceFrame() {
 
   // 拉项目上下文 + 应用状态(抽屉与部署轮询共用);返回完整 detail 供轮询判状态
   const fetchDetail = useCallback(async (): Promise<{
-    application?: {
-      instances?: { env: string; status: string; url: string }[];
-      last_error?: string;
-    };
+    application?: { last_error?: string };
+    // 后端 AppDetail(detail.go:88)把 instances 放在顶层 r.data.instances，
+    // 不在 r.data.application 下（Application.Instances 是 db:"-" 恒空）。
+    instances?: { env: string; status: string; url: string }[];
   } | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
@@ -190,7 +190,7 @@ export default function WorkspaceFrame() {
     pollRef.current = setInterval(async () => {
       n += 1;
       const d = await fetchDetail();
-      const ins = d?.application?.instances?.find((i) => i.env === "test");
+      const ins = d?.instances?.find((i) => i.env === "test");
       if (ins?.status === "running") {
         setTestUrl(ins.url);
         setDeployState("running");
@@ -200,7 +200,14 @@ export default function WorkspaceFrame() {
         setDeployState("failed");
         if (pollRef.current) clearInterval(pollRef.current);
       }
-      if (n > 40 && pollRef.current) clearInterval(pollRef.current); // ~2min
+      if (n > 40 && pollRef.current) {
+        // ~2min 超时兜底：后端异常时（如 docker build 卡死、状态迟迟不翻）不能让按钮一直"构建中…"，
+        // 置 failed 提示用户去应用部署页看构建日志或重试。
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        setDeployState("failed");
+        setDeployErr("构建超时（2 分钟未完成），请在应用部署页查看构建日志或重试");
+      }
     }, 3000);
   }
 

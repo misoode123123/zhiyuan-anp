@@ -1358,8 +1358,28 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 // buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本；env 指定环境。
 func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	ctx := context.Background()
+	// panic 兜底：goroutine 内任何 panic 都回写 failed，避免状态永卡 building、build_log 为空
+	// （参照 dev/coding.go:92-99）。历史根因之一：docker build 卡死/无超时 + 无 recover → 一次异常永久挂起。
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("[appdeploy] buildAndDeploy panic", zap.String("app", aid), zap.Any("panic", r))
+			msg := fmt.Sprintf("[panic] 构建部署异常崩溃: %v", r)
+			h.markFailed(ctx, psID, aid, msg, "")
+			if ins, e := h.store.GetOrCreateInstance(ctx, aid, env); e == nil && ins != nil {
+				ins.Status = "failed"
+				ins.LastError = msg
+				_ = h.store.UpdateInstance(ctx, ins)
+			}
+		}
+	}()
 	a, err := h.store.Get(ctx, psID, aid)
 	if err != nil || a == nil || a.ID == "" {
+		// 读取失败也回写 failed，否则状态无声卡 building（前端永远转圈）。
+		reason := "[系统]应用记录不存在"
+		if err != nil {
+			reason = "[系统]应用记录读取失败: " + err.Error()
+		}
+		h.markFailed(ctx, psID, aid, reason, "")
 		return
 	}
 	// 解析部署节点的 docker host（空=本地）
@@ -1371,6 +1391,11 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	}
 	ins, err := h.store.GetOrCreateInstance(ctx, a.ID, env)
 	if err != nil || ins == nil {
+		reason := "[系统]部署实例创建失败"
+		if err != nil {
+			reason = "[系统]部署实例创建失败: " + err.Error()
+		}
+		h.markFailed(ctx, psID, a.ID, reason, "")
 		return
 	}
 	// 清理该 app+env 所有历史容器（DB 记录的 + 孤儿残留），彻底释放端口避免漂移/Conflict
@@ -1396,7 +1421,11 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 			note += "buildpack 已按源码类型自动生成 Dockerfile\n"
 		}
 	}
-	log, err := h.deployer.Build(ctx, a, ins, dockerHost)
+	// Build（含 pull 基础镜像）限 15 分钟：.28 半内网 mirror 慢/失效时 docker build 可能长时间阻塞；
+	// 无超时则 cmd.Run 永不返回、goroutine 挂起、状态永卡 building。超时 ctx cancel → 杀子进程 → 走 failed。
+	buildCtx, buildCancel := context.WithTimeout(ctx, 15*time.Minute)
+	log, err := h.deployer.Build(buildCtx, a, ins, dockerHost)
+	buildCancel()
 	if note != "" {
 		log = note + log
 	}
@@ -1413,9 +1442,13 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	_ = h.store.UpdateInstance(ctx, ins)
 	// a.Status=building 已由 Deploy handler 同步标记（markBuilding），此处无需重写
 	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
-	if err := h.deployer.Deploy(ctx, a, ins, envPairs, dockerHost); err != nil {
+	// docker run 限 3 分钟：镜像已构建，run 卡住通常是端口/挂载问题，无需长等；超时同走 failed。
+	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
+	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost)
+	deployCancel()
+	if dErr != nil {
 		ins.Status = "failed"
-		ins.LastError = err.Error()
+		ins.LastError = dErr.Error()
 		_ = h.store.UpdateInstance(ctx, ins)
 		h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog) // 不限环境，前端立即看到失败 + 原因
 		return
