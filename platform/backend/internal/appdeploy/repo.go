@@ -280,8 +280,10 @@ func ImportFromGit(ctx context.Context, name, gitURL, authToken string) (string,
 }
 
 // zip 上限（防 bomb）。
-const (
-	MaxZipSize  int64 = 500 * 1024 * 1024 // 单次上传体积上限
+// MaxZipSize 为 var（非 const）：测试可缩小到 KB 级，避免构造 500MB bomb 的内存/IO 开销；
+// 生产路径只读，行为与 const 等价。
+var (
+	MaxZipSize  int64 = 500 * 1024 * 1024 // 单次上传/解压体积上限
 	MaxZipFiles int   = 10000             // 解压文件数上限
 )
 
@@ -327,13 +329,18 @@ func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) 
 			_ = os.MkdirAll(dest, 0755)
 			continue
 		}
-		if totalSize += int64(f.UncompressedSize64); totalSize > MaxZipSize {
-			_ = os.RemoveAll(target)
-			return "", fmt.Errorf("zip 解压体积超限(bomb)")
-		}
-		if err := copyZipFile(dest, f); err != nil {
+		// C4：按实际解压字节累计（不依赖 zip 头声明的 UncompressedSize64）。
+		// 恶意 zip 可头声明小、实际解压 GB 级；copyZipFile 用 LimitReader 兜底单文件至多 MaxZipSize+1，
+		// 返回实际拷贝字节数，循环按 actual 累计判断——头撒谎也拦得住。
+		actual, err := copyZipFile(dest, f)
+		if err != nil {
 			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("解压 %s 失败: %w", f.Name, err)
+		}
+		totalSize += actual
+		if totalSize > MaxZipSize {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("zip 解压体积超限(bomb)")
 		}
 	}
 	// 无 .git → 建仓 + 初始提交（不写模板，保留导入内容原样）
@@ -347,23 +354,25 @@ func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) 
 	return target, nil
 }
 
-// copyZipFile 解压单个 zip 文件到 dest（先建父目录）。
-func copyZipFile(dest string, f *zip.File) error {
+// copyZipFile 解压单个 zip 文件到 dest（先建父目录），返回实际拷贝字节数。
+// 用 io.LimitReader(rc, MaxZipSize+1) 兜底：单文件至多解压 MaxZipSize+1 字节，
+// 防恶意 zip 单条 entry 解压成 GB 级（头撒谎绕累计上限）。调用方按返回的 actual 累计。
+func copyZipFile(dest string, f *zip.File) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return err
+		return 0, err
 	}
 	rc, err := f.Open()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer rc.Close()
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, rc)
-	return err
+	// LimitReader 兜底：即便头声明小、实际解压流无限，也只写 MaxZipSize+1 到磁盘
+	return io.Copy(out, io.LimitReader(rc, MaxZipSize+1))
 }
 
 // AllowedDirRoots 服务器目录导入白名单根（可配置）。

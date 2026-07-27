@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/appgw"
@@ -826,6 +828,17 @@ func validateAppName(name string) string {
 	return ""
 }
 
+// isUniqueViolation 判断是否 PG 唯一约束冲突（错误码 23505）。
+// Import/ImportUpload 在 store.Create 撞 UNIQUE(project_space_id, name) 时识别为名字冲突返 409，
+// 而非 500——GetByName 预检与 Create 之间存在竞态窗口，唯一约束是兜底。
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
+}
+
 // validateExternalURL 校验 external 模式的外部应用访问地址。
 // 要求：非空 + http/https scheme + host 非空。返回规范化的 URL（去掉末尾斜杠）+ 错误消息（空=合法）。
 func validateExternalURL(raw string) (string, string) {
@@ -983,6 +996,11 @@ func (h *Handler) Import(c *gin.Context) {
 		ImportSource: src, ImportRef: ref, Status: StatusImporting,
 	}
 	if err := h.store.Create(c.Request.Context(), a); err != nil {
+		// GetByName 预检与 Create 间存在竞态窗口；唯一约束兜底识别为名字冲突 → 409（非 500）
+		if isUniqueViolation(err) {
+			httpx.Err(c, 409, 40950, "应用名已存在: "+in.Name)
+			return
+		}
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
@@ -1127,18 +1145,28 @@ func (h *Handler) ImportUpload(c *gin.Context) {
 		ImportSource: ImportSourceDir, ImportRef: fh.Filename, Status: StatusImporting,
 	}
 	if err := h.store.Create(c.Request.Context(), a); err != nil {
+		// GetByName 预检与 Create 间存在竞态窗口；唯一约束兜底识别为名字冲突 → 409（非 500）
+		if isUniqueViolation(err) {
+			httpx.Err(c, 409, 40950, "应用名已存在: "+name)
+			return
+		}
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
 	// 读取上传内容到内存（已过 MaxZipSize 校验）供异步解压
+	// defer src.Close 紧跟 Open，防 panic 泄漏（应修1）
 	src, err := fh.Open()
 	if err != nil {
+		// C2：占位已落 importing，读上传失败须回滚到 failed，否则永久卡 importing（违 PRD §9 不留僵尸）
+		_ = h.store.SetStatus(c.Request.Context(), psID, a.ID, "failed", "读取上传内容失败: "+err.Error(), "")
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
+	defer src.Close()
 	data, err := io.ReadAll(src)
-	src.Close()
 	if err != nil {
+		// C2：占位已落 importing，读上传失败须回滚到 failed（同步分支，用 request ctx）
+		_ = h.store.SetStatus(c.Request.Context(), psID, a.ID, "failed", "读取上传内容失败: "+err.Error(), "")
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}

@@ -351,6 +351,40 @@ func TestImportFromZip_TooLarge(t *testing.T) {
 	}
 }
 
+// TestImportFromZip_Bomb zip bomb：头撒谎（压缩后极小）实际解压超限须按实际字节拦截。
+// 缩小 MaxZipSize 避免分配 500MB（验"实际字节累计"逻辑，不验具体阈值）；writeZip 用 deflate
+// 压缩重复 "a"，故 zip bytes 极小（前置 size 检查放行），而 copyZipFile 返回的 actual 字节超限 → 拦。
+// 这正覆盖 C4 的 lying-header 绕累计上限攻击面。
+func TestImportFromZip_Bomb(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	// 缩小上限到 1MB：避免分配 500MB 内存/IO；验证按 actual 字节累计的闭环逻辑
+	old := MaxZipSize
+	MaxZipSize = 1 * 1024 * 1024
+	defer func() { MaxZipSize = old }()
+
+	// 单文件内容 > 1MB（deflate 压缩重复 "a" 后 zip bytes 极小——正是 bomb 形态）
+	data, size := writeZip(t, map[string]string{
+		"bomb.txt": strings.Repeat("a", int(MaxZipSize)+100),
+	})
+	// 前置 size 检查应放行（压缩后远小于 1MB），否则测不到实际字节路径
+	if size > MaxZipSize {
+		t.Fatalf("前置 zip bytes=%d 应小于缩小的 MaxZipSize=%d 以测实际字节路径", size, MaxZipSize)
+	}
+
+	_, err := ImportFromZip(context.Background(), "bombapp", bytes.NewReader(data), size)
+	if err == nil {
+		t.Fatalf("zip bomb（实际解压字节超限）须被拒")
+	}
+	if !strings.Contains(err.Error(), "超限") && !strings.Contains(err.Error(), "bomb") {
+		t.Fatalf("应提示 超限/bomb，得到 %q", err.Error())
+	}
+	// 拒绝后应清理目标目录（不留半成品）
+	if _, err := os.Stat(ManagedRepoDir("bombapp")); err == nil {
+		t.Fatalf("bomb 拒绝后应清理目标目录")
+	}
+}
+
 // TestImportFromDir_Copy 纯目录复制 + git init（源无 .git）。
 func TestImportFromDir_Copy(t *testing.T) {
 	restore := withTempRepoBase(t)
