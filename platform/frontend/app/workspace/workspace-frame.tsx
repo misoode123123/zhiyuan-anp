@@ -585,7 +585,7 @@ export default function WorkspaceFrame() {
                   {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ tool }),
+                    body: JSON.stringify({ tool, requirement_id: id }),
                   }
                 ).then((rr) => rr.json());
                 if (w.code === 0 && w.data?.url) {
