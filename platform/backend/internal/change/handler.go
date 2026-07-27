@@ -60,7 +60,18 @@ func (h *Handler) List(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /changes/{id}/approve [post]
 func (h *Handler) Approve(c *gin.Context) {
-	if err := h.store.Decide(c.Request.Context(), c.Param("id"), "approved", reviewer(c)); err != nil {
+	id := c.Param("id")
+	chg, err := h.store.Get(c.Request.Context(), id)
+	if err != nil || chg == nil || chg.ID == "" {
+		httpx.Err(c, 404, 40401, "变更不存在")
+		return
+	}
+	// 禁自批：作者（change.user_id 存 usr_id）不得审批自己的变更，需他人复核。
+	if reviewerDBID := c.GetString(auth.CtxUserDBID); chg.UserID != "" && chg.UserID == reviewerDBID {
+		httpx.Err(c, 403, 40302, "不可审批自己的变更（需他人复核）")
+		return
+	}
+	if err := h.store.Decide(c.Request.Context(), id, "approved", reviewer(c)); err != nil {
 		if errors.Is(err, errNotPending) {
 			httpx.Err(c, 409, 40901, err.Error())
 			return
@@ -68,8 +79,8 @@ func (h *Handler) Approve(c *gin.Context) {
 		httpx.Err(c, 500, 50007, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"id": c.Param("id"), "status": "approved", "message": "🚪G3 通过，可合入"})
-	notif.EmitBroadcast("change_decided", "变更已批准", "变更 "+c.Param("id")+" 已通过 G3 审批，可发布", "/release")
+	httpx.OK(c, gin.H{"id": id, "status": "approved", "message": "🚪G3 通过，可合入"})
+	notif.EmitBroadcast("change_decided", "变更已批准", "变更 "+id+" 已通过 G3 审批，可发布", "/release")
 }
 
 // Reject 拒绝（需回滚/重做）。
