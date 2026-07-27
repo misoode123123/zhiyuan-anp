@@ -187,19 +187,20 @@ func (h *Handler) Workspace(c *gin.Context) {
 		_ = h.standards.RefreshAgentsMD(c.Request.Context(), a.RepoDir, psID, "")
 	}
 	var in struct {
-		Tool string `json:"tool"` // opencode(默认) / claude / codex ...
+		Tool          string `json:"tool"`           // opencode(默认) / claude / codex ...
+		RequirementID string `json:"requirement_id"` // 绑定的需求（工作直播按此关联；空=application 页老入口）
 	}
 	_ = c.ShouldBindJSON(&in)
 	user := c.GetString(auth.CtxUserID) // 开发者身份（不同开发者可各选各的工具）
 	if user == "" {
 		user = "anonymous"
 	}
-	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool)
+	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID)
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "deep_url": s.DeepURL, "port": s.Port, "session_id": s.SessionID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
+	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "deep_url": s.DeepURL, "port": s.Port, "session_id": s.SessionID, "requirement_id": in.RequirementID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
 }
 
 // RegisterChange 把 opencode 交互编码的产出登记为待审批变更（期2 变更闸门）。

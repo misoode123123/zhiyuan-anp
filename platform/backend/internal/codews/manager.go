@@ -55,9 +55,11 @@ type Session struct {
 	// DeepURL 直达预创建会话的深链接(/<base64url(repoDir)>/session/<id>);
 	// 前端优先打开它, 省去用户在根路径手点会话。空=未预创建, 回退用 URL。
 	DeepURL string `json:"deep_url,omitempty"`
-	cmd     *exec.Cmd
-	started time.Time
-	logID   string // 落库的 codews_session.id（sessionLog 持久化用）
+	// RequirementID 绑定的需求（工作直播按此关联；空=application 页老入口）。
+	RequirementID string `json:"-"`
+	cmd           *exec.Cmd
+	started       time.Time
+	logID         string // 落库的 codews_session.id（sessionLog 持久化用）
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
@@ -110,7 +112,7 @@ func (m *Manager) Tools() []string {
 
 // Ensure 启动或复用某开发者在某应用的编码工作台。toolName 空=默认 opencode；
 // 同一开发者切换工具会停旧起新；不同开发者各自独立工作台（可不同工具）。
-func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Session, error) {
+func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (*Session, error) {
 	if toolName == "" {
 		toolName = defaultTool
 	}
@@ -124,12 +126,12 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Sessio
 		m.mu.Unlock()
 		return nil, fmt.Errorf("未知编码工具: %s（已注册: %v）", toolName, m.Tools())
 	}
-	// 同开发者同工具活跃会话 → 复用
-	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName {
+	// 同开发者同工具同需求 活跃会话 → 复用
+	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && s.RequirementID == reqID {
 		m.mu.Unlock()
 		return s, nil
 	}
-	// 同开发者换工具 → 停旧起新
+	// 同开发者 换工具 或 换需求 → 停旧起新（换需求=新会话，杜绝多需求串台）
 	if old, exists := m.sessions[key]; exists && old.cmd != nil && old.cmd.Process != nil {
 		_ = old.cmd.Process.Kill()
 		delete(m.sessions, key)
@@ -149,7 +151,8 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Sessio
 	}
 	s := &Session{
 		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: repoDir, cmd: cmd, started: time.Now(),
-		URL: fmt.Sprintf("http://%s:%d", m.host, port),
+		RequirementID: reqID,
+		URL:           fmt.Sprintf("http://%s:%d", m.host, port),
 	}
 	m.mu.Lock()
 	m.sessions[key] = s
@@ -183,7 +186,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName string) (*Sessio
 	// 落库 codews_session（绩效/互动统计；失败仅 log，不阻塞工作台）
 	// RepoDir 记 worktree 路径（工具实际 cwd = transcript 的 cwd），ReaderFor 据此匹配 transcript。
 	if m.sessionLog != nil {
-		rec := &SessionRecord{ProjectSpaceID: psID, AppID: appID, UserID: userID, Tool: toolName, RepoDir: workDir, Port: port, SessionID: s.SessionID}
+		rec := &SessionRecord{ProjectSpaceID: psID, AppID: appID, UserID: userID, Tool: toolName, RepoDir: workDir, Port: port, SessionID: s.SessionID, RequirementID: reqID}
 		if err := m.sessionLog.StartSession(context.Background(), rec); err == nil {
 			s.logID = rec.ID
 		} else {
@@ -316,30 +319,13 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 	if s == nil || s.SessionID == "" {
 		return "", nil
 	}
-	resp, err := sessionListClient.Get(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/message", s.Port, s.SessionID))
+	msgs, err := LiveTranscript(s.Port, s.SessionID)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	var r struct {
-		Data []struct {
-			Type  string `json:"type"`
-			Parts []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return "", err
-	}
 	var sb strings.Builder
-	for _, msg := range r.Data {
-		for _, p := range msg.Parts {
-			if p.Type == "text" && strings.TrimSpace(p.Text) != "" {
-				sb.WriteString("[" + msg.Type + "] " + p.Text + "\n")
-			}
-		}
+	for _, mm := range msgs {
+		sb.WriteString("[" + mm.Role + "] " + mm.Content + "\n")
 	}
 	return strings.TrimSpace(sb.String()), nil
 }

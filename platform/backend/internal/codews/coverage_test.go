@@ -445,7 +445,7 @@ func TestSendPrompt_HTTPError(t *testing.T) {
 // TestEnsure_UnknownTool 未注册的工具名 → 立即返回错误, 不启动进程。
 func TestEnsure_UnknownTool(t *testing.T) {
 	m := NewManager("h", nil)
-	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "no-such-tool")
+	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "no-such-tool", "")
 	if err == nil {
 		t.Fatal("未知工具应返回错误")
 	}
@@ -461,7 +461,7 @@ func TestEnsure_PortExhausted(t *testing.T) {
 	for p := portMin; p <= portMax; p++ {
 		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
 	}
-	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode")
+	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "")
 	if err == nil {
 		t.Fatal("端口耗尽应返回错误")
 	}
@@ -479,7 +479,7 @@ func TestEnsure_ReuseAliveSameTool(t *testing.T) {
 		cmd:  &exec.Cmd{}, // alive
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "")
 	if err != nil {
 		t.Fatalf("Ensure 复用错误: %v", err)
 	}
@@ -496,7 +496,7 @@ func TestEnsure_DefaultUserID(t *testing.T) {
 		cmd: &exec.Cmd{},
 	}
 	m.sessions["app:anonymous"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "", "opencode")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "", "opencode", "")
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -513,7 +513,7 @@ func TestEnsure_DefaultToolName(t *testing.T) {
 		cmd: &exec.Cmd{},
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "", "")
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
