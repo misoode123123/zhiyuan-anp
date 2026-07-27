@@ -402,6 +402,7 @@ func ImportFromDir(ctx context.Context, name, srcPath string) (string, error) {
 		}
 	} else {
 		if err := exec.CommandContext(ctx, "cp", "-r", cleanSrc, target).Run(); err != nil {
+			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("复制目录失败: %w", err)
 		}
 		_, _ = runGit(ctx, target, "init", "-q")

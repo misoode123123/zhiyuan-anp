@@ -408,4 +408,17 @@ func TestImportFromDir_Traversal(t *testing.T) {
 	if err == nil {
 		t.Fatalf("非白名单路径须被拒")
 	}
+
+	// 真正的遍历攻击：在白名单根下开始，用 ../ 逃逸出去。
+	// 用字符串拼接构造（不用 filepath.Join，避免 Join 折叠 ..），确保 Clean 前是真逃逸路径，
+	// 验证 isUnderAllowedRoot 的 Clean+HasPrefix+ToSlash 能拦截。
+	srcRoot := t.TempDir()
+	oldRoots := AllowedDirRoots
+	AllowedDirRoots = []string{srcRoot + "/"}
+	defer func() { AllowedDirRoots = oldRoots }()
+
+	traverse := srcRoot + "/proj/../../etc/passwd"
+	if _, err := ImportFromDir(context.Background(), "evil2", traverse); err == nil {
+		t.Fatalf("../ 逃逸路径须被拒: %s", traverse)
+	}
 }
