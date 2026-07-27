@@ -42,6 +42,9 @@ type App = {
   build_log: string;
   deploy_mode: string; // managed(A类) / external(B类纳管外部)
   external_url: string; // external 模式时外部应用访问地址
+  import_source?: "" | "git" | "dir"; // 导入来源：''=平台建仓 / git=远程仓 / dir=本机zip或服务器目录
+  import_ref?: string; // git=url / dir=来源标识
+  imported_at?: string; // 导入完成时间，进行中空
   updated_at: string;
   instances?: Instance[]; // 各环境部署实例（test/prod）
 };
@@ -66,6 +69,7 @@ const STATUS_COLOR: Record<string, string> = {
   registered: "bg-neutral-100 text-neutral-500",
   stopped: "bg-blue-100 text-blue-700",
   failed: "bg-red-100 text-red-700",
+  importing: "bg-purple-100 text-purple-700", // 导入进行中态（复用 status 列）
 };
 
 // DevWizard 开发向导：编码→测试→上线 进度条 + 项目上下文 + 引导文案。
@@ -153,6 +157,20 @@ export default function ApplicationsPage() {
   const [appChanges, setAppChanges] = useState<
     Record<string, { id: string; status: string; output?: string; created_at?: string }[]>
   >({});
+  // 导入已有项目向导：source=git(远程仓) / upload(本机zip) / dir(服务器目录)
+  const [importOpen, setImportOpen] = useState(false);
+  const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
+  const [importSource, setImportSource] = useState<"git" | "upload" | "dir">("git");
+  const [importForm, setImportForm] = useState({
+    name: "",
+    git_url: "",
+    auth_token: "",
+    server_path: "",
+    internal_port: 8080,
+  });
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false); // 向导「开始导入」执行中（按钮禁用）
+  const [importProgress, setImportProgress] = useState<string>(""); // 步骤3 显示的 last_error 进度
   const router = useRouter();
 
   useEffect(() => {
@@ -270,6 +288,128 @@ export default function ApplicationsPage() {
       external_url: "",
     });
     load(psID);
+  }
+
+  // 导入已有项目：source=git/dir 走 JSON，upload 走 multipart。
+  // 返回占位应用(importing 态) 的 id 后，轮询 detail 至 status !== "importing"，
+  // 把 last_error 当进度文案显示在向导第 3 步；完成/失败都刷新列表 + 关向导。
+  function resetImportWizard() {
+    setImportStep(1);
+    setImportSource("git");
+    setImportForm({ name: "", git_url: "", auth_token: "", server_path: "", internal_port: 8080 });
+    setImportFile(null);
+    setImportProgress("");
+    setImporting(false);
+  }
+  function closeImportWizard() {
+    setImportOpen(false);
+    resetImportWizard();
+  }
+  async function startImport() {
+    if (!importForm.name.trim()) {
+      alert("请填应用名");
+      return;
+    }
+    if (importSource === "git" && !importForm.git_url.trim()) {
+      alert("请填 git 仓库地址");
+      return;
+    }
+    if (importSource === "dir" && !importForm.server_path.trim()) {
+      alert("请填服务器目录路径");
+      return;
+    }
+    if (importSource === "upload" && !importFile) {
+      alert("请选择 zip 文件");
+      return;
+    }
+    setImporting(true);
+    setImportStep(3);
+    setImportProgress("提交导入请求...");
+    try {
+      let res: Response;
+      if (importSource === "upload") {
+        // multipart：file + name + internal_port（不手动设 Content-Type，让浏览器带 boundary）
+        const fd = new FormData();
+        fd.append("file", importFile as Blob);
+        fd.append("name", importForm.name);
+        fd.append("internal_port", String(importForm.internal_port || 8080));
+        res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/import/apps/upload`, {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        // JSON：source=git 带 git_url + auth_token；source=dir 带 server_path
+        const body: Record<string, unknown> = {
+          source: importSource, // "git" | "dir"
+          name: importForm.name,
+          internal_port: importForm.internal_port || 8080,
+        };
+        if (importSource === "git") {
+          body.git_url = importForm.git_url;
+          if (importForm.auth_token) body.auth_token = importForm.auth_token;
+        } else {
+          body.server_path = importForm.server_path;
+        }
+        res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/import/apps`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+      const r = (await res.json()) as Envelope<App & { id: string }>;
+      if (r.code !== 0) {
+        alert(r.message || "导入请求失败");
+        setImporting(false);
+        setImportStep(2);
+        return;
+      }
+      const appID = r.data?.id;
+      if (!appID) {
+        alert("后端未返回应用 ID");
+        setImporting(false);
+        setImportStep(2);
+        return;
+      }
+      // 轮询 detail 至 status !== "importing"（2s 一次；最多 15min 兜底）
+      await pollImportDetail(appID);
+    } catch (e) {
+      alert("导入请求异常: " + (e instanceof Error ? e.message : String(e)));
+      setImporting(false);
+      setImportStep(2);
+    }
+  }
+  // 轮询 GET .../apps/{aid}/detail 直至 status !== "importing"，把 last_error 当进度。
+  async function pollImportDetail(appID: string) {
+    const deadline = Date.now() + 15 * 60 * 1000;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
+        const r = (await res.json()) as Envelope<Detail>;
+        const app = r.data?.application;
+        if (app) {
+          setImportProgress(app.last_error || app.status);
+          if (app.status !== "importing") {
+            // 终态：registered(成功) / failed(失败)
+            load(psID);
+            setImporting(false);
+            if (app.status === "failed") {
+              setImportStep(3); // 留在第 3 步展示失败原因，用户手动关闭
+              alert("导入失败: " + (app.last_error || "(无错误摘要)"));
+            } else {
+              toast.success(app.name + " 导入完成 → " + app.status);
+              closeImportWizard();
+            }
+            return;
+          }
+        }
+      } catch {
+        // 网络抖动忽略，继续轮询
+      }
+      if (Date.now() < deadline && importing) {
+        setTimeout(tick, 2000);
+      }
+    };
+    await tick();
   }
   const [deployMsg, setDeployMsg] = useState<Record<string, string>>({});
 
@@ -482,6 +622,16 @@ export default function ApplicationsPage() {
 
       {/* 注册 */}
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+        <button
+          onClick={() => {
+            resetImportWizard();
+            setImportOpen(true);
+          }}
+          className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+          title="把已有代码项目（git仓库/zip/服务器目录）导入 ANP 托管，后续走 AI 全流程"
+        >
+          📥 导入已有项目
+        </button>
         <div>
           <label className="block text-xs text-neutral-500">接入模式</label>
           <select
@@ -542,12 +692,263 @@ export default function ApplicationsPage() {
         </span>
       </div>
 
+      {/* 导入已有项目向导（条件渲染区块）：3 步 ①选来源 ②填信息 ③执行/进度 */}
+      {importOpen && (
+        <div className="mb-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3 text-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="font-semibold text-emerald-700">📥 导入已有项目</span>
+            {/* 步骤指示器 */}
+            <span className="ml-2 flex gap-1 text-xs">
+              {[1, 2, 3].map((n) => (
+                <span
+                  key={n}
+                  className={`rounded px-1.5 py-0.5 ${
+                    importStep === n
+                      ? "bg-emerald-600 text-white"
+                      : "bg-neutral-200 text-neutral-500"
+                  }`}
+                >
+                  {n}
+                </span>
+              ))}
+            </span>
+            <span className="text-xs text-neutral-500">
+              {importStep === 1 ? "选来源" : importStep === 2 ? "填信息" : "执行"}
+            </span>
+            <button
+              onClick={closeImportWizard}
+              className="ml-auto rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600"
+              disabled={importing}
+              title={importing ? "导入进行中，暂不能关闭" : "关闭向导"}
+            >
+              ✕ 关闭
+            </button>
+          </div>
+
+          {/* 步骤 1：选来源 */}
+          {importStep === 1 && (
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-600">
+                选择要导入的项目来源（导入后统一走 ANP AI 全流程：编码→测试→上线）
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    {
+                      key: "git",
+                      icon: "📥",
+                      title: "远程仓库",
+                      desc: "git clone http(s)/SSH 仓到 /data/repos/，私有仓可填 token",
+                    },
+                    {
+                      key: "upload",
+                      icon: "📦",
+                      title: "本机 zip",
+                      desc: "上传源码 zip 包，平台解压到 /data/repos/（≤200MB）",
+                    },
+                    {
+                      key: "dir",
+                      icon: "📁",
+                      title: "服务器目录",
+                      desc: "复制服务器上已有源码目录（须在 /data/、/opt/legacy/ 白名单下）",
+                    },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => {
+                      setImportSource(opt.key);
+                      setImportStep(2);
+                    }}
+                    className={`rounded border p-2 text-left hover:border-emerald-400 hover:bg-emerald-50 ${
+                      importSource === opt.key
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-neutral-200 bg-white"
+                    }`}
+                  >
+                    <div className="font-medium">
+                      {opt.icon} {opt.title}
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 步骤 2：填信息 + 应用名 + 端口 */}
+          {importStep === 2 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs text-neutral-500">来源</label>
+                  <select
+                    value={importSource}
+                    onChange={(e) => setImportSource(e.target.value as "git" | "upload" | "dir")}
+                    className="rounded border border-neutral-300 px-2 py-1"
+                    disabled={importing}
+                  >
+                    <option value="git">📥 远程仓库 (git)</option>
+                    <option value="upload">📦 本机 zip 上传</option>
+                    <option value="dir">📁 服务器目录 (dir)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-neutral-500">应用名（必填）</label>
+                  <input
+                    value={importForm.name}
+                    onChange={(e) => setImportForm({ ...importForm, name: e.target.value })}
+                    placeholder="如 hello-go（至少 2 字符，非纯数字/ID 前缀）"
+                    className="rounded border border-neutral-300 px-2 py-1"
+                    disabled={importing}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-neutral-500">容器内端口</label>
+                  <input
+                    type="number"
+                    value={importForm.internal_port}
+                    onChange={(e) =>
+                      setImportForm({ ...importForm, internal_port: Number(e.target.value) })
+                    }
+                    className="w-24 rounded border border-neutral-300 px-2 py-1"
+                    disabled={importing}
+                  />
+                </div>
+              </div>
+              {/* 来源特定字段 */}
+              {importSource === "git" && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs text-neutral-500">git 仓库地址（必填）</label>
+                    <input
+                      value={importForm.git_url}
+                      onChange={(e) => setImportForm({ ...importForm, git_url: e.target.value })}
+                      placeholder="https://github.com/owner/repo.git 或 git@github.com:owner/repo.git"
+                      className="w-full rounded border border-neutral-300 px-2 py-1"
+                      disabled={importing}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-neutral-500">
+                      私有仓 token（可选，不落库）
+                    </label>
+                    <input
+                      value={importForm.auth_token}
+                      onChange={(e) => setImportForm({ ...importForm, auth_token: e.target.value })}
+                      placeholder="HTTPS 私有仓填 token；SSH 仓留空"
+                      type="password"
+                      className="w-full rounded border border-neutral-300 px-2 py-1"
+                      disabled={importing}
+                    />
+                  </div>
+                </div>
+              )}
+              {importSource === "upload" && (
+                <div>
+                  <label className="block text-xs text-neutral-500">zip 文件（必填，≤200MB）</label>
+                  <input
+                    type="file"
+                    accept=".zip,application/zip"
+                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm"
+                    disabled={importing}
+                  />
+                  {importFile && (
+                    <div className="mt-1 text-xs text-neutral-500">
+                      已选: {importFile.name}（{(importFile.size / 1024 / 1024).toFixed(1)} MB）
+                    </div>
+                  )}
+                </div>
+              )}
+              {importSource === "dir" && (
+                <div>
+                  <label className="block text-xs text-neutral-500">
+                    服务器目录绝对路径（必填，须在 /data/、/opt/legacy/ 白名单下）
+                  </label>
+                  <input
+                    value={importForm.server_path}
+                    onChange={(e) => setImportForm({ ...importForm, server_path: e.target.value })}
+                    placeholder="/data/legacy/myapp 或 /opt/legacy/svc"
+                    className="w-full rounded border border-neutral-300 px-2 py-1"
+                    disabled={importing}
+                  />
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setImportStep(1)}
+                  className="rounded bg-neutral-100 px-3 py-1.5 text-neutral-600"
+                  disabled={importing}
+                >
+                  ← 上一步
+                </button>
+                <button
+                  onClick={startImport}
+                  className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+                  disabled={importing}
+                >
+                  开始导入
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 步骤 3：执行 / 进度 */}
+          {importStep === 3 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded bg-white p-2 text-sm">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"></span>
+                <span className="font-medium text-emerald-700">
+                  {importing ? "导入中..." : "导入结束"}
+                </span>
+                <span className="ml-auto text-xs text-neutral-400">
+                  {importSource === "git"
+                    ? "📥 git"
+                    : importSource === "upload"
+                      ? "📦 zip"
+                      : "📁 dir"}{" "}
+                  · {importForm.name}
+                </span>
+              </div>
+              <div className="rounded bg-neutral-900 p-2 text-xs text-green-300">
+                <div className="mb-1 text-neutral-400">后端进度（last_error 实时回显）：</div>
+                <pre className="whitespace-pre-wrap break-all">
+                  {importProgress || "(等待后端响应...)"}
+                </pre>
+              </div>
+              {!importing && (
+                <button
+                  onClick={closeImportWizard}
+                  className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+                >
+                  完成 / 关闭
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 应用列表 */}
       <div className="space-y-3">
         {apps.map((a) => {
           const isExternal = a.deploy_mode === "external";
+          // 导入进行中：status===importing（git clone / zip 解压 / 目录复制中），编码/部署按钮禁用
+          const isImporting = a.status === "importing";
           return (
             <div key={a.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+              {/* 导入进度提示：importing 态显示 last_error 进度（后端实时回写「正在 clone...」等） */}
+              {isImporting && (
+                <div className="mb-2 flex items-center gap-2 rounded bg-purple-50 px-3 py-1.5 text-sm text-purple-700">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-purple-400 border-t-transparent"></span>
+                  导入已有项目中...
+                  <span className="truncate text-xs text-purple-500">
+                    {a.last_error || "(等待进度...)"}
+                  </span>
+                  <span className="ml-auto text-xs text-purple-400">每3秒自动刷新</span>
+                </div>
+              )}
               {/* 部署进度提示：从 app.status 派生（切 tab 回来也可见，因为 3s 轮询刷新 status） */}
               {a.status === "building" && (
                 <div className="mb-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
@@ -583,7 +984,7 @@ export default function ApplicationsPage() {
                   )}
                 </div>
               )}
-              {!isExternal && <DevWizard app={a} />}
+              {!isExternal && !isImporting && <DevWizard app={a} />}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono font-medium">{a.name}</span>
                 {isExternal ? (
@@ -591,6 +992,23 @@ export default function ApplicationsPage() {
                     external · 纳管
                   </span>
                 ) : null}
+                {/* 导入来源徽章：git=远程仓 / dir=本机zip或服务器目录；空=平台建仓（不显示） */}
+                {a.import_source === "git" && (
+                  <span
+                    className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
+                    title={"导入自 git 仓库: " + (a.import_ref || "")}
+                  >
+                    📥 git
+                  </span>
+                )}
+                {a.import_source === "dir" && (
+                  <span
+                    className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700"
+                    title={"导入自 目录/zip: " + (a.import_ref || "")}
+                  >
+                    📁 目录
+                  </span>
+                )}
                 <span
                   className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}
                 >
@@ -638,21 +1056,26 @@ export default function ApplicationsPage() {
                     <>
                       <button
                         onClick={() => act(a.id, "deploy", "test", selectedNode)}
-                        className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700"
+                        className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={isImporting}
+                        title={isImporting ? "导入完成前不可部署" : "构建并部署到 test 环境"}
                       >
                         构建部署(test)
                       </button>
                       <button
                         onClick={() => promoteWithNode(a.id, selectedNode)}
-                        className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
+                        className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={isImporting}
+                        title={isImporting ? "导入完成前不可上线" : "上线到 prod"}
                       >
                         🚀 上线(prod)
                       </button>
                       <select
                         value={wsTool}
                         onChange={(e) => setWsTool(e.target.value)}
-                        className="rounded border border-neutral-300 px-1 py-0.5 text-xs"
+                        className="rounded border border-neutral-300 px-1 py-0.5 text-xs disabled:opacity-40"
                         title="选择交互编码工具"
+                        disabled={isImporting}
                       >
                         <option value="opencode">opencode</option>
                         <option value="claude">claude</option>
@@ -660,8 +1083,13 @@ export default function ApplicationsPage() {
                       </select>
                       <button
                         onClick={() => openWorkspace(a.id, wsTool)}
-                        className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700"
-                        title="打开该工具的官方交互编码界面"
+                        className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={isImporting}
+                        title={
+                          isImporting
+                            ? "导入完成前不可编码（仓库尚未就绪）"
+                            : "打开该工具的官方交互编码界面"
+                        }
                       >
                         🧑‍💻 编码
                       </button>
@@ -1024,7 +1452,8 @@ export default function ApplicationsPage() {
         })}
         {apps.length === 0 && (
           <div className="text-sm text-neutral-400">
-            暂无应用。注册一个（源码目录需含 Dockerfile）后点「构建部署」，或用 external
+            暂无应用。注册一个（源码目录需含 Dockerfile）后点「构建部署」，或点「📥
+            导入已有项目」把现有代码项目（git仓库/zip/服务器目录）导入平台，或用 external
             模式接入已在运行的外部应用。
           </div>
         )}

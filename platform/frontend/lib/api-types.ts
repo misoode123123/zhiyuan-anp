@@ -69,162 +69,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/attendance/inbox": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 待我审批的考勤收件箱 */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description 状态过滤(pending/approved/rejected) */
-                    status?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 待审批考勤列表 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/attendance/{id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 审批通过考勤 */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 考勤记录ID */
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 审批后的考勤记录 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/attendance/{id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 驳回考勤 */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 考勤记录ID */
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 驳回后的考勤记录 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -1295,7 +1139,43 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** 删除项目空间 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 删除结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description project space not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -1352,10 +1232,14 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    /** @description 可选；buildpack 检测或默认 8080 */
+                    /** @description managed(默认,A类) / external(B类纳管外部应用) */
+                    deploy_mode: string;
+                    /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
+                    external_url: string;
+                    /** @description managed 可选；buildpack 检测或默认 8080 */
                     internal_port: number;
                     name: string;
-                    /** @description 可选；空=平台托管 git 仓库 /data/repos/<name> */
+                    /** @description managed 可选；空=平台托管 git 仓库 /data/repos/<name> */
                     repo_dir: string;
                 };
                 cookie?: never;
@@ -1380,6 +1264,17 @@ export interface paths {
                 };
                 /** @description invalid body */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 应用数配额超限 */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2678,162 +2573,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/project-spaces/{id}/attendance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 列出项目空间下的考勤记录 */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 项目空间ID */
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 考勤记录列表 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        /** 提交考勤记录 */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 项目空间ID */
-                    id: string;
-                };
-                cookie?: never;
-            };
-            /** @description 考勤提交内容(status+start_time+end_time+supervisor_id) */
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["internal_attendance.submitRequest"];
-                };
-            };
-            responses: {
-                /** @description 创建的考勤记录 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description invalid body / 时间格式错误 */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/project-spaces/{id}/attendance/mine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 当前员工的考勤记录 */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 项目空间ID */
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 当前用户的考勤记录列表 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description 服务端错误 */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/project-spaces/{id}/capabilities/api-keys": {
         parameters: {
             query?: never;
@@ -3771,6 +3510,151 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/project-spaces/{id}/import/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 导入已有项目 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description 导入参数(source/name/git_url|server_path) */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_appdeploy.importBody"];
+                };
+            };
+            responses: {
+                /** @description 占位应用(importing态) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description invalid body/来源参数非法 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 同名应用已存在/配额超限 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/import/apps/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上传 zip 导入应用 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** @description 应用名 */
+                        name: string;
+                        /** @description 内部端口(默认 8080) */
+                        internal_port?: number;
+                        /**
+                         * Format: binary
+                         * @description zip 压缩包
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 占位应用(importing态) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 缺 file / 超大小 / 名非法 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 同名应用已存在/配额超限 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/project-spaces/{id}/my-tasks": {
         parameters: {
             query?: never;
@@ -4450,6 +4334,110 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 项目配额 + 当前用量 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 配额 + 4 维度用量 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 内部错误 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        /** 修改项目配额 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description 4 个 max_*（可选，未传保留原值） */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_quota.updateBody"];
+                };
+            };
+            responses: {
+                /** @description 更新后的配额 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description invalid body / 越界 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 内部错误 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5442,7 +5430,12 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody: components["requestBodies"]["internal_standard.createBody"];
+            /** @description 规范(name/content 等) */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_standard.createBody"];
+                };
+            };
             responses: {
                 /** @description 创建的规范 */
                 200: {
@@ -5515,6 +5508,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/project-spaces/{id}/team-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 团队任务看板 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description toClaim/inDev/toApprove/toRelease/delivered */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/project-spaces/{id}/test-cases": {
         parameters: {
             query?: never;
@@ -5561,6 +5595,87 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/test-cases/{tcid}/manual-verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 人工验收测试用例 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 测试用例ID */
+                    tcid: string;
+                };
+                cookie?: never;
+            };
+            /** @description {verdict:string,note:string} */
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 更新后的用例(含 verifier_name) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description verdict 非法 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 用例不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 非人工验收范围 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -5716,6 +5831,61 @@ export interface paths {
                     };
                 };
                 /** @description 服务端错误 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/usage/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 项目用量趋势 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 趋势天数（默认30，上限90） */
+                    days?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description ai_trend / api_trend / db_size_trend / db_size_current_mb / usage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 内部错误 */
                 500: {
                     headers: {
                         [name: string]: unknown;
@@ -6012,17 +6182,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 列出全局规范 */
+        /** 列出全局规范 / 按层级列 */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description platform/app/module */
+                    scope?: string;
+                    /** @description scope=module 时：api/form/db/code/ui */
+                    module?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description 全局规范列表 */
+                /** @description 规范列表 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -6044,7 +6219,12 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody: components["requestBodies"]["internal_standard.createBody"];
+            /** @description 规范(name/content/scope/module 等) */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_standard.createBody"];
+                };
+            };
             responses: {
                 /** @description 创建的规范 */
                 200: {
@@ -6070,6 +6250,88 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/standards/agents-md": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 导出 AGENTS.md（markdown） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description api/form/db/code/ui（空=仅平台+应用） */
+                    module?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description markdown */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/standards/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 聚合规范（分层合并） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description api/form/db/code/ui（空=不附模块级） */
+                    module?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 聚合规范列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6220,22 +6482,31 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         "internal_appdeploy.createBody": {
-            /** @description 可选；buildpack 检测或默认 8080 */
+            /** @description managed(默认,A类) / external(B类纳管外部应用) */
+            deploy_mode?: string;
+            /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
+            external_url?: string;
+            /** @description managed 可选；buildpack 检测或默认 8080 */
             internal_port?: number;
             name: string;
-            /** @description 可选；空=平台托管 git 仓库 /data/repos/<name> */
+            /** @description managed 可选；空=平台托管 git 仓库 /data/repos/<name> */
             repo_dir?: string;
         };
-        "internal_attendance.submitRequest": {
-            /** @description RFC3339 */
-            end_time: string;
-            reason?: string;
-            /** @description RFC3339 */
-            start_time: string;
-            /** @description rest/overtime/leave */
-            status: string;
-            /** @description 直接上级，提交后转其审批 */
-            supervisor_id: string;
+        "internal_appdeploy.importBody": {
+            /** @description 私有 HTTPS 仓 token（不落库）；SSH 仓留空 */
+            auth_token?: string;
+            /** @description source=git 必填 */
+            git_url?: string;
+            /** @description 可选，默认 8080 */
+            internal_port?: number;
+            name: string;
+            /** @description source=dir 必填，须在白名单下 */
+            server_path?: string;
+            /**
+             * @description git=远程仓库 dir=服务器目录
+             * @enum {string}
+             */
+            source: "git" | "dir";
         };
         "internal_auth.loginBody": {
             name: string;
@@ -6310,6 +6581,13 @@ export interface components {
             status?: string;
             steps?: string;
         };
+        "internal_quota.updateBody": {
+            max_apps?: number;
+            max_capability_calls_per_day?: number;
+            max_databases?: number;
+            /** @description 上限 1TB */
+            max_total_db_mb?: number;
+        };
         "internal_release.createRequest": {
             change_id: string;
         };
@@ -6371,8 +6649,12 @@ export interface components {
             category?: string;
             content: string;
             enabled?: boolean;
+            /** @description scope=module 时：api/form/db/code/ui */
+            module?: string;
             name: string;
             priority?: number;
+            /** @description platform/app/module（默认 platform） */
+            scope?: string;
         };
         "internal_standard.setEnabledBody": {
             enabled?: boolean;
@@ -6381,6 +6663,8 @@ export interface components {
             category?: string;
             content: string;
             enabled?: boolean;
+            /** @description scope=module 时可调子模块 */
+            module?: string;
             name: string;
             priority?: number;
         };
@@ -6400,12 +6684,6 @@ export interface components {
         "internal_ops.sopBody": {
             content: {
                 "application/json": components["schemas"]["internal_ops.sopBody"];
-            };
-        };
-        /** @description 规范(name/content 等) */
-        "internal_standard.createBody": {
-            content: {
-                "application/json": components["schemas"]["internal_standard.createBody"];
             };
         };
     };

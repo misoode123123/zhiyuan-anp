@@ -66,149 +66,6 @@
                 }
             }
         },
-        "/attendance/inbox": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "待我审批的考勤收件箱",
-                "parameters": [
-                    {
-                        "description": "状态过滤(pending/approved/rejected)",
-                        "name": "status",
-                        "in": "query",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "待审批考勤列表",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/attendance/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "审批通过考勤",
-                "parameters": [
-                    {
-                        "description": "考勤记录ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "审批后的考勤记录",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/attendance/{id}/reject": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "驳回考勤",
-                "parameters": [
-                    {
-                        "description": "考勤记录ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "驳回后的考勤记录",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/auth/login": {
             "post": {
                 "tags": [
@@ -1194,6 +1051,52 @@
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "workspace"
+                ],
+                "summary": "删除项目空间",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "project space not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         "/project-spaces/{id}/apps": {
@@ -1255,7 +1158,25 @@
                 "summary": "创建应用",
                 "parameters": [
                     {
-                        "description": "可选；buildpack 检测或默认 8080",
+                        "description": "managed(默认,A类) / external(B类纳管外部应用)",
+                        "name": "deploy_mode",
+                        "in": "path",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "description": "external 必填：外部应用访问地址 http(s)://host[:port][/path]",
+                        "name": "external_url",
+                        "in": "path",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "description": "managed 可选；buildpack 检测或默认 8080",
                         "name": "internal_port",
                         "in": "path",
                         "schema": {
@@ -1272,7 +1193,7 @@
                         }
                     },
                     {
-                        "description": "可选；空=平台托管 git 仓库 /data/repos/<name>",
+                        "description": "managed 可选；空=平台托管 git 仓库 /data/repos/<name>",
                         "name": "repo_dir",
                         "in": "path",
                         "schema": {
@@ -1306,6 +1227,17 @@
                     },
                     "400": {
                         "description": "invalid body",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "应用数配额超限",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -2760,170 +2692,6 @@
                 }
             }
         },
-        "/project-spaces/{id}/attendance": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "列出项目空间下的考勤记录",
-                "parameters": [
-                    {
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "考勤记录列表",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "提交考勤记录",
-                "parameters": [
-                    {
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/internal_attendance.submitRequest"
-                            }
-                        }
-                    },
-                    "description": "考勤提交内容(status+start_time+end_time+supervisor_id)",
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "创建的考勤记录",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "invalid body / 时间格式错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/project-spaces/{id}/attendance/mine": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "当前员工的考勤记录",
-                "parameters": [
-                    {
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当前用户的考勤记录列表",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/project-spaces/{id}/capabilities/api-keys": {
             "get": {
                 "security": [
@@ -3937,6 +3705,164 @@
                 }
             }
         },
+        "/project-spaces/{id}/import/apps": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "导入已有项目",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_appdeploy.importBody"
+                            }
+                        }
+                    },
+                    "description": "导入参数(source/name/git_url|server_path)",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "占位应用(importing态)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid body/来源参数非法",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "同名应用已存在/配额超限",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/import/apps/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "上传 zip 导入应用",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "description": "应用名",
+                                        "type": "string"
+                                    },
+                                    "internal_port": {
+                                        "description": "内部端口(默认 8080)",
+                                        "type": "integer"
+                                    },
+                                    "file": {
+                                        "description": "zip 压缩包",
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "file"
+                                ]
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "占位应用(importing态)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "缺 file / 超大小 / 名非法",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "同名应用已存在/配额超限",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/project-spaces/{id}/my-tasks": {
             "get": {
                 "security": [
@@ -4803,6 +4729,122 @@
                     },
                     "400": {
                         "description": "invalid body",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/quota": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "项目配额 + 当前用量",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "配额 + 4 维度用量",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "修改项目配额",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_quota.updateBody"
+                            }
+                        }
+                    },
+                    "description": "4 个 max_*（可选，未传保留原值）",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "更新后的配额",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid body / 越界",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -5921,7 +5963,15 @@
                     }
                 ],
                 "requestBody": {
-                    "$ref": "#/components/requestBodies/internal_standard.createBody"
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_standard.createBody"
+                            }
+                        }
+                    },
+                    "description": "规范(name/content 等)",
+                    "required": true
                 },
                 "responses": {
                     "200": {
@@ -5986,6 +6036,43 @@
                 }
             }
         },
+        "/project-spaces/{id}/team-tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "requirement"
+                ],
+                "summary": "团队任务看板",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "toClaim/inDev/toApprove/toRelease/delivered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/project-spaces/{id}/test-cases": {
             "get": {
                 "security": [
@@ -6022,6 +6109,96 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/test-cases/{tcid}/manual-verdict": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "qa"
+                ],
+                "summary": "人工验收测试用例",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "测试用例ID",
+                        "name": "tcid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "{verdict:string,note:string}",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "更新后的用例(含 verifier_name)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "verdict 非法",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "用例不存在",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "非人工验收范围",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6186,6 +6363,62 @@
                     },
                     "500": {
                         "description": "服务端错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/usage/trend": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "quota"
+                ],
+                "summary": "项目用量趋势",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "趋势天数（默认30，上限90）",
+                        "name": "days",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ai_trend / api_trend / db_size_trend / db_size_current_mb / usage",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6481,10 +6714,28 @@
                 "tags": [
                     "standard"
                 ],
-                "summary": "列出全局规范",
+                "summary": "列出全局规范 / 按层级列",
+                "parameters": [
+                    {
+                        "description": "platform/app/module",
+                        "name": "scope",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "scope=module 时：api/form/db/code/ui",
+                        "name": "module",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "全局规范列表",
+                        "description": "规范列表",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6507,7 +6758,15 @@
                 ],
                 "summary": "新建全局规范",
                 "requestBody": {
-                    "$ref": "#/components/requestBodies/internal_standard.createBody"
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_standard.createBody"
+                            }
+                        }
+                    },
+                    "description": "规范(name/content/scope/module 等)",
+                    "required": true
                 },
                 "responses": {
                     "200": {
@@ -6523,6 +6782,78 @@
                     },
                     "400": {
                         "description": "invalid body",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/standards/agents-md": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "standard"
+                ],
+                "summary": "导出 AGENTS.md（markdown）",
+                "parameters": [
+                    {
+                        "description": "api/form/db/code/ui（空=仅平台+应用）",
+                        "name": "module",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "markdown",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/standards/aggregate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "standard"
+                ],
+                "summary": "聚合规范（分层合并）",
+                "parameters": [
+                    {
+                        "description": "api/form/db/code/ui（空=不附模块级）",
+                        "name": "module",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "聚合规范列表",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6706,17 +7037,6 @@
                 },
                 "description": "SOP{code,name,steps,rollback,...}",
                 "required": true
-            },
-            "internal_standard.createBody": {
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/internal_standard.createBody"
-                        }
-                    }
-                },
-                "description": "规范(name/content 等)",
-                "required": true
             }
         },
         "securitySchemes": {
@@ -6733,46 +7053,60 @@
                     "name"
                 ],
                 "properties": {
+                    "deploy_mode": {
+                        "description": "managed(默认,A类) / external(B类纳管外部应用)",
+                        "type": "string"
+                    },
+                    "external_url": {
+                        "description": "external 必填：外部应用访问地址 http(s)://host[:port][/path]",
+                        "type": "string"
+                    },
                     "internal_port": {
-                        "description": "可选；buildpack 检测或默认 8080",
+                        "description": "managed 可选；buildpack 检测或默认 8080",
                         "type": "integer"
                     },
                     "name": {
                         "type": "string"
                     },
                     "repo_dir": {
-                        "description": "可选；空=平台托管 git 仓库 /data/repos/<name>",
+                        "description": "managed 可选；空=平台托管 git 仓库 /data/repos/<name>",
                         "type": "string"
                     }
                 }
             },
-            "internal_attendance.submitRequest": {
+            "internal_appdeploy.importBody": {
                 "type": "object",
                 "required": [
-                    "end_time",
-                    "start_time",
-                    "status",
-                    "supervisor_id"
+                    "name",
+                    "source"
                 ],
                 "properties": {
-                    "end_time": {
-                        "description": "RFC3339",
+                    "auth_token": {
+                        "description": "私有 HTTPS 仓 token（不落库）；SSH 仓留空",
                         "type": "string"
                     },
-                    "reason": {
+                    "git_url": {
+                        "description": "source=git 必填",
                         "type": "string"
                     },
-                    "start_time": {
-                        "description": "RFC3339",
+                    "internal_port": {
+                        "description": "可选，默认 8080",
+                        "type": "integer"
+                    },
+                    "name": {
                         "type": "string"
                     },
-                    "status": {
-                        "description": "rest/overtime/leave",
+                    "server_path": {
+                        "description": "source=dir 必填，须在白名单下",
                         "type": "string"
                     },
-                    "supervisor_id": {
-                        "description": "直接上级，提交后转其审批",
-                        "type": "string"
+                    "source": {
+                        "description": "git=远程仓库 dir=服务器目录",
+                        "type": "string",
+                        "enum": [
+                            "git",
+                            "dir"
+                        ]
                     }
                 }
             },
@@ -7032,6 +7366,32 @@
                     }
                 }
             },
+            "internal_quota.updateBody": {
+                "type": "object",
+                "properties": {
+                    "max_apps": {
+                        "type": "integer",
+                        "maximum": 10000,
+                        "minimum": 0
+                    },
+                    "max_capability_calls_per_day": {
+                        "type": "integer",
+                        "maximum": 10000000,
+                        "minimum": 0
+                    },
+                    "max_databases": {
+                        "type": "integer",
+                        "maximum": 10000,
+                        "minimum": 0
+                    },
+                    "max_total_db_mb": {
+                        "description": "上限 1TB",
+                        "type": "integer",
+                        "maximum": 1048576,
+                        "minimum": 0
+                    }
+                }
+            },
             "internal_release.createRequest": {
                 "type": "object",
                 "required": [
@@ -7226,11 +7586,19 @@
                     "enabled": {
                         "type": "boolean"
                     },
+                    "module": {
+                        "description": "scope=module 时：api/form/db/code/ui",
+                        "type": "string"
+                    },
                     "name": {
                         "type": "string"
                     },
                     "priority": {
                         "type": "integer"
+                    },
+                    "scope": {
+                        "description": "platform/app/module（默认 platform）",
+                        "type": "string"
                     }
                 }
             },
@@ -7257,6 +7625,10 @@
                     },
                     "enabled": {
                         "type": "boolean"
+                    },
+                    "module": {
+                        "description": "scope=module 时可调子模块",
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"

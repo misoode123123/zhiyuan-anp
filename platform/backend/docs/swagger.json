@@ -61,128 +61,6 @@
                 }
             }
         },
-        "/attendance/inbox": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "待我审批的考勤收件箱",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "状态过滤(pending/approved/rejected)",
-                        "name": "status",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "待审批考勤列表",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/attendance/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "审批通过考勤",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "考勤记录ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "审批后的考勤记录",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/attendance/{id}/reject": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "驳回考勤",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "考勤记录ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "驳回后的考勤记录",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/auth/login": {
             "post": {
                 "consumes": [
@@ -2400,146 +2278,6 @@
                 }
             }
         },
-        "/project-spaces/{id}/attendance": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "列出项目空间下的考勤记录",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "考勤记录列表",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "提交考勤记录",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "考勤提交内容(status+start_time+end_time+supervisor_id)",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_attendance.submitRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "创建的考勤记录",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "invalid body / 时间格式错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/project-spaces/{id}/attendance/mine": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "attendance"
-                ],
-                "summary": "当前员工的考勤记录",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "项目空间ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当前用户的考勤记录列表",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务端错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/project-spaces/{id}/capabilities/api-keys": {
             "get": {
                 "security": [
@@ -3391,6 +3129,137 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/import/apps": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "导入已有项目",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "导入参数(source/name/git_url|server_path)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_appdeploy.importBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "占位应用(importing态)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "invalid body/来源参数非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "同名应用已存在/配额超限",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/import/apps/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "上传 zip 导入应用",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "应用名",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "内部端口(默认 8080)",
+                        "name": "internal_port",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "zip 压缩包",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "占位应用(importing态)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "缺 file / 超大小 / 名非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "同名应用已存在/配额超限",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5323,6 +5192,80 @@
                 }
             }
         },
+        "/project-spaces/{id}/test-cases/{tcid}/manual-verdict": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "qa"
+                ],
+                "summary": "人工验收测试用例",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "测试用例ID",
+                        "name": "tcid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "{verdict:string,note:string}",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的用例(含 verifier_name)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "verdict 非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "用例不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "非人工验收范围",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/project-spaces/{id}/test-cases/{tcid}/run": {
             "post": {
                 "security": [
@@ -6076,33 +6019,39 @@
                 }
             }
         },
-        "internal_attendance.submitRequest": {
+        "internal_appdeploy.importBody": {
             "type": "object",
             "required": [
-                "end_time",
-                "start_time",
-                "status",
-                "supervisor_id"
+                "name",
+                "source"
             ],
             "properties": {
-                "end_time": {
-                    "description": "RFC3339",
+                "auth_token": {
+                    "description": "私有 HTTPS 仓 token（不落库）；SSH 仓留空",
                     "type": "string"
                 },
-                "reason": {
+                "git_url": {
+                    "description": "source=git 必填",
                     "type": "string"
                 },
-                "start_time": {
-                    "description": "RFC3339",
+                "internal_port": {
+                    "description": "可选，默认 8080",
+                    "type": "integer"
+                },
+                "name": {
                     "type": "string"
                 },
-                "status": {
-                    "description": "rest/overtime/leave",
+                "server_path": {
+                    "description": "source=dir 必填，须在白名单下",
                     "type": "string"
                 },
-                "supervisor_id": {
-                    "description": "直接上级，提交后转其审批",
-                    "type": "string"
+                "source": {
+                    "description": "git=远程仓库 dir=服务器目录",
+                    "type": "string",
+                    "enum": [
+                        "git",
+                        "dir"
+                    ]
                 }
             }
         },

@@ -19,27 +19,31 @@ definitions:
     required:
     - name
     type: object
-  internal_attendance.submitRequest:
+  internal_appdeploy.importBody:
     properties:
-      end_time:
-        description: RFC3339
+      auth_token:
+        description: 私有 HTTPS 仓 token（不落库）；SSH 仓留空
         type: string
-      reason:
+      git_url:
+        description: source=git 必填
         type: string
-      start_time:
-        description: RFC3339
+      internal_port:
+        description: 可选，默认 8080
+        type: integer
+      name:
         type: string
-      status:
-        description: rest/overtime/leave
+      server_path:
+        description: source=dir 必填，须在白名单下
         type: string
-      supervisor_id:
-        description: 直接上级，提交后转其审批
+      source:
+        description: git=远程仓库 dir=服务器目录
+        enum:
+        - git
+        - dir
         type: string
     required:
-    - end_time
-    - start_time
-    - status
-    - supervisor_id
+    - name
+    - source
     type: object
   internal_auth.loginBody:
     properties:
@@ -463,83 +467,6 @@ paths:
       summary: 语音识别（ASR）
       tags:
       - conversation
-  /attendance/{id}/approve:
-    post:
-      parameters:
-      - description: 考勤记录ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 审批后的考勤记录
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 审批通过考勤
-      tags:
-      - attendance
-  /attendance/{id}/reject:
-    post:
-      parameters:
-      - description: 考勤记录ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 驳回后的考勤记录
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 驳回考勤
-      tags:
-      - attendance
-  /attendance/inbox:
-    get:
-      parameters:
-      - description: 状态过滤(pending/approved/rejected)
-        in: query
-        name: status
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 待审批考勤列表
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 待我审批的考勤收件箱
-      tags:
-      - attendance
   /auth/login:
     post:
       consumes:
@@ -1976,96 +1903,6 @@ paths:
       summary: 启动交互编码工作台
       tags:
       - appdeploy
-  /project-spaces/{id}/attendance:
-    get:
-      parameters:
-      - description: 项目空间ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 考勤记录列表
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出项目空间下的考勤记录
-      tags:
-      - attendance
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 项目空间ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 考勤提交内容(status+start_time+end_time+supervisor_id)
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_attendance.submitRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 创建的考勤记录
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: invalid body / 时间格式错误
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 提交考勤记录
-      tags:
-      - attendance
-  /project-spaces/{id}/attendance/mine:
-    get:
-      parameters:
-      - description: 项目空间ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 当前用户的考勤记录列表
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务端错误
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 当前员工的考勤记录
-      tags:
-      - attendance
   /project-spaces/{id}/capabilities/api-keys:
     get:
       parameters:
@@ -2620,6 +2457,92 @@ paths:
       summary: 创建对话会话
       tags:
       - conversation
+  /project-spaces/{id}/import/apps:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 导入参数(source/name/git_url|server_path)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_appdeploy.importBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 占位应用(importing态)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: invalid body/来源参数非法
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 同名应用已存在/配额超限
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导入已有项目
+      tags:
+      - appdeploy
+  /project-spaces/{id}/import/apps/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用名
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: 内部端口(默认 8080)
+        in: formData
+        name: internal_port
+        type: integer
+      - description: zip 压缩包
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 占位应用(importing态)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 缺 file / 超大小 / 名非法
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 同名应用已存在/配额超限
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上传 zip 导入应用
+      tags:
+      - appdeploy
   /project-spaces/{id}/my-tasks:
     get:
       parameters:
@@ -3846,6 +3769,55 @@ paths:
       security:
       - BearerAuth: []
       summary: 测试用例列表
+      tags:
+      - qa
+  /project-spaces/{id}/test-cases/{tcid}/manual-verdict:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 测试用例ID
+        in: path
+        name: tcid
+        required: true
+        type: string
+      - description: '{verdict:string,note:string}'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的用例(含 verifier_name)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: verdict 非法
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 用例不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 非人工验收范围
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 人工验收测试用例
       tags:
       - qa
   /project-spaces/{id}/test-cases/{tcid}/run:
