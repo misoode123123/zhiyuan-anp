@@ -39,7 +39,7 @@ dispatch-code → 编码 → 测试 → 审批(变更 approved) → release 发�
 
 ## 3. 非目标(YAGNI)
 
-- **`Deploy env=prod` 的 delivered 对称前置(已知延伸,本次不做)**:`Deploy`(`handler.go:958-966`)的 prod 分支同样有变更闸门(防 `/deploy env=prod` 绕过 `/promote`),但**无 delivered 检查**。本次只覆盖 AC7 字面的 `/promote`;`Deploy env=prod` 若不同步,理论上仍存在「approved 未 delivered 直接部署 prod」的绕过面。该延伸是否一并补,留 spec review 时定;若补,改法与 Promote 完全对称(同方法、同位置插入)。
+- **`Deploy env=prod` 的 delivered 对称前置(已知延伸,本次不做)**:`Deploy`(`handler.go:958-966`)的 prod 分支同样有变更闸门(防 `/deploy env=prod` 绕过 `/promote`),但**无 delivered 检查**。本次只覆盖 AC7 字面的 `/promote`;`Deploy env=prod` 若不同步,理论上仍存在「approved 未 delivered 直接部署 prod」的绕过面。**spec review 已确认本次不补(选 A),留作后续**;若补,改法与 Promote 完全对称(同方法、同位置插入)。
 - 不改 `release` / `merge` 的 delivered 写入路径(已是 AC7 的对偶正确实现)。
 - 不改前端(`/promote` 按钮的 409 文案展示走通用错误码通道,无需改)。
 - 不重构 `Promote` 异步部署段(`go buildAndDeploy`)——测试回避该路径(见 §6 取舍)。
