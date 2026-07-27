@@ -43,7 +43,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
 		os.Exit(1)
 	}
-	logger := zhlog.New(cfg.LogLevel)
+	logger := zhlog.New(zhlog.Config{Level: cfg.LogLevel, Format: "console"})
 	defer logger.Sync()
 
 	database, err := db.Open(cfg.DatabaseURL)
