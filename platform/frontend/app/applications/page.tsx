@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { devStep } from "@/lib/devstep";
@@ -171,6 +171,10 @@ export default function ApplicationsPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false); // 向导「开始导入」执行中（按钮禁用）
   const [importProgress, setImportProgress] = useState<string>(""); // 步骤3 显示的 last_error 进度
+  // 轮询取消令牌：startImport 置 false、关闭向导置 true。
+  // 用 ref 而非闭包里的 importing 状态——后者在 startImport 所属渲染里恒为 false（setState 仅排队），
+  // 会导致 tick 永不递归、轮询只 fetch 一次、真实导入进度冻结。
+  const importCancelRef = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -302,6 +306,8 @@ export default function ApplicationsPage() {
     setImporting(false);
   }
   function closeImportWizard() {
+    // 取消可能挂起的轮询回调，防止旧 tick 在新向导打开后 reset 新向导状态（竞态）
+    importCancelRef.current = true;
     setImportOpen(false);
     resetImportWizard();
   }
@@ -310,6 +316,8 @@ export default function ApplicationsPage() {
       alert("请填应用名");
       return;
     }
+    // 重置取消令牌：新一轮导入开始，允许 tick 递归轮询
+    importCancelRef.current = false;
     if (importSource === "git" && !importForm.git_url.trim()) {
       alert("请填 git 仓库地址");
       return;
@@ -405,7 +413,7 @@ export default function ApplicationsPage() {
       } catch {
         // 网络抖动忽略，继续轮询
       }
-      if (Date.now() < deadline && importing) {
+      if (Date.now() < deadline && !importCancelRef.current) {
         setTimeout(tick, 2000);
       }
     };
@@ -898,7 +906,9 @@ export default function ApplicationsPage() {
           {importStep === 3 && (
             <div className="space-y-2">
               <div className="flex items-center gap-2 rounded bg-white p-2 text-sm">
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"></span>
+                {importing && (
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"></span>
+                )}
                 <span className="font-medium text-emerald-700">
                   {importing ? "导入中..." : "导入结束"}
                 </span>
