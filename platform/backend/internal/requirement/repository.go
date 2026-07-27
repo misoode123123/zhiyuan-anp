@@ -88,6 +88,26 @@ func (r *Repository) UpdateStatus(ctx context.Context, id, status string) (int, 
 	return int(n), nil
 }
 
+// HasUnDeliveredApprovedByApp 该 app 是否存在「approved 变更但来源需求未 delivered」的情形。
+// promote 闸门(AC7)据此拒绝「跳过 release 直接上线」。
+//
+// SQL 要点:
+//   - JOIN requirement r ON r.id=c.source_id:source_id 为旧 appID 路径时 JOIN 不到(r=NULL),
+//     r.status<>delivered 不命中 → 天然 grandfather(对称 release 回写)。
+//   - appSourceCond 双路径:c.source_id=appID 或 c.source_id 是该 app 的需求(requirement.application_id=appID)。
+//   - 多个 approved 变更取并集,任一来源需求未 delivered 即 true(EXISTS 天然语义)。
+func (r *Repository) HasUnDeliveredApprovedByApp(ctx context.Context, appID string) (bool, error) {
+	var exists bool
+	const q = `SELECT EXISTS (
+		SELECT 1 FROM change_request c
+		JOIN requirement r ON r.id = c.source_id
+		WHERE (c.source_id = $1 OR c.source_id IN (SELECT id FROM requirement WHERE application_id = $1))
+		  AND c.status = 'approved'
+		  AND r.status <> 'delivered')`
+	err := r.db.GetContext(ctx, &exists, q, appID)
+	return exists, err
+}
+
 // SetApplication 把需求归属到某应用（发布自动部署后回填 application_id）。
 func (r *Repository) SetApplication(ctx context.Context, id, appID string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE requirement SET application_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, appID, id)

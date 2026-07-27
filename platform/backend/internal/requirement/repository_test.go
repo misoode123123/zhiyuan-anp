@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
@@ -333,6 +335,102 @@ func TestRepository_Assign_NotFound(t *testing.T) {
 	// 当前实现：错误信息为"需求已被  认领"（中间空白），语义不准确——记入潜在 bug。
 	if !strings.Contains(err.Error(), "认领") {
 		t.Fatalf("错误信息应包含'认领'，得到: %v", err)
+	}
+}
+
+// TestRepository_HasUnDeliveredApprovedByApp promote 闸门(AC7):app 有 approved 变更且其来源需求
+// 未 delivered → true(堵跳过 release 直接上线)。grandfather(source_id 解析不到需求)/跨 app 隔离覆盖。
+// 反查链 change_request.source_id→requirement.status(双路径 appSourceCond,对称 release 回写)。
+func TestRepository_HasUnDeliveredApprovedByApp(t *testing.T) {
+	ctx := context.Background()
+
+	// seedChg 直接插 change_request(本包无 change.Store,跨表 seed 走原始 SQL)。
+	seedChg := func(db *sqlx.DB, id, psID, sourceID, status string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO change_request (id, project_space_id, source_id, kind, output, status)
+			 VALUES ($1, $2, $3, 'code', 'diff', $4)`,
+			id, psID, sourceID, status); err != nil {
+			t.Fatalf("seed change %s: %v", id, err)
+		}
+	}
+	// seedReq 直接插 requirement(精确控制 application_id/status)。
+	seedReq := func(db *sqlx.DB, id, psID, appID, status string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO requirement (id, project_space_id, application_id, title, status)
+			 VALUES ($1, $2, $3, 't', $4)`,
+			id, psID, appID, status); err != nil {
+			t.Fatalf("seed req %s: %v", id, err)
+		}
+	}
+
+	cases := []struct {
+		name  string
+		setup func(db *sqlx.DB)
+		appID string
+		want  bool
+	}{
+		{
+			name: "approved+未delivered→true(双路径经application_id)",
+			setup: func(db *sqlx.DB) {
+				seedReq(db, "req_1", "ps_1", "app_1", "developing")
+				seedChg(db, "chg_1", "ps_1", "req_1", "approved")
+			},
+			appID: "app_1",
+			want:  true,
+		},
+		{
+			name: "approved+delivered→false",
+			setup: func(db *sqlx.DB) {
+				seedReq(db, "req_1", "ps_1", "app_1", "delivered")
+				seedChg(db, "chg_1", "ps_1", "req_1", "approved")
+			},
+			appID: "app_1",
+			want:  false,
+		},
+		{
+			name: "无approved仅pending→false",
+			setup: func(db *sqlx.DB) {
+				seedReq(db, "req_1", "ps_1", "app_1", "developing")
+				seedChg(db, "chg_1", "ps_1", "req_1", "pending")
+			},
+			appID: "app_1",
+			want:  false,
+		},
+		{
+			name: "source_id=旧appID解析不到需求→false(grandfather对称)",
+			setup: func(db *sqlx.DB) {
+				seedChg(db, "chg_1", "ps_1", "app_1", "approved") // source_id 直接是 appID,无对应 requirement
+			},
+			appID: "app_1",
+			want:  false,
+		},
+		{
+			name: "跨app隔离→false",
+			setup: func(db *sqlx.DB) {
+				seedReq(db, "req_1", "ps_1", "app_b", "developing")
+				seedChg(db, "chg_1", "ps_1", "req_1", "approved")
+			},
+			appID: "app_a",
+			want:  false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db := testutil.TestDB(t)
+			testutil.Truncate(t, db, "requirement", "change_request")
+			c.setup(db)
+			r := NewRepository(db)
+			got, err := r.HasUnDeliveredApprovedByApp(ctx, c.appID)
+			if err != nil {
+				t.Fatalf("HasUnDeliveredApprovedByApp: %v", err)
+			}
+			if got != c.want {
+				t.Fatalf("app=%s 应 %v,得到 %v", c.appID, c.want, got)
+			}
+		})
 	}
 }
 
