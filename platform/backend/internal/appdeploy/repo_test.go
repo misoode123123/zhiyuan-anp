@@ -1,6 +1,8 @@
 package appdeploy
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -285,5 +287,66 @@ func TestBuildCloneArgs_SSH(t *testing.T) {
 		if strings.Contains(a, "extraHeader") {
 			t.Fatalf("SSH 仓不应注入 extraHeader，得到 %v", args)
 		}
+	}
+}
+
+// writeZip 构造一个内存 zip（files: name→content），返回 bytes 与大小。
+func writeZip(t *testing.T, files map[string]string) ([]byte, int64) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for name, content := range files {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %s: %v", name, err)
+		}
+		_, _ = f.Write([]byte(content))
+	}
+	_ = w.Close()
+	return buf.Bytes(), int64(buf.Len())
+}
+
+// TestImportFromZip_Happy 解压 zip + 无 .git 时 git init + 初始提交。
+func TestImportFromZip_Happy(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	data, size := writeZip(t, map[string]string{"a.txt": "A", "sub/b.txt": "B"})
+
+	repoDir, err := ImportFromZip(context.Background(), "zapp", bytes.NewReader(data), size)
+	if err != nil {
+		t.Fatalf("ImportFromZip: %v", err)
+	}
+	b, _ := os.ReadFile(filepath.Join(repoDir, "a.txt"))
+	if string(b) != "A" {
+		t.Fatalf("a.txt 应 A，得到 %q", string(b))
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
+		t.Fatalf("无 .git 的 zip 应 git init: %v", err)
+	}
+}
+
+// TestImportFromZip_Slip 含 ../ 路径的 entry 须被拒（防 zip slip）。
+func TestImportFromZip_Slip(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	data, size := writeZip(t, map[string]string{"../evil.txt": "x"})
+
+	_, err := ImportFromZip(context.Background(), "slipapp", bytes.NewReader(data), size)
+	if err == nil {
+		t.Fatalf("zip slip 须被拒")
+	}
+	// 确认未逃逸到父目录
+	if _, err := os.Stat(filepath.Join(ManagedRepoBase, "evil.txt")); err == nil {
+		t.Fatalf("zip slip 文件不应逃逸到父目录")
+	}
+}
+
+// TestImportFromZip_TooLarge 超过 MaxZipSize 须被拒（防 bomb 前置）。
+func TestImportFromZip_TooLarge(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	_, err := ImportFromZip(context.Background(), "bigapp", bytes.NewReader([]byte("x")), MaxZipSize+1)
+	if err == nil {
+		t.Fatalf("超过 MaxZipSize 须被拒")
 	}
 }

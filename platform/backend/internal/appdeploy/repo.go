@@ -1,9 +1,11 @@
 package appdeploy
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -275,4 +277,85 @@ func ImportFromGit(ctx context.Context, name, gitURL, authToken string) (string,
 	_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
 	_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
 	return target, nil
+}
+
+// zip 上限（防 bomb）。
+const (
+	MaxZipSize  int64 = 500 * 1024 * 1024 // 单次上传体积上限
+	MaxZipFiles int   = 10000             // 解压文件数上限
+)
+
+// ImportFromZip 把上传 zip 解压到 ManagedRepoDir(name)。防 zip slip（目标须在根下）+ bomb（体积/文件数）。
+// 无 .git → git init + 初始提交；有 .git → 保留历史。
+func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) (string, error) {
+	target := ManagedRepoDir(name)
+	if _, err := os.Stat(target); err == nil {
+		return "", fmt.Errorf("目标目录已存在: %s", target)
+	}
+	if size > MaxZipSize {
+		return "", fmt.Errorf("zip 过大: %d > %d", size, MaxZipSize)
+	}
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return "", fmt.Errorf("zip 读取失败: %w", err)
+	}
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return "", err
+	}
+	cleanRoot := filepath.Clean(target)
+	var totalSize int64
+	var fileCount int
+	for _, f := range zr.File {
+		fileCount++
+		if fileCount > MaxZipFiles {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("zip 文件数超限 %d", MaxZipFiles)
+		}
+		dest := filepath.Clean(filepath.Join(target, f.Name))
+		// 防 zip slip：解压目标必须严格在 target 之下
+		if dest != cleanRoot && !strings.HasPrefix(dest, cleanRoot+string(os.PathSeparator)) {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("zip slip 非法路径: %s", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			_ = os.MkdirAll(dest, 0755)
+			continue
+		}
+		if totalSize += int64(f.UncompressedSize64); totalSize > MaxZipSize {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("zip 解压体积超限(bomb)")
+		}
+		if err := copyZipFile(dest, f); err != nil {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("解压 %s 失败: %w", f.Name, err)
+		}
+	}
+	// 无 .git → 建仓 + 初始提交（不写模板，保留导入内容原样）
+	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		_, _ = runGit(ctx, target, "init", "-q")
+		_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
+		_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
+		_, _ = runGit(ctx, target, "add", "-A")
+		_, _ = runGit(ctx, target, "commit", "-q", "-m", "import: 初始导入")
+	}
+	return target, nil
+}
+
+// copyZipFile 解压单个 zip 文件到 dest（先建父目录）。
+func copyZipFile(dest string, f *zip.File) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, rc)
+	return err
 }
