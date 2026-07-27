@@ -567,3 +567,46 @@ func TestStore_EnsureAppForRequirement_HitAppExists(t *testing.T) {
 		t.Fatalf("应返回已存 app 的 repo/port，得到 repo=%s port=%d", repoDir, port)
 	}
 }
+
+// TestStore_CreateImport Create 写入 import_source/import_ref，读回正确（managed 默认空串兼容）。
+func TestStore_CreateImport(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Application{
+		ProjectSpaceID: "ps_1", Name: "legacy-api", RepoDir: "/data/repos/legacy-api",
+		DeployMode: AppManaged, ImportSource: ImportSourceGit, ImportRef: "https://gitlab/x/y.git",
+		Status: StatusImporting,
+	}
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create import: %v", err)
+	}
+	got, err := s.GetByAppID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ImportSource != ImportSourceGit {
+		t.Fatalf("import_source 应 git，得到 %q", got.ImportSource)
+	}
+	if got.ImportRef != "https://gitlab/x/y.git" {
+		t.Fatalf("import_ref 不匹配: %q", got.ImportRef)
+	}
+	if got.Status != StatusImporting {
+		t.Fatalf("status 应 importing，得到 %q", got.Status)
+	}
+	if got.ImportedAt != nil {
+		t.Fatalf("进行中 imported_at 应 nil，得到 %v", got.ImportedAt)
+	}
+}
+
+// TestStore_CreateImportDefault 未设 import_source 的老流程默认空串（向后兼容）。
+func TestStore_CreateImportDefault(t *testing.T) {
+	s := newTestStore(t)
+	a := mkApp("ps_1", "snake") // 未设 ImportSource
+	if err := s.Create(context.Background(), a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, _ := s.GetByAppID(context.Background(), a.ID)
+	if got.ImportSource != "" || got.ImportRef != "" {
+		t.Fatalf("未设导入字段应为空，得到 source=%q ref=%q", got.ImportSource, got.ImportRef)
+	}
+}

@@ -17,7 +17,7 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 func appCols() string {
-	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(external_url,'') AS external_url, created_at, updated_at`
+	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
 }
 
 // Create 注册应用（registered 状态）。
@@ -31,9 +31,9 @@ func (s *Store) Create(ctx context.Context, a *Application) error {
 		a.DeployMode = AppManaged
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, internal_port, status, deploy_mode, external_url)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		a.ID, a.ProjectSpaceID, a.Name, a.RepoDir, a.InternalPort, a.Status, a.DeployMode, a.ExternalURL)
+		`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, internal_port, status, deploy_mode, external_url, import_source, import_ref)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		a.ID, a.ProjectSpaceID, a.Name, a.RepoDir, a.InternalPort, a.Status, a.DeployMode, a.ExternalURL, a.ImportSource, a.ImportRef)
 	return err
 }
 
