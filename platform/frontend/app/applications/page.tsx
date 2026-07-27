@@ -752,7 +752,7 @@ export default function ApplicationsPage() {
                       key: "upload",
                       icon: "📦",
                       title: "本机 zip",
-                      desc: "上传源码 zip 包，平台解压到 /data/repos/（≤200MB）",
+                      desc: "上传源码 zip 包，平台解压到 /data/repos/（≤500MB）",
                     },
                     {
                       key: "dir",
@@ -854,7 +854,7 @@ export default function ApplicationsPage() {
               )}
               {importSource === "upload" && (
                 <div>
-                  <label className="block text-xs text-neutral-500">zip 文件（必填，≤200MB）</label>
+                  <label className="block text-xs text-neutral-500">zip 文件（必填，≤500MB）</label>
                   <input
                     type="file"
                     accept=".zip,application/zip"
