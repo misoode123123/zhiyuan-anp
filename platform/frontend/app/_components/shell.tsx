@@ -64,7 +64,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
       {/* 侧边栏：桌面固定 / 移动端抽屉 */}
       <aside
-        className={`fixed z-40 flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-neutral-200 bg-white p-4 transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed z-40 flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-neutral-200 bg-[#f7f8fa] p-4 transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
         style={{ height: "100vh" }}

@@ -2,7 +2,7 @@
 
 :root {
   color-scheme: light; /* 强制浅色，不跟随系统暗色 */
-  --background: #fafafa;
+  --background: #f1f3f5; /* 柔和蓝灰底，缓解纯白刺眼（原 #fafafa 太亮） */
   --foreground: #171717;
 }
 
