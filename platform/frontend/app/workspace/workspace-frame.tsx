@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { WorkspaceToolbar, type DeployState } from "./workspace-toolbar";
-import { ContextDrawer, type WorkspaceDetail } from "./context-drawer";
+import { Sidebar } from "./sidebar";
+import type { WorkspaceDetail, ReqState, ReqActions } from "./types";
 
 // 编码工作台 tab 主体(期1 载体):
-// - 左侧 ContextDrawer:项目上下文(需求/变更/发布,来自 /detail)
+// - 左侧 Sidebar:活动栏 + 需求/源代码管理/发布/文件视图 + diff 抽屉（数据来自 /detail 与 /git-status）
 // - 顶部 WorkspaceToolbar:构建部署(test)+ 部署状态轮询 + opencode 新窗口/重连
 // - 主体:opencode 全屏 iframe
 // 后续期2(变更闸门)/期3(需求申请单)等治理功能在本组件呈现。
@@ -432,6 +433,29 @@ export default function WorkspaceFrame() {
 
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
+  // 需求操作状态与回调：复用本组件已声明 state/函数，透传给 Sidebar → RequirementsView。
+  const reqState: ReqState = {
+    dispatching,
+    testing,
+    breaking,
+    submitting,
+    merging,
+    taskMsg,
+    testMsg,
+    testResults,
+    subtasks,
+    submitMsg,
+  };
+  const reqActions: ReqActions = {
+    dispatch: dispatchReq,
+    runAutoTest: runAutoTest,
+    breakdown: breakdownReq,
+    submit: submitReq,
+    merge: mergeReq,
+    toggleSubtask: (i: number) =>
+      setSubtasks((prev) => prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x))),
+  };
+
   return (
     <div className="-m-4 flex h-[calc(100vh-2.25rem)] flex-col md:-m-6">
       <WorkspaceToolbar
@@ -454,138 +478,17 @@ export default function WorkspaceFrame() {
         drawerOpen={drawerOpen}
         onToggleDrawer={toggleDrawer}
       />
-      {selectedReq &&
-        (() => {
-          const req = detail?.requirements?.find((q) => q.id === selectedReq);
-          if (!req) return null;
-          return (
-            <div className="border-b border-blue-200 bg-blue-50 px-3 py-1 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium text-blue-700">🎯 当前需求:{req.title}</span>
-                <button
-                  onClick={() => dispatchReq()}
-                  disabled={dispatching}
-                  className="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-white"
-                  title="AI 按此需求规格自动编码,完成后你可协助修正"
-                >
-                  {dispatching ? "编码中…" : "🤖 AI 编码此需求"}
-                </button>
-                <button
-                  onClick={runAutoTest}
-                  disabled={testing}
-                  className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-emerald-700"
-                  title="AI 按需求验收标准生成用例 + 对着应用 URL 自动验收"
-                >
-                  {testing ? "测试中…" : "🧪 自动测试"}
-                </button>
-                <button
-                  onClick={breakdownReq}
-                  disabled={breaking}
-                  className="shrink-0 rounded bg-purple-100 px-2 py-0.5 text-purple-700"
-                  title="AI 把需求拆成子任务清单,逐项打勾推进"
-                >
-                  {breaking ? "拆解中…" : "📋 拆解子任务"}
-                </button>
-                <button
-                  onClick={submitReq}
-                  disabled={submitting}
-                  className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-white"
-                  title="提交前 AI 核对代码是否实现需求验收标准,不匹配会被拦"
-                >
-                  {submitting ? "核对中…" : "🔒 提交核对"}
-                </button>
-                <button
-                  onClick={mergeReq}
-                  disabled={merging}
-                  className="shrink-0 rounded bg-emerald-700 px-2 py-0.5 text-white"
-                  title="合并 dev-<你> 到主线 main(worktree 模式上线前必做)"
-                >
-                  {merging ? "合并中…" : "🔀 合并主线"}
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedReq("");
-                    setTaskMsg("");
-                    setTestMsg("");
-                    setTestResults(null);
-                    setSubtasks([]);
-                    setSubmitMsg("");
-                  }}
-                  className="shrink-0 text-neutral-400"
-                >
-                  ✕
-                </button>
-              </div>
-              {taskMsg && <div className="mt-0.5 whitespace-pre-wrap text-blue-600">{taskMsg}</div>}
-              {submitMsg && (
-                <div className="mt-0.5 whitespace-pre-wrap text-amber-700">{submitMsg}</div>
-              )}
-              {testMsg && <div className="mt-0.5 text-emerald-700">{testMsg}</div>}
-              {testResults && testResults.length > 0 && (
-                <div className="mt-1 space-y-0.5">
-                  {testResults.map((tc, i) => (
-                    <div
-                      key={i}
-                      className={
-                        tc.actual_status === tc.expected_status
-                          ? "text-emerald-700"
-                          : "text-red-600"
-                      }
-                    >
-                      {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path}{" "}
-                      → {tc.actual_status || "(未跑)"}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {subtasks.length > 0 && (
-                <div className="mt-1 space-y-0.5">
-                  {subtasks.map((t, i) => (
-                    <div key={i} className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={t.done}
-                        onChange={() =>
-                          setSubtasks((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, done: !x.done } : x))
-                          )
-                        }
-                      />
-                      <span
-                        className={`flex-1 ${t.done ? "line-through text-neutral-400" : "text-neutral-700"}`}
-                      >
-                        {t.text}
-                      </span>
-                      {!t.done && (
-                        <button
-                          onClick={() => dispatchReq(i)}
-                          className="shrink-0 text-blue-600"
-                          title="让 AI 做这一步"
-                        >
-                          ▶
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
       <div className="flex min-h-0 flex-1">
         {drawerOpen && !missingParams && (
-          <ContextDrawer
+          <Sidebar
+            psID={psID}
+            appID={appID}
             detail={detail}
             loading={!detail && !detailErr}
             err={detailErr}
-            onClose={toggleDrawer}
-            onApprove={(id) => decideChange(id, "approve")}
-            onReject={(id) => decideChange(id, "reject")}
-            psID={psID}
-            appID={appID}
             selectedReq={selectedReq}
             onStartReq={async (id) => {
-              // 认领(互斥):被他人认领会 409 拒绝
+              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）
               try {
                 const r = await fetch(
                   `${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`,
@@ -600,7 +503,6 @@ export default function WorkspaceFrame() {
                 return;
               }
               setSelectedReq(id);
-              // 期2联动:认领后自动建/复用工作区(Ensure dev-<user> worktree + opencode),开发者不用手动 git worktree
               try {
                 const w = await fetch(
                   `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`,
@@ -613,9 +515,7 @@ export default function WorkspaceFrame() {
                 if (w.code === 0 && w.data?.url) {
                   setUrl(w.data.deep_url || w.data.url);
                 }
-              } catch (e) {
-                /* 工作区启动失败不阻塞认领 */
-              }
+              } catch {}
               setTaskMsg("");
               setTestMsg("");
               setTestResults(null);
@@ -629,6 +529,10 @@ export default function WorkspaceFrame() {
               }
               fetchDetail();
             }}
+            onApprove={(id) => decideChange(id, "approve")}
+            onReject={(id) => decideChange(id, "reject")}
+            reqState={reqState}
+            reqActions={reqActions}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
