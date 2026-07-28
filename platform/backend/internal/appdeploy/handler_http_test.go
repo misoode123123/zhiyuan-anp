@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 
+	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/testutil"
@@ -1119,5 +1120,121 @@ func TestHandler_ImportUpload_NoFile(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != 400 {
 		t.Fatalf("未带 file 应 400，得到 %d", w.Code)
+	}
+}
+
+// newRouterWithUser 同 newRouterWith 但注入 CtxUserID（git 接口按 user 定位 worktree）。
+func newRouterWithUser(h *Handler, user string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("roles", []string{"admin"})
+		c.Set(auth.CtxUserID, user)
+		c.Next()
+	})
+	h.Register(r.Group("/api/v1"))
+	return r
+}
+
+// makeWorktree 在 dir 下建 dev-<user> worktree（供 git 接口 happy path）。
+func makeWorktree(t *testing.T, dir, user string) string {
+	t.Helper()
+	wt := filepath.Join(dir, ".worktrees", user)
+	runGit(context.Background(), dir, "worktree", "add", "-b", "dev-"+user, wt, "HEAD")
+	return wt
+}
+
+// TestHandler_GitStatus_NoWorktree 未认领需求（无 worktree）→ worktree_exists=false 不报错。
+func TestHandler_GitStatus_NoWorktree(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWithUser(h, "alice")
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir)
+	a := seedApp(t, h, "ps_1", "gw", dir)
+
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/git-status", nil)
+	if code != 200 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data["worktree_exists"] != false {
+		t.Fatalf("无 worktree 应 worktree_exists=false，得到 %v", data["worktree_exists"])
+	}
+}
+
+// TestHandler_GitStatus_Worktree worktree 有改动 → changes 含修改文件、commits 非空、branch=dev-alice。
+func TestHandler_GitStatus_Worktree(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWithUser(h, "alice")
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir)
+	wt := makeWorktree(t, dir, "alice")
+	_ = os.WriteFile(filepath.Join(wt, "hello.txt"), []byte("changed"), 0o644)
+	a := seedApp(t, h, "ps_1", "gw2", dir)
+
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/git-status", nil)
+	if code != 200 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data["worktree_exists"] != true {
+		t.Fatalf("应 worktree_exists=true，得到 %v", data["worktree_exists"])
+	}
+	if data["branch"] != "dev-alice" {
+		t.Fatalf("branch 应 dev-alice，得到 %v", data["branch"])
+	}
+	changes, _ := data["changes"].([]interface{})
+	if len(changes) == 0 {
+		t.Fatalf("changes 应含 hello.txt 修改，得到 %v", changes)
+	}
+	first, _ := changes[0].(map[string]interface{})
+	if first["path"] != "hello.txt" || first["status"] != "M" {
+		t.Fatalf("首条应 hello.txt/M，得到 %v", first)
+	}
+	commits, _ := data["commits"].([]interface{})
+	if len(commits) == 0 {
+		t.Fatalf("commits 不应空，得到 %v", commits)
+	}
+}
+
+// TestHandler_FileDiff 工作区文件 diff 含 +changed。
+func TestHandler_FileDiff(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWithUser(h, "alice")
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir)
+	wt := makeWorktree(t, dir, "alice")
+	_ = os.WriteFile(filepath.Join(wt, "hello.txt"), []byte("changed"), 0o644)
+	a := seedApp(t, h, "ps_1", "fd", dir)
+
+	target := "/api/v1/project-spaces/ps_1/apps/" + a.ID + "/file-diff?path=hello.txt"
+	code, resp := doReq(t, r, http.MethodGet, target, nil)
+	if code != 200 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if !strings.Contains(data["diff"].(string), "+changed") {
+		t.Fatalf("diff 应含 +changed，得到 %q", data["diff"])
+	}
+}
+
+// TestHandler_Commit 留空 message → 走 AI 兜底文案提交，返回 sha。
+func TestHandler_Commit(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWithUser(h, "alice")
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir)
+	wt := makeWorktree(t, dir, "alice")
+	_ = os.WriteFile(filepath.Join(wt, "hello.txt"), []byte("changed"), 0o644)
+	a := seedApp(t, h, "ps_1", "ct", dir)
+
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/commit", map[string]interface{}{})
+	if code != 200 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	// 提交后 worktree 应无未提交改动
+	changes, _ := StatusFiles(context.Background(), wt)
+	if len(changes) != 0 {
+		t.Fatalf("提交后应无未提交改动，得到 %v", changes)
 	}
 }

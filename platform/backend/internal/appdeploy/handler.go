@@ -108,6 +108,10 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
 	r.GET("/project-spaces/:id/apps/:aid/repo-file", h.RepoFile) // 读 repo 文件内容
+	r.GET("/project-spaces/:id/apps/:aid/git-status", h.GitStatus)           // 编码工作台 git 变更：工作区改动 + 提交历史
+	r.GET("/project-spaces/:id/apps/:aid/file-diff", h.FileDiff)             // 单文件行级 diff（工作区 / 指定提交）
+	r.GET("/project-spaces/:id/apps/:aid/commit-files", h.CommitFilesList)   // 某次提交改了哪些文件
+	r.POST("/project-spaces/:id/apps/:aid/commit", h.CommitWorktree)         // 仅提交 dev-<user> worktree（不部署）
 
 	// 部署节点管理（多机部署）
 	r.GET("/deploy-nodes", h.ListNodes)
@@ -1886,4 +1890,164 @@ func (h *Handler) TestNode(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"status": "ok", "detail": "Docker 连通"})
+}
+
+// worktreeDir 解析当前开发者 dev-<user> worktree 路径（与 Deploy 一致，handler.go:1277）。
+func (h *Handler) worktreeDir(c *gin.Context, a *Application) string {
+	user := c.GetString(auth.CtxUserID)
+	if user == "" {
+		user = "anonymous"
+	}
+	return filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user))
+}
+
+// GitStatus 编码工作台 git 变更：工作区改动文件 + 提交历史（均查 dev-<user> worktree）。
+// worktree 不存在（未认领需求）→ worktree_exists=false 空列表不报错。
+//
+// @Summary      工作台 git 变更
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "{worktree_exists,branch,changes,commits}"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/git-status [get]
+func (h *Handler) GitStatus(c *gin.Context) {
+	a, err := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	wt := h.worktreeDir(c, a)
+	if _, err := os.Stat(wt); err != nil {
+		httpx.OK(c, gin.H{"worktree_exists": false, "branch": "", "changes": []FileChange{}, "commits": []CommitInfo{}})
+		return
+	}
+	changes, _ := StatusFiles(c.Request.Context(), wt)
+	commits, _ := Log(c.Request.Context(), wt, 20)
+	httpx.OK(c, gin.H{
+		"worktree_exists": true,
+		"branch":          "dev-" + sanitizeID(c.GetString(auth.CtxUserID)),
+		"changes":         changes,
+		"commits":         commits,
+	})
+}
+
+// FileDiff 单文件行级 diff（unified）。path 必填；sha 可选（空=工作区 vs HEAD，给=该提交对该文件 diff）。
+// 输出截断前 2000 行 + truncated 标注。
+//
+// @Summary      工作台单文件 diff
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id    path   string  true  "项目空间ID"
+// @Param        aid   path   string  true  "应用ID"
+// @Param        path  query  string  true  "文件路径"
+// @Param        sha   query  string  false  "提交 sha（空=工作区 diff）"
+// @Success      200   {object}  map[string]interface{}  "{path,sha,diff,truncated}"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/file-diff [get]
+func (h *Handler) FileDiff(c *gin.Context) {
+	a, err := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	path := c.Query("path")
+	if path == "" {
+		httpx.Err(c, 400, 40001, "path 必填")
+		return
+	}
+	wt := h.worktreeDir(c, a)
+	sha := c.Query("sha")
+	diff, err := FileDiff(c.Request.Context(), wt, path, sha)
+	if err != nil {
+		httpx.Err(c, 400, 40001, err.Error())
+		return
+	}
+	truncated := false
+	lines := strings.Split(diff, "\n")
+	if len(lines) > 2000 {
+		diff = strings.Join(lines[:2000], "\n")
+		truncated = true
+	}
+	httpx.OK(c, gin.H{"path": path, "sha": sha, "diff": diff, "truncated": truncated})
+}
+
+// CommitFilesList 某次提交改动的文件列表（供提交历史点 SHA 展开）。
+//
+// @Summary      某次提交改动文件列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path   string  true  "项目空间ID"
+// @Param        aid  path   string  true  "应用ID"
+// @Param        sha  query  string  true  "提交 sha"
+// @Success      200  {object}  map[string]interface{}  "{sha,files}"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/commit-files [get]
+func (h *Handler) CommitFilesList(c *gin.Context) {
+	a, err := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	sha := c.Query("sha")
+	if sha == "" {
+		httpx.Err(c, 400, 40001, "sha 必填")
+		return
+	}
+	wt := h.worktreeDir(c, a)
+	files, err := CommitFiles(c.Request.Context(), wt, sha)
+	if err != nil {
+		httpx.Err(c, 400, 40001, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"sha": sha, "files": files})
+}
+
+// CommitWorktree 仅提交 dev-<user> worktree（不部署）。message 空走 AI 总结兜底。
+// 与 Deploy 的 auto_commit 不同：此处不触发构建，部署仍走顶部工具栏。
+//
+// @Summary      提交工作台改动
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id     path    string  true  "项目空间ID"
+// @Param        aid    path    string  true  "应用ID"
+// @Param        body   body    object  false  "{message?}"
+// @Success      200    {object}  map[string]interface{}  "{sha,message}"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/commit [post]
+func (h *Handler) CommitWorktree(c *gin.Context) {
+	a, err := h.store.Get(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	wt := h.worktreeDir(c, a)
+	if _, err := os.Stat(wt); err != nil {
+		httpx.Err(c, 400, 40032, "工作分支不存在,请先认领需求/打开工作台生成 dev-"+sanitizeID(c.GetString(auth.CtxUserID))+" 分支")
+		return
+	}
+	var in struct {
+		Message string `json:"message"`
+	}
+	_ = c.ShouldBindJSON(&in)
+	msg := in.Message
+	if strings.TrimSpace(msg) == "" {
+		apiKey := ""
+		if h.cfg != nil {
+			apiKey = h.cfg.Get("zhipuai_api_key", "")
+		}
+		msg = commitMessageFor(c.Request.Context(), wt, apiKey)
+	}
+	if _, err := Commit(c.Request.Context(), wt, msg); err != nil {
+		httpx.Err(c, 500, 50022, "提交失败: "+err.Error())
+		return
+	}
+	latest, _ := Log(c.Request.Context(), wt, 1)
+	sha := ""
+	if len(latest) > 0 {
+		sha = latest[0].SHA
+	}
+	httpx.OK(c, gin.H{"sha": sha, "message": msg})
 }
