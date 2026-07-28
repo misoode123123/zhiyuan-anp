@@ -548,3 +548,44 @@ func TestStatusFiles(t *testing.T) {
 		t.Fatalf("中文未跟踪文件应 U 且路径正斜杠，得到 %q", got["中文目录/文件.md"])
 	}
 }
+
+// TestCommitFiles 某次提交改动的文件列表：首提交含 hello.txt(A)，二提交含 a.txt(A)+hello.txt(M)。
+func TestCommitFiles(t *testing.T) {
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir) // commit1: hello.txt
+	// commit2: 新增 a.txt + 修改 hello.txt
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("changed"), 0o644)
+	runGit(context.Background(), dir, "add", "-A")
+	runGit(context.Background(), dir, "commit", "-q", "-m", "two")
+	// 取两次提交的 sha（log 按 new→old 顺序）
+	logOut, _ := runGit(context.Background(), dir, "log", "--pretty=%h|%s")
+	lines := strings.Split(strings.TrimSpace(logOut), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("应至少 2 条提交，log=%q", logOut)
+	}
+	shaTwo := strings.SplitN(lines[0], "|", 2)[0]
+	shaOne := strings.SplitN(lines[1], "|", 2)[0]
+
+	// 首提交：hello.txt 新增
+	files1, err := CommitFiles(context.Background(), dir, shaOne)
+	if err != nil {
+		t.Fatalf("CommitFiles c1: %v", err)
+	}
+	if len(files1) != 1 || files1[0].Path != "hello.txt" || files1[0].Status != "A" {
+		t.Fatalf("commit1 应 hello.txt(A)，得到 %+v", files1)
+	}
+	// 二提交：a.txt(A) + hello.txt(M)
+	files2, _ := CommitFiles(context.Background(), dir, shaTwo)
+	got := map[string]string{}
+	for _, f := range files2 {
+		got[f.Path] = f.Status
+	}
+	if got["a.txt"] != "A" || got["hello.txt"] != "M" {
+		t.Fatalf("commit2 应 a.txt=A hello.txt=M，得到 %+v", got)
+	}
+	// 空 sha 返回 nil 不报错
+	if f, err := CommitFiles(context.Background(), dir, ""); err != nil || f != nil {
+		t.Fatalf("空 sha 应返回 nil 无错，得到 %v err=%v", f, err)
+	}
+}

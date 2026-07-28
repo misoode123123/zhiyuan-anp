@@ -153,6 +153,53 @@ func porcelainStatus(x, y byte) string {
 	}
 }
 
+// CommitFiles 返回某次提交改动的文件列表（git diff-tree --name-status）。
+// 供提交历史点 SHA 展开看「这次提交改了哪些文件」。
+func CommitFiles(ctx context.Context, repoDir, sha string) ([]FileChange, error) {
+	if sha == "" {
+		return nil, nil
+	}
+	out, err := runGit(ctx, repoDir, "-c", "core.quotepath=false", "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", sha)
+	if err != nil {
+		return nil, err
+	}
+	var list []FileChange
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// "X\tpath" 或 "R100\told\tnew"，取状态首字母 + 末字段（重命名取新名）
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
+			continue
+		}
+		st := fields[0]
+		path := fields[len(fields)-1]
+		list = append(list, FileChange{Path: path, Status: commitStatus(st)})
+	}
+	return list, nil
+}
+
+// commitStatus 把 diff-tree name-status 的状态码（A/D/Rxx/Cxx/M）映射成单字母。
+func commitStatus(st string) string {
+	if st == "" {
+		return "M"
+	}
+	switch st[0] {
+	case 'A':
+		return "A"
+	case 'D':
+		return "D"
+	case 'R':
+		return "R"
+	case 'C':
+		return "C"
+	default:
+		return "M"
+	}
+}
+
 // Checkout 切到指定 commit（版本化部署/回滚）。返回原分支名以便恢复。
 func Checkout(ctx context.Context, repoDir, sha string) (string, error) {
 	if sha == "" {
