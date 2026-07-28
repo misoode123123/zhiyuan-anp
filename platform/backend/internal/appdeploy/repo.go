@@ -101,6 +101,58 @@ func CountUncommitted(ctx context.Context, repoDir string) (int, error) {
 	return n, nil
 }
 
+// FileChange 工作区/提交的单文件改动（git status --porcelain 或 diff-tree --name-status 解析）。
+type FileChange struct {
+	Path   string `json:"path"`
+	Status string `json:"status"` // M/A/D/U/R/C
+}
+
+// StatusFiles 返回工作区改动文件级列表（git status --porcelain）。
+// core.quotepath=false 防中文路径被引号转义；?? → U（未跟踪）。
+// 供编码工作台「源代码管理」视图展示「工作区改了哪些文件」。
+func StatusFiles(ctx context.Context, repoDir string) ([]FileChange, error) {
+	out, err := runGit(ctx, repoDir, "-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return nil, err
+	}
+	var list []FileChange
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 3 {
+			continue
+		}
+		st := porcelainStatus(line[0], line[1])
+		path := strings.TrimSpace(line[3:])
+		if path == "" {
+			continue
+		}
+		// 重命名 "old -> new" 取新名
+		if i := strings.Index(path, " -> "); i >= 0 {
+			path = strings.TrimSpace(path[i+4:])
+		}
+		list = append(list, FileChange{Path: path, Status: st})
+	}
+	return list, nil
+}
+
+// porcelainStatus 把 git status --porcelain 的 XY 两字符映射成单字母状态。
+// X=index 状态，Y=worktree 状态；?? → U（未跟踪）。
+func porcelainStatus(x, y byte) string {
+	switch {
+	case x == '?' && y == '?':
+		return "U"
+	case x == 'A' || y == 'A':
+		return "A"
+	case x == 'D' || y == 'D':
+		return "D"
+	case x == 'R' || y == 'R':
+		return "R"
+	case x == 'C' || y == 'C':
+		return "C"
+	default:
+		return "M"
+	}
+}
+
 // Checkout 切到指定 commit（版本化部署/回滚）。返回原分支名以便恢复。
 func Checkout(ctx context.Context, repoDir, sha string) (string, error) {
 	if sha == "" {

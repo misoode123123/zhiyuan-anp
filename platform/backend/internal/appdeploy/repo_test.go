@@ -517,3 +517,34 @@ func TestImportFromZip_NestedGit(t *testing.T) {
 		t.Fatalf("嵌套目录内容应被主仓跟踪，ls-files=%q", out)
 	}
 }
+
+// TestStatusFiles 工作区改动文件级列表：修改→M、新增未跟踪→U、中文路径正斜杠。
+func TestStatusFiles(t *testing.T) {
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir) // init + 提交 hello.txt="hi"
+	// 修改已跟踪文件
+	_ = os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("changed"), 0o644)
+	// 新增未跟踪
+	_ = os.WriteFile(filepath.Join(dir, "new.txt"), []byte("n"), 0o644)
+	// 中文路径未跟踪
+	_ = os.MkdirAll(filepath.Join(dir, "中文目录"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "中文目录", "文件.md"), []byte("c"), 0o644)
+
+	changes, err := StatusFiles(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("StatusFiles: %v", err)
+	}
+	got := map[string]string{}
+	for _, c := range changes {
+		got[c.Path] = c.Status
+	}
+	if got["hello.txt"] != "M" {
+		t.Fatalf("hello.txt 应 M，得到 %q", got["hello.txt"])
+	}
+	if got["new.txt"] != "U" {
+		t.Fatalf("new.txt 应 U，得到 %q", got["new.txt"])
+	}
+	if got["中文目录/文件.md"] != "U" {
+		t.Fatalf("中文未跟踪文件应 U 且路径正斜杠，得到 %q", got["中文目录/文件.md"])
+	}
+}
