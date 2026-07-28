@@ -623,3 +623,23 @@ func TestFileDiff(t *testing.T) {
 		t.Fatalf("首提交 diff 应含 +hi，得到 %q", d2)
 	}
 }
+
+// TestLog_Author Log 返回的 CommitInfo 含作者字段。
+func TestLog_Author(t *testing.T) {
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir) // author="t"（makeLocalGitRepo 设 user.name=t）
+	list, err := Log(context.Background(), dir, 5)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(list) == 0 {
+		t.Fatal("应至少 1 条提交")
+	}
+	c := list[0]
+	if c.Author != "t" {
+		t.Fatalf("Author 应为 t，得到 %q", c.Author)
+	}
+	if c.SHA == "" || c.Message == "" || c.Date == "" {
+		t.Fatalf("SHA/Message/Date 不应为空，得到 %+v", c)
+	}
+}

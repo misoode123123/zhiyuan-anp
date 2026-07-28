@@ -256,12 +256,12 @@ func Restore(ctx context.Context, repoDir, branch string) {
 	_, _ = runGit(ctx, repoDir, "checkout", "-q", branch)
 }
 
-// Log 最近的提交（= 应用版本历史）。
+// Log 最近的提交（= 应用版本历史），含作者。
 func Log(ctx context.Context, repoDir string, n int) ([]CommitInfo, error) {
 	if n <= 0 {
 		n = 10
 	}
-	out, err := runGit(ctx, repoDir, "log", fmt.Sprintf("-%d", n), "--pretty=%h|%s|%ci")
+	out, err := runGit(ctx, repoDir, "log", fmt.Sprintf("-%d", n), "--pretty=%h|%an|%s|%ci")
 	if err != nil {
 		return nil, nil // 无提交时返回空
 	}
@@ -270,13 +270,16 @@ func Log(ctx context.Context, repoDir string, n int) ([]CommitInfo, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 3)
+		parts := strings.SplitN(line, "|", 4)
 		c := CommitInfo{SHA: parts[0]}
 		if len(parts) > 1 {
-			c.Message = parts[1]
+			c.Author = parts[1]
 		}
 		if len(parts) > 2 {
-			c.Date = parts[2]
+			c.Message = parts[2]
+		}
+		if len(parts) > 3 {
+			c.Date = parts[3]
 		}
 		list = append(list, c)
 	}
@@ -298,6 +301,7 @@ func Diff(ctx context.Context, repoDir string, n int) string {
 // CommitInfo 提交（版本）信息。
 type CommitInfo struct {
 	SHA     string `json:"sha"`
+	Author  string `json:"author"`
 	Message string `json:"message"`
 	Date    string `json:"date"`
 }
