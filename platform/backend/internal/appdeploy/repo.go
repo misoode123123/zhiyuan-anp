@@ -200,6 +200,34 @@ func commitStatus(st string) string {
 	}
 }
 
+// FileDiff 返回单文件 unified diff 文本。
+//
+//	sha=="" → 工作区 vs HEAD（git diff HEAD -- path）
+//	sha!="" → 该提交对该文件的 diff（diff sha^..sha -- path）；首提交无父降级 git show sha -- path。
+//
+// path 越权（../ 或绝对路径）必须被拒（防逃逸出 repo）。
+func FileDiff(ctx context.Context, repoDir, path, sha string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	// 越权防护（同 ReadRepoFile：abs 必须在 repoDir 下）
+	cleanRoot := filepath.Clean(repoDir)
+	abs := filepath.Clean(filepath.Join(cleanRoot, path))
+	if !strings.HasPrefix(abs, cleanRoot+string(filepath.Separator)) && abs != cleanRoot {
+		return "", fmt.Errorf("非法路径: %s", path)
+	}
+
+	if sha == "" {
+		return runGit(ctx, repoDir, "diff", "HEAD", "--", path)
+	}
+	// 首提交无父时 diff sha^..sha 报错，降级 show
+	out, err := runGit(ctx, repoDir, "diff", sha+"^", sha, "--", path)
+	if err != nil {
+		return runGit(ctx, repoDir, "show", sha, "--", path)
+	}
+	return out, nil
+}
+
 // Checkout 切到指定 commit（版本化部署/回滚）。返回原分支名以便恢复。
 func Checkout(ctx context.Context, repoDir, sha string) (string, error) {
 	if sha == "" {

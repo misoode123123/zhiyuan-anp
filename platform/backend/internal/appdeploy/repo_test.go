@@ -589,3 +589,37 @@ func TestCommitFiles(t *testing.T) {
 		t.Fatalf("空 sha 应返回 nil 无错，得到 %v err=%v", f, err)
 	}
 }
+
+// TestFileDiff 工作区 diff（无 sha）+ 历史提交 diff（带 sha）。
+func TestFileDiff(t *testing.T) {
+	dir := t.TempDir()
+	makeLocalGitRepo(t, dir) // hello.txt="hi" 已提交
+	// 修改 → 工作区 diff 应含 +changed
+	_ = os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("changed"), 0o644)
+	d, err := FileDiff(context.Background(), dir, "hello.txt", "")
+	if err != nil {
+		t.Fatalf("FileDiff worktree: %v", err)
+	}
+	if !strings.Contains(d, "-hi") || !strings.Contains(d, "+changed") {
+		t.Fatalf("工作区 diff 应含 -hi/+changed，得到 %q", d)
+	}
+	// 路径越权必须拒（防 ../ 逃逸）
+	if _, err := FileDiff(context.Background(), dir, "../escape.txt", ""); err == nil {
+		t.Fatal("../ 越权路径必须被拒")
+	}
+
+	// 历史提交 diff：取首提交 sha，对 hello.txt 查应含 +hi
+	logOut, _ := runGit(context.Background(), dir, "log", "--pretty=%h")
+	sha := strings.TrimSpace(logOut)
+	if sha == "" {
+		t.Fatal("取不到提交 sha")
+	}
+	// 首提交无父：diff sha^..sha 会失败，须降级 git show
+	d2, err := FileDiff(context.Background(), dir, "hello.txt", sha)
+	if err != nil {
+		t.Fatalf("FileDiff commit(首提交降级): %v", err)
+	}
+	if !strings.Contains(d2, "+hi") {
+		t.Fatalf("首提交 diff 应含 +hi，得到 %q", d2)
+	}
+}
