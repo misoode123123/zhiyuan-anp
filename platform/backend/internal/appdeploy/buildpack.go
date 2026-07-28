@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 )
 
 // EnsureDockerfile 若 repoDir 无 Dockerfile，按检测到的项目类型生成一个最小可构建 Dockerfile。
@@ -14,6 +16,11 @@ import (
 func EnsureDockerfile(repoDir string, fallbackPort int) (generated bool, port int, err error) {
 	df := filepath.Join(repoDir, "Dockerfile")
 	if _, e := os.Stat(df); e == nil {
+		// 自带 Dockerfile：解析 EXPOSE 推断监听口。导入应用常见坑：Dockerfile EXPOSE 3001
+		// 但 internal_port 默认 8080 → docker -p host:8080 而应用在 3001 → 部署后访问被拒。
+		if p := parseExpose(repoDir); p > 0 {
+			return false, p, nil
+		}
 		return false, fallbackPort, nil
 	}
 	t := detectType(repoDir)
@@ -29,6 +36,25 @@ func EnsureDockerfile(repoDir string, fallbackPort int) (generated bool, port in
 		return false, port, err
 	}
 	return true, port, nil
+}
+
+var exposeRe = regexp.MustCompile(`(?m)^\s*EXPOSE\s+(\d+)`)
+
+// parseExpose 从 Dockerfile 解析首个 EXPOSE <端口>（如 `EXPOSE 3001` → 3001），
+// 用于自带 Dockerfile 时推断应用真实监听口；无 EXPOSE 或解析失败返回 0（调用方回退默认）。
+// 仅识别数字端口（EXPOSE ${PORT} 这类变量不处理，回退默认）。
+func parseExpose(repoDir string) int {
+	b, err := os.ReadFile(filepath.Join(repoDir, "Dockerfile"))
+	if err != nil {
+		return 0
+	}
+	m := exposeRe.FindSubmatch(b)
+	if len(m) >= 2 {
+		if p, e := strconv.Atoi(string(m[1])); e == nil {
+			return p
+		}
+	}
+	return 0
 }
 
 // detectType 按仓库特征推断项目类型。

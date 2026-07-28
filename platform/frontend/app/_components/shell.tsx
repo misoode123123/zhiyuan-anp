@@ -25,7 +25,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { addTab, refreshKey } = useTabs();
+  const { addTab, updateSearch, refreshKey } = useTabs();
   const [sidebarOpen, setSidebarOpen] = useState(false); // 移动端抽屉
 
   useEffect(() => {
@@ -41,8 +41,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const nav = NAV_MAP[pathname];
-    if (nav) addTab(nav);
-  }, [pathname, addTab]);
+    if (nav) {
+      addTab(nav);
+      updateSearch(pathname, typeof window !== "undefined" ? window.location.search : "");
+    }
+  }, [pathname, addTab, updateSearch]);
 
   // 路由切换时关闭移动端侧边栏
   useEffect(() => {

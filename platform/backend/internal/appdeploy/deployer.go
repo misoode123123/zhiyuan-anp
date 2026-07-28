@@ -100,12 +100,13 @@ func ensurePortEnv(env []string, port int) []string {
 	return append(env, fmt.Sprintf("PORT=%d", port))
 }
 
-// Build 构建镜像（docker build -t <image> <repo_dir>），版本号按环境实例自增。
+// Build 构建镜像（docker build -t <image> <buildDir>），版本号按环境实例自增。
+// buildDir 取码目录：test 环境从开发者 worktree 构建时是 dev-<user> 目录，否则为主仓 a.RepoDir。
 // dockerHost 非空时在远程节点构建（tcp://10.10.0.30:2375）。
-func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, dockerHost string) (log string, err error) {
+func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, dockerHost, buildDir string) (log string, err error) {
 	ins.Version++
 	ins.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", a.Name, ins.Env, ins.Version)
-	out, e := runDockerOn(ctx, dockerHost, "build", "-t", ins.Image, a.RepoDir)
+	out, e := runDockerOn(ctx, dockerHost, "build", "-t", ins.Image, buildDir)
 	return out, e
 }
 

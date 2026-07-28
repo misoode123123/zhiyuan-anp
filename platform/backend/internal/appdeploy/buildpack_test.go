@@ -67,6 +67,49 @@ func TestEnsureDockerfile_ExistingDockerfileUntouched(t *testing.T) {
 	}
 }
 
+// TestParseExpose 自带 Dockerfile 的 EXPOSE 端口解析（导入应用端口识别根因修复）。
+func TestParseExpose(t *testing.T) {
+	cases := []struct {
+		name, dockerfile string
+		want             int
+	}{
+		{"简单", "FROM node:18-alpine\nEXPOSE 3001\n", 3001},
+		{"无EXPOSE回退", "FROM node:18-alpine\n", 0},
+		{"带tcp协议", "FROM x\nEXPOSE 8080/tcp\n", 8080},
+		{"多个取首个", "EXPOSE 3001\nEXPOSE 8080\n", 3001},
+		{"行首缩进", "  EXPOSE 5000\n", 5000},
+		{"变量不识别回退", "EXPOSE ${PORT}\n", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir, _ := os.MkdirTemp("", "expose")
+			defer os.RemoveAll(dir)
+			os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(c.dockerfile), 0o644)
+			if got := parseExpose(dir); got != c.want {
+				t.Fatalf("parseExpose=%d want %d (df=%q)", got, c.want, c.dockerfile)
+			}
+		})
+	}
+}
+
+// TestEnsureDockerfile_ExistingParsesExpose 自带 Dockerfile 时应解析 EXPOSE 返回真实端口，
+// 覆盖导入应用 internal_port 默认 8080 与 EXPOSE(如 3001) 不匹配、部署后访问被拒的坑。
+func TestEnsureDockerfile_ExistingParsesExpose(t *testing.T) {
+	dir, _ := os.MkdirTemp("", "bp-expose")
+	defer os.RemoveAll(dir)
+	os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM node:18-alpine\nEXPOSE 3001\n"), 0o644)
+	gen, port, err := EnsureDockerfile(dir, 8080)
+	if err != nil {
+		t.Fatalf("EnsureDockerfile: %v", err)
+	}
+	if gen {
+		t.Fatal("自带 Dockerfile 不应生成")
+	}
+	if port != 3001 {
+		t.Fatalf("应解析 EXPOSE 3001（即便 fallback=8080），得到 %d", port)
+	}
+}
+
 // TestDetectType 各项目类型识别（按特征文件）；空仓库兜底 static。
 func TestDetectType(t *testing.T) {
 	cases := []struct {

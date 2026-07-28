@@ -185,12 +185,6 @@ func (h *Handler) Workspace(c *gin.Context) {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
-	// 启动工作台前刷新应用 AGENTS.md：opencode/claude/codex 都原生读 repo 根 AGENTS.md，
-	// 故此处只负责把最新聚合规范写进去（规范单一载体 = AGENTS.md，三工具都基于它）。
-	// 失败不阻塞工作台启动（规范缺失不应让开发者无法编码）。
-	if h.standards != nil && a.RepoDir != "" {
-		_ = h.standards.RefreshAgentsMD(c.Request.Context(), a.RepoDir, psID, "")
-	}
 	var in struct {
 		Tool          string `json:"tool"`           // opencode(默认) / claude / codex ...
 		RequirementID string `json:"requirement_id"` // 绑定的需求（工作直播按此关联；空=application 页老入口）
@@ -204,6 +198,11 @@ func (h *Handler) Workspace(c *gin.Context) {
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
+	}
+	// 刷新 AGENTS.md：opencode 的 cwd 是 dev-<user> worktree，规范须写进 worktree 才被加载
+	// （写主仓工作区，worktree 看不到）。Ensure 已建 worktree；失败不阻塞编码。
+	if h.standards != nil && a.RepoDir != "" {
+		_ = h.standards.RefreshAgentsMD(c.Request.Context(), filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user)), psID, "")
 	}
 	httpx.OK(c, gin.H{"app_id": aid, "user": user, "tool": s.Tool, "url": s.URL, "deep_url": s.DeepURL, "port": s.Port, "session_id": s.SessionID, "requirement_id": in.RequirementID, "note": s.Tool + " 工作台已就绪（开发者 " + user + "），浏览器打开 url 即可交互编码"})
 }
@@ -360,6 +359,16 @@ func summarizeChange(ctx context.Context, apiKey, diff, conversation string) str
 		return ""
 	}
 	return strings.TrimSpace(r.Choices[0].Message.Content)
+}
+
+// commitMessageFor 为 worktree 未提交改动生成 commit message：读 git diff HEAD 让 AI 总结；
+// AI 不可用 / diff 为空时回退固定文案。用于「构建部署」自动提交（test 从 dev 分支构建前）。
+func commitMessageFor(ctx context.Context, repoDir, apiKey string) string {
+	diff, _ := runGit(ctx, repoDir, "diff", "HEAD")
+	if s := summarizeChange(ctx, apiKey, strings.TrimSpace(diff), ""); s != "" {
+		return s
+	}
+	return "编码工作台自动提交"
 }
 
 // InjectRequirement 把需求规格作为 prompt 注入 opencode 会话,AI 在工作台实时编码(开发者看过程/介入)。
@@ -1200,9 +1209,11 @@ func (h *Handler) runImportZip(appID, psID, name string, data []byte, size int64
 
 // deployBody 部署请求体（均可选）。
 type deployBody struct {
-	Env    string `json:"env"`     // test / prod；空默认 test
-	SHA    string `json:"sha"`     // 可选：部署指定历史版本（回滚）
-	NodeID string `json:"node_id"` // 可选：部署到指定节点（空=本地 .28，如 node_30）
+	Env           string `json:"env"`            // test / prod；空默认 test
+	SHA           string `json:"sha"`            // 可选：部署指定历史版本（回滚）
+	NodeID        string `json:"node_id"`        // 可选：部署到指定节点（空=本地 .28，如 node_30）
+	FromWorkspace bool   `json:"from_workspace"` // 编码工作台发起：test 从 dev-<user> worktree 构建 + 未提交检测
+	AutoCommit    bool   `json:"auto_commit"`    // FromWorkspace 检测到未提交时，前端确认后传 true：先 AI 总结 + commit 再构建
 }
 
 // Deploy 构建+部署到指定环境（默认 test=测试验证）。立即返回 building，后台完成。
@@ -1220,7 +1231,8 @@ type deployBody struct {
 // @Router       /project-spaces/{id}/apps/{aid}/deploy [post]
 func (h *Handler) Deploy(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
-	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
+	a, _ := h.store.Get(c.Request.Context(), psID, aid)
+	if a == nil || a.ID == "" {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
@@ -1254,8 +1266,35 @@ func (h *Handler) Deploy(c *gin.Context) {
 			_ = h.changes.MarkReleased(c.Request.Context(), aid)
 		}
 	}
+	// 编码工作台 test 部署：从开发者 dev-<user> worktree 构建（自测用最新代码，不走 main 合并）；
+	// 有未提交改动时先回 need_commit 让前端确认，确认后 AI 总结 diff + commit 再构建。
+	buildDir := ""
+	if env == EnvTest && in.FromWorkspace {
+		user := c.GetString(auth.CtxUserID)
+		if user == "" {
+			user = "anonymous"
+		}
+		wt := filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user))
+		if _, err := os.Stat(wt); err == nil {
+			if n, _ := CountUncommitted(c.Request.Context(), wt); n > 0 {
+				if !in.AutoCommit {
+					httpx.OK(c, gin.H{"id": aid, "env": env, "status": "need_commit", "uncommitted": n, "note": fmt.Sprintf("dev-%s 分支有 %d 个文件未提交，是否提交并部署？", sanitizeID(user), n)})
+					return
+				}
+				apiKey := ""
+				if h.cfg != nil {
+					apiKey = h.cfg.Get("zhipuai_api_key", "")
+				}
+				if _, err := Commit(c.Request.Context(), wt, commitMessageFor(c.Request.Context(), wt, apiKey)); err != nil {
+					httpx.Err(c, 500, 50022, "自动提交失败: "+err.Error())
+					return
+				}
+			}
+			buildDir = wt
+		}
+	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, "", env, in.NodeID)
+	go h.buildAndDeploy(psID, aid, "", env, in.NodeID, buildDir)
 	noteSuffix := ""
 	if in.NodeID != "" && in.NodeID != "node_local" {
 		noteSuffix = "（节点 " + in.NodeID + "）"
@@ -1312,7 +1351,7 @@ func (h *Handler) Promote(c *gin.Context) {
 		}
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, EnvProd) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, "", EnvProd, in.NodeID)
+	go h.buildAndDeploy(psID, aid, "", EnvProd, in.NodeID, "")
 	httpx.OK(c, gin.H{"id": aid, "env": EnvProd, "status": "building", "note": "上线中：部署到 prod 环境"})
 }
 
@@ -1351,12 +1390,13 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 		return
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, in.SHA, env, in.NodeID)
+	go h.buildAndDeploy(psID, aid, in.SHA, env, in.NodeID, "")
 	httpx.OK(c, gin.H{"id": aid, "sha": in.SHA, "env": env, "status": "building", "note": "版本化部署/回滚到 " + env})
 }
 
 // buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本；env 指定环境。
-func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
+// buildDir 非空则从该目录构建（test 环境编码工作台传 dev-<user> worktree），空则用主仓 a.RepoDir。
+func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	ctx := context.Background()
 	// panic 兜底：goroutine 内任何 panic 都回写 failed，避免状态永卡 building、build_log 为空
 	// （参照 dev/coding.go:92-99）。历史根因之一：docker build 卡死/无超时 + 无 recover → 一次异常永久挂起。
@@ -1413,7 +1453,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	if sha != "" {
 		note = "版本化部署：commit " + sha[:min(7, len(sha))] + "\n"
 	}
-	if gen, port, err := EnsureDockerfile(a.RepoDir, a.InternalPort); err == nil {
+	if buildDir == "" {
+		buildDir = a.RepoDir // 兜底：非工作台入口（application 页 / 版本回滚）走主仓
+	}
+	if gen, port, err := EnsureDockerfile(buildDir, a.InternalPort); err == nil {
 		if port != 0 && port != a.InternalPort {
 			a.InternalPort = port
 		}
@@ -1424,7 +1467,7 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID string) {
 	// Build（含 pull 基础镜像）限 15 分钟：.28 半内网 mirror 慢/失效时 docker build 可能长时间阻塞；
 	// 无超时则 cmd.Run 永不返回、goroutine 挂起、状态永卡 building。超时 ctx cancel → 杀子进程 → 走 failed。
 	buildCtx, buildCancel := context.WithTimeout(ctx, 15*time.Minute)
-	log, err := h.deployer.Build(buildCtx, a, ins, dockerHost)
+	log, err := h.deployer.Build(buildCtx, a, ins, dockerHost, buildDir)
 	buildCancel()
 	if note != "" {
 		log = note + log
@@ -1754,7 +1797,7 @@ func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application
 		return nil, errAppNotFound
 	}
 	h.markBuilding(ctx, a.ProjectSpaceID, appID, EnvTest) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest, "")
+	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest, "", "")
 	return a, nil
 }
 

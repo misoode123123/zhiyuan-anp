@@ -170,12 +170,27 @@ export default function WorkspaceFrame() {
     setDeployErr("");
     setTestUrl("");
     try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy`, {
+      let r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ env: "test" }),
-      });
-      const r = await res.json();
+        body: JSON.stringify({ env: "test", from_workspace: true }),
+      }).then((rr) => rr.json());
+      // 编码工作台：检测到 dev 分支有未提交改动 → 提示 → 确认后自动提交（AI 生成说明）再部署
+      if (r.code === 0 && r.data?.status === "need_commit") {
+        if (
+          !confirm(
+            r.data?.note || `检测到 ${r.data?.uncommitted ?? ""} 个文件未提交，是否提交并部署？`
+          )
+        ) {
+          setDeployState("idle");
+          return;
+        }
+        r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ env: "test", from_workspace: true, auto_commit: true }),
+        }).then((rr) => rr.json());
+      }
       if (r.code !== 0) {
         setDeployState("failed");
         setDeployErr(r.message || "部署失败");

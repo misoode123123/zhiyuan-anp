@@ -2,11 +2,12 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 
-export type Tab = { path: string; label: string; icon: string };
+export type Tab = { path: string; label: string; icon: string; search?: string };
 
 type Ctx = {
   tabs: Tab[];
   addTab: (t: Tab) => void;
+  updateSearch: (path: string, search: string) => void;
   close: (path: string) => void;
   refreshKey: number;
   refresh: () => void;
@@ -21,13 +22,18 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
   const addTab = useCallback((t: Tab) => {
     setTabs((prev) => (prev.find((x) => x.path === t.path) ? prev : [...prev, t]));
   }, []);
+  // 记录某 tab 最后一次激活时的 query 串（如 workspace 的 ?app=&ps=），
+  // 切换 tab 时拼回完整 URL，避免丢参数（修「缺少 app/ps 参数」报错）。
+  const updateSearch = useCallback((path: string, search: string) => {
+    setTabs((prev) => prev.map((x) => (x.path === path ? { ...x, search } : x)));
+  }, []);
   const close = useCallback((path: string) => {
     setTabs((prev) => prev.filter((x) => x.path !== path));
   }, []);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   return (
-    <TabCtx.Provider value={{ tabs, addTab, close, refreshKey, refresh }}>
+    <TabCtx.Provider value={{ tabs, addTab, updateSearch, close, refreshKey, refresh }}>
       {children}
     </TabCtx.Provider>
   );

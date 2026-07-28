@@ -456,3 +456,64 @@ func TestImportFromDir_Traversal(t *testing.T) {
 		t.Fatalf("../ 逃逸路径须被拒: %s", traverse)
 	}
 }
+
+// TestStripNestedGit 递归删子目录 .git，保留根 .git 与普通文件。
+func TestStripNestedGit(t *testing.T) {
+	dir, _ := os.MkdirTemp("", "strip-nested")
+	defer os.RemoveAll(dir)
+
+	// 根 .git + 普通文件 + 子目录嵌套 .git（含 objects）
+	os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".git", "objects", "abc"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("r"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "sub", ".git", "refs"), 0o755)
+	os.WriteFile(filepath.Join(dir, "sub", ".git", "refs", "x"), []byte("y"), 0o644)
+	os.WriteFile(filepath.Join(dir, "sub", "code.go"), []byte("package sub"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "deep", "nested", ".git"), 0o755)
+	os.WriteFile(filepath.Join(dir, "deep", "nested", ".git", "HEAD"), []byte("ref"), 0o644)
+
+	stripNestedGit(dir)
+
+	// 根 .git 保留
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf("根 .git 应保留: %v", err)
+	}
+	// 子目录 .git 全删（含深层）
+	for _, p := range []string{"sub/.git", "deep/nested/.git"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Fatalf("子目录 %s 的 .git 应被删除", p)
+		}
+	}
+	// 普通文件不受影响
+	if b, _ := os.ReadFile(filepath.Join(dir, "sub", "code.go")); string(b) != "package sub" {
+		t.Fatalf("普通文件内容应不变，得到 %q", string(b))
+	}
+}
+
+// TestImportFromZip_NestedGit zip 含子目录 .git（gitlink）时，导入后内容被主仓跟踪（非空）。
+// 复现 ncc_deploy 场景：嵌套 .git 导致 worktree checkout 子目录为空。
+func TestImportFromZip_NestedGit(t *testing.T) {
+	restore := withTempRepoBase(t)
+	defer restore()
+	// zip 含根文件 + 一个带 .git 的子目录（模拟从 GitHub clone 的项目作为子目录上传）
+	data, size := writeZip(t, map[string]string{
+		"Dockerfile":      "FROM node",
+		"app/server.js":   "console.log(1)",
+		"app/.git/HEAD":   "ref: refs/heads/main",
+		"app/.git/config": "[core]",
+	})
+
+	repoDir, err := ImportFromZip(context.Background(), "nested", bytes.NewReader(data), size)
+	if err != nil {
+		t.Fatalf("ImportFromZip nested: %v", err)
+	}
+	// 子目录 .git 应被清除
+	if _, err := os.Stat(filepath.Join(repoDir, "app", ".git")); err == nil {
+		t.Fatalf("导入后子目录 .git 应被清除（否则主仓记成 gitlink）")
+	}
+	// 子目录内容应被主仓 git 跟踪（git ls-files 含 app/server.js）
+	out, _ := runGit(context.Background(), repoDir, "ls-files", "app/")
+	if !strings.Contains(out, "app/server.js") {
+		t.Fatalf("嵌套目录内容应被主仓跟踪，ls-files=%q", out)
+	}
+}

@@ -150,7 +150,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 		return nil, err
 	}
 	s := &Session{
-		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: repoDir, cmd: cmd, started: time.Now(),
+		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(),
 		RequirementID: reqID,
 		URL:           fmt.Sprintf("http://%s:%d", m.host, port),
 	}
@@ -178,9 +178,11 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 	if toolName == "opencode" {
 		// 复用 opencode 已有会话(按 repo 目录匹配,取最近);无则预创建一个带项目上下文的会话。
 		// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
-		s.SessionID = ensureSession(port, repoDir)
+		// opencode 上报的 location.directory 是它自己的 cwd（worktree），
+		// 会话匹配 / 深链接 slug 都须用 workDir，否则永 mismtach → 每次新建会话、深链接打不开。
+		s.SessionID = ensureSession(port, workDir)
 		if s.SessionID != "" {
-			s.DeepURL = sessionDeepURL(s.URL, repoDir, s.SessionID)
+			s.DeepURL = sessionDeepURL(s.URL, workDir, s.SessionID)
 		}
 	}
 	// 落库 codews_session（绩效/互动统计；失败仅 log，不阻塞工作台）
@@ -349,14 +351,30 @@ func (m *Manager) SendPrompt(appID, userID, text string) error {
 }
 
 // ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。
+// 健壮处理：merge 后 worktree 目录被删但 git 仍注册为 prunable、且 dev-<user> 分支保留 →
+// 直接 `worktree add -b` 会失败。先 prune 清残留，分支已存在时 checkout 已有分支，仍失败则回退主仓。
 func ensureWorktree(repoDir, userID string) string {
 	wt := filepath.Join(repoDir, ".worktrees", sanitizeID(userID))
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
-		return wt // 已存在
+		return wt // worktree 已存在且有效
+	}
+	// wt 目录存在但无 .git（merge 后残留空目录）→ 删掉，让 worktree add 干净建
+	if _, err := os.Stat(wt); err == nil {
+		_ = os.RemoveAll(wt)
 	}
 	_ = os.MkdirAll(filepath.Dir(wt), 0755)
-	// git worktree add -b dev-<user> <wt>(从主 repo 当前 HEAD)
-	_ = exec.Command("git", "-C", repoDir, "worktree", "add", "-b", "dev-"+sanitizeID(userID), wt).Run()
+	branch := "dev-" + sanitizeID(userID)
+	// 清 prunable 残留（git 仍注册已删的 worktree，会导致 add 报 already exists）
+	_ = exec.Command("git", "-C", repoDir, "worktree", "prune").Run()
+	// 先 add -b 建新分支；分支已存在（merge 保留了分支）则 checkout 已有分支
+	if err := exec.Command("git", "-C", repoDir, "worktree", "add", "-b", branch, wt).Run(); err != nil {
+		_ = exec.Command("git", "-C", repoDir, "worktree", "add", wt, branch).Run()
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
+		// 兜底：两步都没建成（主仓异常等）→ 回退主仓，避免 opencode chdir 到无效目录整个起不来
+		log.Printf("[codews] ensureWorktree 建立失败，回退主仓: %s", repoDir)
+		return repoDir
+	}
 	_ = exec.Command("git", "-C", wt, "config", "user.email", "anp@platform").Run()
 	_ = exec.Command("git", "-C", wt, "config", "user.name", "ANP "+userID).Run()
 	return wt

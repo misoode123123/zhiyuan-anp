@@ -16,7 +16,7 @@ export function TabBar() {
         return (
           <div
             key={t.path}
-            onClick={() => router.push(t.path)}
+            onClick={() => router.push(t.path + (t.search ?? ""))}
             onDoubleClick={() => refresh()}
             className={`flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-t px-3 py-1.5 text-xs ${
               active

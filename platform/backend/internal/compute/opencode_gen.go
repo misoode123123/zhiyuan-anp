@@ -79,10 +79,17 @@ func (s *Store) GenerateOpenCodeConfig(ctx context.Context) (*OpenCodeConfig, er
 				Reasoning: m.Modality == "code" || m.Modality == "text",
 			}
 			if m.ContextWindow > 0 || m.MaxOutput > 0 {
-				om.Limit = &OpenCodeLimit{
-					Context: m.ContextWindow,
-					Output:  m.MaxOutput,
+				// opencode 1.18+ 校验 limit.output 必须存在；DB 漏填某项时补默认，
+				// 否则生成的 opencode.json 缺 output → serve 启动校验失败、工作台打不开。
+				ctx := m.ContextWindow
+				if ctx == 0 {
+					ctx = 131072
 				}
+				out := m.MaxOutput
+				if out == 0 {
+					out = 8192
+				}
+				om.Limit = &OpenCodeLimit{Context: ctx, Output: out}
 			}
 			provider.Models[m.Name] = om
 		}

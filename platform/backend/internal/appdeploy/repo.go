@@ -85,6 +85,22 @@ func Commit(ctx context.Context, repoDir, message string) (string, error) {
 	return runGit(ctx, repoDir, "commit", "-q", "-m", message)
 }
 
+// CountUncommitted 统计工作区未提交的文件数（git status --porcelain 的行数）。
+// 用于「构建部署」前检测开发者 dev-<user> 分支是否有未提交改动（>0 即需提示提交后再部署）。
+func CountUncommitted(ctx context.Context, repoDir string) (int, error) {
+	out, err := runGit(ctx, repoDir, "status", "--porcelain")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // Checkout 切到指定 commit（版本化部署/回滚）。返回原分支名以便恢复。
 func Checkout(ctx context.Context, repoDir, sha string) (string, error) {
 	if sha == "" {
@@ -345,11 +361,16 @@ func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) 
 	}
 	// 无 .git → 建仓 + 初始提交（不写模板，保留导入内容原样）
 	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		stripNestedGit(target) // 上传项目常带子目录 .git（gitlink），清掉让全部内容进主仓
 		_, _ = runGit(ctx, target, "init", "-q")
 		_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
 		_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
 		_, _ = runGit(ctx, target, "add", "-A")
 		_, _ = runGit(ctx, target, "commit", "-q", "-m", "import: 初始导入")
+	} else {
+		// 有根 .git（保留历史）：仍可能带嵌套子目录 .git，清掉让主仓跟踪全部内容。
+		stripNestedGit(target)
+		_, _ = runGit(ctx, target, "add", "-A")
 	}
 	return target, nil
 }
@@ -373,6 +394,27 @@ func copyZipFile(dest string, f *zip.File) (int64, error) {
 	defer out.Close()
 	// LimitReader 兜底：即便头声明小、实际解压流无限，也只写 MaxZipSize+1 到磁盘
 	return io.Copy(out, io.LimitReader(rc, MaxZipSize+1))
+}
+
+// stripNestedGit 递归删除 repoDir 下所有子目录的 .git（保留根 .git）。
+// 上传/导入的项目常带嵌套 git 仓（如从 GitHub clone 的子目录），主仓会把子目录记成 gitlink、
+// 不跟踪其内容 → worktree checkout 时子目录为空 → 编码产出/部署都拿不到代码。
+// 解压后、git add 前调此函数，把嵌套 .git 清掉，让全部内容成为主仓 git 跟踪的一部分。
+func stripNestedGit(repoDir string) {
+	rootGit := filepath.Join(repoDir, ".git")
+	_ = filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || !info.IsDir() {
+			return nil
+		}
+		if path == rootGit {
+			return filepath.SkipDir // 保留主仓根 .git
+		}
+		if filepath.Base(path) == ".git" {
+			_ = os.RemoveAll(path)
+			return filepath.SkipDir // 删完不再下钻
+		}
+		return nil
+	})
 }
 
 // AllowedDirRoots 服务器目录导入白名单根（可配置）。
@@ -409,11 +451,15 @@ func ImportFromDir(ctx context.Context, name, srcPath string) (string, error) {
 			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("本地 clone 失败: %w", err)
 		}
+		// clone 的源可能含嵌套子目录 .git，清掉让主仓跟踪全部内容。
+		stripNestedGit(target)
+		_, _ = runGit(ctx, target, "add", "-A")
 	} else {
 		if err := exec.CommandContext(ctx, "cp", "-r", cleanSrc, target).Run(); err != nil {
 			_ = os.RemoveAll(target)
 			return "", fmt.Errorf("复制目录失败: %w", err)
 		}
+		stripNestedGit(target) // cp 进来的可能含嵌套 .git
 		_, _ = runGit(ctx, target, "init", "-q")
 		_, _ = runGit(ctx, target, "config", "user.email", "anp@platform")
 		_, _ = runGit(ctx, target, "config", "user.name", "ANP Platform")
