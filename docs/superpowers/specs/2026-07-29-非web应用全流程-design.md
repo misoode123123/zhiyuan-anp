@@ -101,31 +101,31 @@ CREATE TABLE IF NOT EXISTS appdeploy_artifact (
 CREATE INDEX IF NOT EXISTS idx_artifact_app_ver ON appdeploy_artifact(application_id, build_version);
 ```
 
-### 4.3 项目模板扩展
+### 4.3 构建配置（轻量，本期不建完整模板系统）
 
-`ProjectTemplate` 不改结构，新增 4 个内置模板记录（seed），每个模板的 `preset_pipeline_def` 里带该形态的构建配置：
+代码层项目模板系统（`ProjectTemplate` 表 + 规则包/闸门/配额联动）尚不存在，本期不建完整模板系统（那是独立子系统，留下期）。改用轻量方案：
 
-```jsonc
-// desktop 模板的 preset_pipeline_def 片段
-{
-  "app_kind": "desktop",
-  "build": {
-    "image": "anp/builder-electron:latest", // 预置构建镜像
-    "command": "cd /src && npm ci && npx electron-builder --win --mac --linux",
-    "artifact_dir": "/src/dist", // 构建容器内产物目录
-  },
-  "scaffold": "electron-react-ts", // 脚手架种子标识
-  "standards": ["desktop-ui", "desktop-packaging"],
-}
+- 建应用时直接指定 `app_kind`（web/desktop/mobile/cli/service）。
+- 各形态的构建配置（构建镜像、构建命令、产物目录、脚手架标识）存一张轻量表 `appdeploy_build_config`，按 `app_kind` 唯一，seed 4 条非 web 默认配置（web 不需要，走自带 Dockerfile）。
+- 脚手架种子按 `app_kind` 从静态目录 `deploy/scaffolds/<scaffold>/` 选择（见 §6.1）。
+- 形态编码规范 seed 到现有 `coding_standard` 表（见 §6.2）。
+
+```sql
+CREATE TABLE IF NOT EXISTS appdeploy_build_config (
+    app_kind      TEXT PRIMARY KEY,            -- desktop/mobile/cli/service
+    build_image   TEXT NOT NULL,               -- anp/builder-electron:latest
+    build_command TEXT NOT NULL,               -- cd /src && npm ci && npx electron-builder --win --mac --linux
+    artifact_dir  TEXT NOT NULL,               -- /src/dist
+    scaffold      TEXT NOT NULL,               -- electron-react-ts
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 ```
-
-mobile/cli/service 模板同理（mobile 用 `anp/builder-android`、cli 用 `anp/builder-go-cross`、service 近 web 复用 web builder）。
 
 **关键点**：
 
 - `artifact` 与 `application` 一对多，一次构建多产物（多平台/多架构）都能存。
 - `storage_key` 是 MinIO 对象 key，下载时平台按 key 拉流，不暴露物理路径。
-- 模板的构建配置（镜像/命令/产物目录）是数据，不是代码——加新形态只加模板记录，不改后端逻辑（Builder 按 `app_kind` 分派读对应配置）。
+- 构建配置是数据，不是代码——加新形态只加 `appdeploy_build_config` 记录，不改后端逻辑（Builder 按 `app_kind` 分派读对应配置）。
 - 不引入新租户/权限维度，沿用现有 `project_space_id` 隔离。
 
 ## 5. 构建器抽象与构建流程
@@ -228,9 +228,25 @@ type ArtifactOutput struct {
 
 AI 编码时 prompt 里自带形态约束，不用改 opencode 引擎本身。
 
-### 6.3 模板实例化流程（复用现有）
+### 6.3 建项目流程（轻量，本期）
 
-沿用现有模板机制（`项目空间与多项目管理.md` §7.3）：选模板 → 克隆规则包 → 预置流水线 → 注册 Agent → 配置闸门 → 配额 → 知识种子。新增步骤只是在"预置流水线"里带上 `app_kind` + 构建配置，并多一步"克隆脚手架种子到 RepoDir"。
+本期无完整模板系统，建非 web 应用的流程简化为：
+
+```
+建应用(指定 app_kind=desktop/mobile/cli/service, 复用现有 handler.Create)
+  │
+  ▼
+EnsureRepo 建 git 仓后,按 app_kind 从 appdeploy_build_config 读 scaffold
+  → 克隆 deploy/scaffolds/<scaffold>/ 到 RepoDir 作为初始代码 → git init + 首次提交
+  │
+  ▼
+按 app_kind seed 形态编码规范到 coding_standard(若尚未存在)
+  │
+  ▼
+空间就绪,AI 在脚手架基础上编码(opencode 注入形态规范)
+```
+
+完整模板机制（规则包/闸门/配额/Agent 配置联动）留下期。
 
 ### 6.4 编码工作台的形态感知
 
