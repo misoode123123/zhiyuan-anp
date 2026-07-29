@@ -1384,6 +1384,41 @@ func TestHandler_BuildArtifacts_WebRejected(t *testing.T) {
 	}
 }
 
+// TestHandler_BuildArtifacts_ExternalRejected external 纳管应用调构建产物 → 400（I-5）。
+// external 应用无 RepoDir/托管源码，构建会失败翻转状态；须在 BuildArtifacts 开头拒绝。
+// app_kind 与 deploy_mode 正交：external + desktop 仍走此拒绝分支。
+func TestHandler_BuildArtifacts_ExternalRejected(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	// 建 external + desktop 应用（external 不触发 EnsureRepo/ManagedRepo，无需覆盖 repo base）
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name":         "extdesk",
+		"deploy_mode":  "external",
+		"app_kind":     "desktop",
+		"external_url": "http://ext.example.com/app",
+	})
+	if code != 201 {
+		t.Fatalf("建应用 code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	if appID == "" {
+		t.Fatalf("未返回 app id: %v", data)
+	}
+	if data["app_kind"] != "desktop" {
+		t.Fatalf("app_kind 应 desktop，得到 %v", data["app_kind"])
+	}
+	// 调构建产物接口：须 400 拒绝，不进入 building/dispatch 分支（状态保持 running 不翻转）
+	code, resp = doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+appID+"/build-artifacts", nil)
+	if code != 400 {
+		t.Fatalf("external 应用构建产物应 400，得到 %d body=%v", code, resp)
+	}
+	// 验证状态未被翻转为 building/failed（external 创建即 running）
+	got, _ := h.store.GetByAppID(context.Background(), appID)
+	if got == nil || got.Status != "running" {
+		t.Fatalf("external 应用状态应保持 running，得到 %+v", got)
+	}
+}
+
 // TestValidAppKind 应用形态合法性校验纯函数。
 func TestValidAppKind(t *testing.T) {
 	for _, k := range []string{AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService} {

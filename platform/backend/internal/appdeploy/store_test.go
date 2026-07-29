@@ -642,6 +642,41 @@ func TestStore_Create_AppKindDefaultWeb(t *testing.T) {
 	}
 }
 
+// TestStore_UpdateVersion 持久化构建版本号（I-7）。
+// BuildArtifacts 里 a.Version++ 只改内存，需 UpdateVersion 写回 DB，
+// 否则下次构建/前端展示的 version 不递增。
+func TestStore_UpdateVersion(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Application{ProjectSpaceID: "ps_1", Name: "verapp", AppKind: AppKindDesktop}
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 初始 version=0（Create 不设 version）
+	got, _ := s.Get(ctx, "ps_1", a.ID)
+	if got.Version != 0 {
+		t.Fatalf("初始 version = %d, want 0", got.Version)
+	}
+	// 模拟 BuildArtifacts：递增并持久化
+	a.Version = 3
+	if err := s.UpdateVersion(ctx, a.ID, a.Version); err != nil {
+		t.Fatalf("UpdateVersion: %v", err)
+	}
+	got, _ = s.Get(ctx, "ps_1", a.ID)
+	if got.Version != 3 {
+		t.Fatalf("更新后 version = %d, want 3", got.Version)
+	}
+	// 再次递增验证累加
+	a.Version = 4
+	if err := s.UpdateVersion(ctx, a.ID, a.Version); err != nil {
+		t.Fatalf("UpdateVersion 2: %v", err)
+	}
+	got, _ = s.Get(ctx, "ps_1", a.ID)
+	if got.Version != 4 {
+		t.Fatalf("二次更新后 version = %d, want 4", got.Version)
+	}
+}
+
 // TestStore_UpdateImportDone 导入完成写 registered + imported_at + repo_dir，清 last_error。
 func TestStore_UpdateImportDone(t *testing.T) {
 	s := newTestStore(t)

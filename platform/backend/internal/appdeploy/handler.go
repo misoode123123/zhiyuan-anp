@@ -813,8 +813,10 @@ type createBody struct {
 	RepoDir      string `json:"repo_dir"`      // managed 可选；空=平台托管 git 仓库 /data/repos/<name>
 	InternalPort int    `json:"internal_port"` // managed 可选；buildpack 检测或默认 8080
 	DeployMode   string `json:"deploy_mode"`   // managed(默认,A类) / external(B类纳管外部应用)
-	AppKind      string `json:"app_kind"`      // web/desktop/mobile/cli/service，空默认 web
-	ExternalURL  string `json:"external_url"`  // external 必填：外部应用访问地址 http(s)://host[:port][/path]
+	// 应用形态：web/desktop/mobile/cli/service，空默认 web。与 deploy_mode 正交：
+	// web/service 走容器部署链路；desktop/mobile/cli 走预置构建容器出可下载产物。
+	AppKind     string `json:"app_kind"`
+	ExternalURL string `json:"external_url"` // external 必填：外部应用访问地址 http(s)://host[:port][/path]
 }
 
 // validAppKind 应用形态合法性校验（web/desktop/mobile/cli/service）。
@@ -904,7 +906,7 @@ func validateExternalURL(raw string) (string, string) {
 // @Accept       json
 // @Produce      json
 // @Param        id    path  createBody  true  "项目空间ID"
-// @Param        body  body  createBody  true  "应用(name+repo_dir+internal_port)"
+// @Param        body  body  createBody  true  "应用(name+repo_dir+internal_port+deploy_mode+app_kind+external_url)"
 // @Success      200   {object}  map[string]interface{}  "创建的应用"
 // @Failure      400   {object}  map[string]interface{}  "invalid body"
 // @Failure      409   {object}  map[string]interface{}  "应用数配额超限"
@@ -1764,6 +1766,18 @@ func (h *Handler) Delete(c *gin.Context) {
 		}
 		// 删除该应用的所有镜像(避免堆积)
 		_, _ = h.deployer.RemoveImages(c.Request.Context(), a.Name)
+		// 清理非 web 构建产物（I-6）：FK CASCADE 只删 DB 记录，data/artifacts/ 实体成孤儿。
+		// 先按 app 列出产物 → 逐个删存储实体 → 再删 DB 记录（DB 记录也可由 CASCADE 兜底，
+		// 但显式删避免依赖外键且便于 storage 与 store 一致）。放 Store.Delete 之前避免 race。
+		if h.artifactStore != nil && h.artifactStorage != nil {
+			ctx := c.Request.Context()
+			if arts, lerr := h.artifactStore.ListByApp(ctx, a.ID); lerr == nil {
+				for _, art := range arts {
+					_ = h.artifactStorage.Delete(ctx, art.StorageKey)
+				}
+			}
+			_ = h.artifactStore.DeleteByApp(ctx, a.ID)
+		}
 	}
 	if err := h.store.Delete(c.Request.Context(), c.Param("id"), c.Param("aid")); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
@@ -2146,6 +2160,12 @@ func (h *Handler) BuildArtifacts(c *gin.Context) {
 		httpx.Err(c, 400, 40001, "web/service 应用走部署流程，不构建产物")
 		return
 	}
+	// external 纳管应用（B 类）无 RepoDir/源码，构建会失败翻转状态；直接拒绝。
+	// app_kind 与 deploy_mode 正交：external + desktop 仍走此拒绝分支。
+	if a.DeployMode == AppExternal {
+		httpx.Err(c, 400, 40001, "external 纳管应用不构建产物（无托管源码）")
+		return
+	}
 	// nil-safe：Task 13 前未装配构建产物链路时拒绝（而非 nil 解引用 panic）
 	if h.buildCfgStore == nil || h.artifactStorage == nil || h.artifactStore == nil {
 		httpx.Err(c, 500, 50021, "构建产物功能未配置（buildCfgStore/artifactStorage/artifactStore 未注入）")
@@ -2169,6 +2189,11 @@ func (h *Handler) BuildArtifacts(c *gin.Context) {
 	a.Version++
 	// 上传产物：单产物失败不阻塞其他；返回首个错误（已成功的仍落库）
 	upErr := UploadArtifacts(ctx, a, outs, h.artifactStorage, h.artifactStore)
+	// 持久化版本号（I-7）：a.Version++ 只改内存，需写回 appdeploy_application.version，
+	// 否则下次构建/前端展示的 version 不递增。即便部分产物上传失败，已落库产物也绑定了此版本号，须持久化。
+	if vErr := h.store.UpdateVersion(ctx, a.ID, a.Version); vErr != nil {
+		zap.L().Warn("持久化构建版本号失败", zap.String("app", a.ID), zap.Int("version", a.Version), zap.Error(vErr))
+	}
 	if upErr != nil {
 		// 部分成功也标 built，错误入 last_error（前端可见，不阻塞已落库产物）
 		_ = h.store.SetStatus(ctx, psID, aid, StatusBuilt, upErr.Error(), "")

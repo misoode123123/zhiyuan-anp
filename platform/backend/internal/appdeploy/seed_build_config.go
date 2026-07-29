@@ -10,14 +10,21 @@ import (
 )
 
 // defaultBuildConfigs 各非 web 形态默认构建配置。web 不需要（走自带 Dockerfile）。
+//
+// 命令须与脚手架种子实际文件匹配（I-1/I-2/I-3 修复）：
+//   - desktop: electron-react-ts 无 package-lock.json，用 npm install（非 npm ci）。
+//   - mobile: android-flutter 仅有 pubspec.yaml + lib/main.dart，无 gradlew/android 目录；
+//     先 flutter create . 补全 android 平台目录，再 flutter build apk --release。
+//     产物落在 build/app/outputs/flutter-apk（flutter build apk 默认输出目录）。
+//   - cli: go-cli 有 go.mod + main.go，交叉编译多平台二进制到 dist/。
 func defaultBuildConfigs() []BuildConfig {
 	return []BuildConfig{
 		{AppKind: AppKindDesktop, BuildImage: "anp/builder-electron:latest",
-			BuildCommand: "cd /src && npm ci && npx electron-builder --win --mac --linux",
+			BuildCommand: "cd /src && npm install && npx electron-builder --win --mac --linux",
 			ArtifactDir:  "/src/dist", Scaffold: "electron-react-ts"},
 		{AppKind: AppKindMobile, BuildImage: "anp/builder-android:latest",
-			BuildCommand: "cd /src && ./gradlew assembleRelease",
-			ArtifactDir:  "/src/app/build/outputs/apk/release", Scaffold: "android-flutter"},
+			BuildCommand: "cd /src && flutter create . --platforms=android --project-name myapp && flutter build apk --release",
+			ArtifactDir:  "/src/build/app/outputs/flutter-apk", Scaffold: "android-flutter"},
 		{AppKind: AppKindCLI, BuildImage: "anp/builder-go-cross:latest",
 			BuildCommand: "cd /src && go build -o dist/mycli-linux-x64 . && GOOS=darwin GOARCH=amd64 go build -o dist/mycli-darwin-x64 .",
 			ArtifactDir:  "/src/dist", Scaffold: "go-cli"},

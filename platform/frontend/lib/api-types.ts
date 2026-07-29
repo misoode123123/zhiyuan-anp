@@ -6697,7 +6697,14 @@ export interface components {
 export type $defs = Record<string, never>;
 export type operations = Record<string, never>;
 
-/** 构建产物（非 web/service 应用的可下载产物，如桌面安装包/CLI 二进制/移动包） */
+/**
+ * 构建产物（非 web/service 应用的可下载产物，如桌面安装包/CLI 二进制/移动包）
+ *
+ * 手动维护：后端 swag 注解未生成此类型（ListArtifacts 的 @Success 用的是
+ * map[string]interface{}，未引用 Artifact struct；全仓 @Success 无 typed 返回惯例）。
+ * openapi-typescript 再生会丢失本 interface，需手动补回。
+ * 字段对应 platform/backend/internal/appdeploy/model.go 的 Artifact struct。
+ */
 export interface Artifact {
     id: string;
     application_id: string;

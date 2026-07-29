@@ -15,5 +15,9 @@ RUN apk add --no-cache ca-certificates git bash curl libc6-compat nodejs npm doc
 RUN npm config set registry https://registry.npmmirror.com && npm i -g opencode-ai @anthropic-ai/claude-code
 WORKDIR /app
 COPY --from=build /server /app/server
+# 非 web 形态脚手架种子（建 desktop/mobile/cli 应用时克隆到 RepoDir）。
+# 必须显式 COPY：构建上下文在仓库根，但 COPY 仅落 platform/backend 时不带 deploy/scaffolds，
+# 生产容器内 scaffoldBase=deploy/scaffolds（相对 /app）会找不到 → cloneScaffold 静默跳过。
+COPY deploy/scaffolds /app/deploy/scaffolds
 EXPOSE 8080
 CMD ["/app/server"]

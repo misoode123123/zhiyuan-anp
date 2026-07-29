@@ -213,6 +213,16 @@ func (s *Store) UpdateDeploy(ctx context.Context, a *Application) error {
 	return err
 }
 
+// UpdateVersion 持久化构建版本号（BuildArtifacts 成功上传产物后调）。
+// 与 SetStatus 分离：SetStatus 只改 status/last_error/build_log，不写 version；
+// 非 web 构建产物的版本号递增需单独落库，否则 BuildArtifacts 里 a.Version++ 只改内存。
+// psID 可空（跨空间按 id 更新时传空串，SQL 不带 project_space_id 谓词）。
+func (s *Store) UpdateVersion(ctx context.Context, id string, version int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_application SET version=$1, updated_at=now() WHERE id=$2`, version, id)
+	return err
+}
+
 // SetStatus 更新状态 + 最近错误/构建日志。
 func (s *Store) SetStatus(ctx context.Context, psID, id, status, lastErr, buildLog string) error {
 	res, err := s.db.ExecContext(ctx,

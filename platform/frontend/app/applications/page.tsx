@@ -1152,22 +1152,29 @@ export default function ApplicationsPage() {
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={() => act(a.id, "deploy", "test", selectedNode)}
-                        className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={isImporting}
-                        title={isImporting ? "导入完成前不可部署" : "构建并部署到 test 环境"}
-                      >
-                        构建部署(test)
-                      </button>
-                      <button
-                        onClick={() => promoteWithNode(a.id, selectedNode)}
-                        className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={isImporting}
-                        title={isImporting ? "导入完成前不可上线" : "上线到 prod"}
-                      >
-                        🚀 上线(prod)
-                      </button>
+                      {/* 容器部署按钮（构建部署/上线 prod）仅 web/service 形态显示：
+                          desktop/mobile/cli 走 ArtifactSection 的「构建产物」流程，
+                          无容器可部署，点了会 docker build 失败（I-4）。 */}
+                      {(a.app_kind === "web" || a.app_kind === "service" || !a.app_kind) && (
+                        <>
+                          <button
+                            onClick={() => act(a.id, "deploy", "test", selectedNode)}
+                            className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={isImporting}
+                            title={isImporting ? "导入完成前不可部署" : "构建并部署到 test 环境"}
+                          >
+                            构建部署(test)
+                          </button>
+                          <button
+                            onClick={() => promoteWithNode(a.id, selectedNode)}
+                            className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={isImporting}
+                            title={isImporting ? "导入完成前不可上线" : "上线到 prod"}
+                          >
+                            🚀 上线(prod)
+                          </button>
+                        </>
+                      )}
                       <select
                         value={wsTool}
                         onChange={(e) => setWsTool(e.target.value)}
