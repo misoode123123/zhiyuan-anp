@@ -28,6 +28,7 @@ type Application struct {
 	LastError      string        `json:"last_error,omitempty" db:"last_error"`
 	BuildLog       string        `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
 	DeployMode     string        `json:"deploy_mode" db:"deploy_mode"`       // managed(A类) / external(B类纳管外部)
+	AppKind        string        `json:"app_kind" db:"app_kind"`               // web/desktop/mobile/cli/service，默认 web
 	ExternalURL    string        `json:"external_url" db:"external_url"`     // external 模式时外部应用访问地址
 	ImportSource   string        `json:"import_source" db:"import_source"`   // ''/git/dir
 	ImportRef      string        `json:"import_ref" db:"import_ref"`         // git=url / dir=来源标识
@@ -44,6 +45,18 @@ const (
 	AppManaged  = "managed"
 	AppExternal = "external"
 )
+
+// 应用形态（app_kind 列）。与 deploy_mode 正交：web 走现有容器链路，其余走预置构建容器出产物。
+const (
+	AppKindWeb     = "web"     // 现有链路（docker build→容器→URL）
+	AppKindDesktop = "desktop" // 桌面安装包（exe/dmg/AppImage）
+	AppKindMobile  = "mobile"  // 移动安装包（apk/ipa）
+	AppKindCLI     = "cli"     // 命令行二进制
+	AppKindService = "service" // 后端服务（可能非 HTTP，本期等同 web）
+)
+
+// 非常 web 形态产物就绪态（web 链路不出现此状态）。
+const StatusBuilt = "built"
 
 // 导入来源（import_source 列）。
 const (
@@ -88,4 +101,40 @@ type AppInstance struct {
 	BuildLog      string    `json:"build_log,omitempty" db:"build_log"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// Artifact 一次构建产出的一个产物文件（如一个 exe 或 apk）。与 Application 一对多。
+type Artifact struct {
+	ID            string    `json:"id" db:"id"`                       // art_xxx
+	ApplicationID string    `json:"application_id" db:"application_id"`
+	BuildVersion  int       `json:"build_version" db:"build_version"`
+	AppKind       string    `json:"app_kind" db:"app_kind"`
+	Platform      string    `json:"platform" db:"platform"`           // windows/macos/linux/android/ios/multi
+	Arch          string    `json:"arch" db:"arch"`                   // x64/arm64/x86/universal/multi
+	Filename      string    `json:"filename" db:"filename"`
+	SizeBytes     int64     `json:"size_bytes" db:"size_bytes"`
+	SHA256        string    `json:"sha256" db:"sha256"`
+	StorageKey    string    `json:"storage_key" db:"storage_key"`
+	ContentType   string    `json:"content_type" db:"content_type"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+}
+
+// ArtifactOutput Builder 产出的产物描述（构建容器内路径 + 平台/架构元数据），
+// 由 Builder 收集后交给产物层上传 MinIO + 写 Artifact 记录。
+type ArtifactOutput struct {
+	Platform    string // windows/macos/linux/android/ios/multi
+	Arch        string // x64/arm64/x86/universal/multi
+	Filename    string
+	ContentType string
+	SrcPath     string // 构建容器内产物文件绝对路径
+}
+
+// BuildConfig 某形态的构建配置（镜像/命令/产物目录/脚手架），存 appdeploy_build_config 表。
+type BuildConfig struct {
+	AppKind      string    `json:"app_kind" db:"app_kind"`
+	BuildImage   string    `json:"build_image" db:"build_image"`
+	BuildCommand string    `json:"build_command" db:"build_command"`
+	ArtifactDir  string    `json:"artifact_dir" db:"artifact_dir"`
+	Scaffold     string    `json:"scaffold" db:"scaffold"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
