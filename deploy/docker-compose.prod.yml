@@ -32,6 +32,7 @@ services:
       AGENT_RUNTIME_URL: "http://agent-runtime:8001"
       BACKEND_HTTP_ADDR: ":8080"
       OPENCODE_CONFIG: "/app/opencode.json"
+      ANP_HOST_REPOS_DIR: "/opt/anp/data/repos" # DinD: docker run -v 源路径须宿主机路径（容器 /data/repos bind 自此）
     volumes:
       - ../data:/data
       - ../platform/opencode.json:/app/opencode.json
