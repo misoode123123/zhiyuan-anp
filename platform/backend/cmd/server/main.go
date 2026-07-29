@@ -94,6 +94,15 @@ func main() {
 	}
 	logger.Info("db ready", zap.String("url", cfg.DatabaseURL))
 
+	// 非 web 构建器通过宿主 docker socket 跑 docker run -v，docker daemon 在宿主机解析 -v 源路径。
+	// backend 容器内 /data/repos 是 bind mount 到宿主机 /opt/anp/data/repos 的挂载点，
+	// 容器内路径在宿主机对应空目录。ANP_HOST_REPOS_DIR 覆盖宿主真实 repos 根目录，
+	// 供 appdeploy.toHostRepoDir 翻译 -v 源路径；空则保持默认 "/data/repos"（本地开发无 bind mount）。
+	if h := os.Getenv("ANP_HOST_REPOS_DIR"); h != "" {
+		appdeploy.SetHostReposBase(h)
+		logger.Info("host repos base overridden", zap.String("host_repos_dir", h))
+	}
+
 	// opencode serve 只认默认路径 $HOME/.config/opencode/opencode.json，不读 OPENCODE_CONFIG env。
 	// 把平台维护的 opencode.json 复制到默认路径，否则交互编码工作台加载不到 provider。
 	ocSrc := cfg.OpencodeConfigPath

@@ -52,6 +52,33 @@ func TestDesktopBuilder_Build_ScansArtifacts(t *testing.T) {
 	})
 }
 
+func TestToHostRepoDir(t *testing.T) {
+	// 生产覆盖：宿主真实路径 /opt/anp/data/repos
+	SetHostReposBase("/opt/anp/data/repos")
+	cases := []struct{ in, want string }{
+		{"/data/repos/app_1", "/opt/anp/data/repos/app_1"},
+		{"/data/repos/app_1/sub", "/opt/anp/data/repos/app_1/sub"},
+		{"/other/path", "/other/path"}, // 非 repos 前缀原样返回
+	}
+	for _, c := range cases {
+		if got := toHostRepoDir(c.in); got != c.want {
+			t.Fatalf("toHostRepoDir(%q)=%q want %q", c.in, got, c.want)
+		}
+	}
+
+	// 默认（空 SetHostReposBase 不改动）：保持容器路径原样
+	SetHostReposBase("")
+	if got := toHostRepoDir("/data/repos/x"); got != "/data/repos/x" {
+		t.Fatalf("default toHostRepoDir=%q want %q", got, "/data/repos/x")
+	}
+
+	// 恢复默认，避免污染其他测试
+	SetHostReposBase("/data/repos")
+	if got := toHostRepoDir("/data/repos/x"); got != "/data/repos/x" {
+		t.Fatalf("restored toHostRepoDir=%q want %q", got, "/data/repos/x")
+	}
+}
+
 func TestResolveScanDir(t *testing.T) {
 	cases := []struct{ repoDir, artifactDir, want string }{
 		{"/host/repo", "/src/dist", "/host/repo/dist"},
