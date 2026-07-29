@@ -149,6 +149,15 @@ func main() {
 		logger.Fatal("seed coding_standard", zap.Error(err))
 	}
 	appDeployStore := appdeploy.NewStore(database)
+	// 非 web 形态构建配置 seed（幂等；Task 9 定义，Task 13 启动注入）。
+	// 各形态默认镜像/命令/产物目录/脚手架标识写入 appdeploy_build_config；web 不需要。
+	if err := appdeploy.SeedBuildConfigs(context.Background(), database); err != nil {
+		logger.Fatal("seed build configs", zap.Error(err))
+	}
+	// 各非 web 形态的全局编码规范 seed（coding_standard，幂等）。
+	if err := appdeploy.SeedKindStandards(context.Background(), database); err != nil {
+		logger.Fatal("seed kind standards", zap.Error(err))
+	}
 	// ---- appgw（应用 API 网关）：/apps/<app_code>/ 统一前缀反代 + 鉴权 ----
 	// 阶段 2a：并入 backend，不拆独立服务（main 持 store + gateway，挂 /apps/ 路由组）。
 	appgwStore := appgw.NewStore(database)
@@ -212,8 +221,30 @@ func main() {
 	auditStore := audit.NewStore(database)
 	v1.Use(audit.Middleware(auditStore))
 
+	// ---- 非 web 形态构建产物链路（Task 13 注入真实依赖，替换 Task 10 的 nil 占位）----
+	// 构建配置 + 产物记录 + 本地产物存储 + 脚手架根目录。
+	// base 目录可由 env 覆盖；默认 deploy/scaffolds 与 data/artifacts（相对 cwd 解析为绝对路径，
+	// 目录缺失时建应用克隆脚手架会被 os.Stat 跳过、产物上传会 MkdirAll，不阻断启动）。
+	scaffoldsBase := os.Getenv("ANP_SCAFFOLDS_BASE")
+	if scaffoldsBase == "" {
+		scaffoldsBase = "deploy/scaffolds"
+	}
+	if abs, e := filepath.Abs(scaffoldsBase); e == nil {
+		scaffoldsBase = abs
+	}
+	artifactsBase := os.Getenv("ANP_ARTIFACTS_BASE")
+	if artifactsBase == "" {
+		artifactsBase = "data/artifacts"
+	}
+	if abs, e := filepath.Abs(artifactsBase); e == nil {
+		artifactsBase = abs
+	}
+	buildCfgStore := appdeploy.NewBuildConfigStore(database)
+	artifactStore := appdeploy.NewArtifactStore(database)
+	artifactStorage := appdeploy.NewLocalArtifactStorage(artifactsBase)
+
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, nil, nil, nil) // Task 10: 构建产物链路（buildCfgStore/artifactStore/artifactStorage）由 Task 13 注入
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase)
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)

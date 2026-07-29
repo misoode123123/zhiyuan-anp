@@ -624,6 +624,38 @@ func TestFileDiff(t *testing.T) {
 	}
 }
 
+// TestCloneScaffold_CopiesFiles 脚手架复制：根文件 + 子目录文件都复制到 dst。
+func TestCloneScaffold_CopiesFiles(t *testing.T) {
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "main.go"), []byte("package main"), 0644)
+	os.MkdirAll(filepath.Join(src, "sub"), 0755)
+	os.WriteFile(filepath.Join(src, "sub", "a.txt"), []byte("a"), 0644)
+	dst := t.TempDir()
+	if err := CloneScaffold(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "main.go")); err != nil {
+		t.Fatal("main.go not copied")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "sub", "a.txt")); err != nil {
+		t.Fatal("sub/a.txt not copied")
+	}
+}
+
+// TestCloneScaffold_SkipsSymlink 脚手架复制跳过符号链接（防逃逸/非常规文件）。
+func TestCloneScaffold_SkipsSymlink(t *testing.T) {
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "real.txt"), []byte("x"), 0644)
+	os.Symlink(filepath.Join(src, "real.txt"), filepath.Join(src, "link.txt"))
+	dst := t.TempDir()
+	if err := CloneScaffold(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "link.txt")); err == nil {
+		t.Fatal("symlink should be skipped")
+	}
+}
+
 // TestLog_Author Log 返回的 CommitInfo 含作者字段。
 func TestLog_Author(t *testing.T) {
 	dir := t.TempDir()

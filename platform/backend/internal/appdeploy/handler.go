@@ -56,6 +56,7 @@ type Handler struct {
 	buildCfgStore   *BuildConfigStore  // 构建配置（desktop/mobile/cli 按形态查镜像/命令）
 	artifactStore   *ArtifactStore     // 产物记录读写（appdeploy_artifact）
 	artifactStorage ArtifactStorage    // 产物实体存储（本地降级 / MinIO）
+	scaffoldsBase   string             // 脚手架种子根目录（建非 web 应用时克隆到 RepoDir；空=不克隆）
 }
 
 // checkFunc 需求-代码核对的函数签名(便于测试 mock)。
@@ -67,12 +68,13 @@ func (h *Handler) CodeWS() *codews.Manager { return h.codeWS }
 
 // NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
 // buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 在 main.go 注入）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage) *Handler {
+// scaffoldsBase 为脚手架种子根目录（建非 web 应用时克隆到 RepoDir）；空=不克隆脚手架。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string) *Handler {
 	var nodeStore *NodeStore
 	if store != nil {
 		nodeStore = NewNodeStore(store.db)
 	}
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage}
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage, scaffoldsBase: scaffoldsBase}
 	h.checkFn = checkRequirement
 	return h
 }
@@ -80,12 +82,13 @@ func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, change
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
 // buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 注入）。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage) *Handler {
+// scaffoldsBase 为脚手架种子根目录（建非 web 应用时克隆到 RepoDir）；空=不克隆。
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string) *Handler {
 	codeWS := codews.NewManager(appDeployHost, configStore)
 	if store != nil {
 		codeWS.SetSessionLogger(codews.NewPGSessionStore(store.db)) // 会话落库供绩效/互动统计
 	}
-	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage)
+	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase)
 	h.Register(r)
 	return h
 }
@@ -978,6 +981,13 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}
+	// managed 非 web（且非 service）：克隆脚手架种子到 RepoDir 并首次提交。
+	// 克隆失败不阻断建应用（log 警告继续）——脚手架缺失可后续补，应用记录已建。
+	// web/service 走自带 Dockerfile / 容器链路，不克隆脚手架。
+	if h.buildCfgStore != nil && h.scaffoldsBase != "" &&
+		in.AppKind != AppKindWeb && in.AppKind != AppKindService {
+		h.cloneScaffold(c.Request.Context(), a, in.AppKind)
+	}
 	// 供给独立库 + 注入 DATABASE_URL（失败不阻塞应用创建，仅记录；DATABASE_URL 缺失时应用自处理）
 	// 配额超限（库数/库大小）→ Provision 在最前拦（不建任何库记录）；
 	// 此处把配额错误写到 application.last_error，前端应用列表能显示「库供给失败：配额超限」。
@@ -987,6 +997,29 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 	httpx.Created(c, a)
+}
+
+// cloneScaffold 按应用形态的构建配置查 scaffold 标识，把脚手架种子克隆到 a.RepoDir 并首次提交。
+// 脚手架目录缺失/克隆失败仅记日志不阻断建应用（务实：脚手架可后续补，应用记录已建）。
+func (h *Handler) cloneScaffold(ctx context.Context, a *Application, appKind string) {
+	cfg, err := h.buildCfgStore.Get(ctx, appKind)
+	if err != nil || cfg.Scaffold == "" {
+		return
+	}
+	scaffoldDir := filepath.Join(h.scaffoldsBase, cfg.Scaffold)
+	if _, err := os.Stat(scaffoldDir); err != nil {
+		zap.L().Warn("脚手架目录不存在，跳过克隆（建应用继续）",
+			zap.String("app_kind", appKind), zap.String("scaffold", cfg.Scaffold), zap.String("dir", scaffoldDir))
+		return
+	}
+	if err := CloneScaffold(scaffoldDir, a.RepoDir); err != nil {
+		zap.L().Warn("克隆脚手架失败（建应用继续）",
+			zap.String("app", a.ID), zap.String("scaffold", cfg.Scaffold), zap.Error(err))
+		return
+	}
+	// 把脚手架内容作为首次提交（覆盖 EnsureRepo 的模板 README/docs，脚手架自带更具体内容）
+	_, _ = runGit(ctx, a.RepoDir, "add", "-A")
+	_, _ = runGit(ctx, a.RepoDir, "commit", "-q", "-m", "init: scaffold "+cfg.Scaffold)
 }
 
 // Import 导入已有项目（git 仓库 / 服务器目录）。占位落库后异步执行，前端轮询 status。

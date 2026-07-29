@@ -563,6 +563,52 @@ func isUnderAllowedRoot(p string) bool {
 	return false
 }
 
+// CloneScaffold 把 scaffoldDir 脚手架种子复制到 dstDir（建非 web 应用时用）。
+// 安全：跳过符号链接（防逃逸/挂载攻击）；仅复制常规文件与目录。
+// 与 ImportFromDir 的 cp -r 不同：本函数在 Go 层逐文件复制并显式跳 symlink/非常规文件，
+// 不依赖系统 cp 行为，跨平台一致且可控。
+func CloneScaffold(scaffoldDir, dstDir string) error {
+	return filepath.Walk(scaffoldDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(scaffoldDir, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dstDir, rel)
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil // 跳 symlink（防逃逸）
+		}
+		if info.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		if !info.Mode().IsRegular() {
+			return nil // 跳非常规文件（设备/管道/socket 等）
+		}
+		return copyFile(path, target)
+	})
+}
+
+// copyFile 复制单个常规文件（建父目录）。供 CloneScaffold 用。
+func copyFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
 // ImportFromDir 把服务器已有目录导入托管仓。srcPath 须在白名单下（防 ../ 穿越）；
 // 源含 .git → 本地 clone 保留历史；否则 cp -r + git init。
 func ImportFromDir(ctx context.Context, name, srcPath string) (string, error) {

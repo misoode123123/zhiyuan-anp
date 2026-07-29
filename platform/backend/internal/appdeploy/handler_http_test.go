@@ -34,7 +34,7 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 	)
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	return h, db
 }
 
@@ -576,7 +576,7 @@ func newHTTPHandlerWithGates(t *testing.T) (*Handler, *sqlx.DB) {
 	store := NewStore(db)
 	changes := change.NewStore(db)
 	reqRepo := requirement.NewRepository(db)
-	h := NewHandler(store, NewDeployer("test"), nil, changes, nil, reqRepo, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, changes, nil, reqRepo, nil, nil, nil, nil, nil, nil, nil, "")
 	return h, db
 }
 
@@ -770,7 +770,7 @@ func TestSyncOverviewIfProd_sync(t *testing.T) {
 
 // TestHandler_NewHandlerDeps NewHandler 接受 nil 依赖（codeWS/changes/cfg/provisioner/standards）。
 func TestHandler_NewHandlerDeps(t *testing.T) {
-	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
 	if h == nil {
 		t.Fatal("NewHandler 不应返回 nil")
 	}
@@ -825,7 +825,7 @@ func newHTTPHandlerWithExtRoute(t *testing.T) (*Handler, *extRouteStore) {
 	)
 	store := NewStore(db)
 	rw := &extRouteStore{}
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, rw, nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, rw, nil, nil, nil, nil, nil, "")
 	return h, rw
 }
 
@@ -1254,7 +1254,7 @@ func setupHandlerWithAppKind(t *testing.T) (*Handler, *gin.Engine) {
 	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil,
-		NewBuildConfigStore(db), NewArtifactStore(db), NewLocalArtifactStorage(t.TempDir()))
+		NewBuildConfigStore(db), NewArtifactStore(db), NewLocalArtifactStorage(t.TempDir()), "")
 	return h, newRouterWith(h)
 }
 
