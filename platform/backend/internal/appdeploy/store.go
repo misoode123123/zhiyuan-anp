@@ -17,11 +17,12 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 func appCols() string {
-	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
+	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(app_kind,'web') AS app_kind, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
 }
 
 // Create 注册应用（默认 registered；导入流程传 StatusImporting）。
-// 落 deploy_mode + external_url：managed 默认走 registered + 空串；external 直接 running + external_url。
+// 落 deploy_mode + app_kind + external_url：managed 默认走 registered + 空串；external 直接 running + external_url。
+// app_kind 默认 web（与存量数据兼容）；非 web 形态由后续 Builder 出产物。
 func (s *Store) Create(ctx context.Context, a *Application) error {
 	a.ID = "app_" + uuid.NewString()[:20]
 	if a.Status == "" {
@@ -30,10 +31,13 @@ func (s *Store) Create(ctx context.Context, a *Application) error {
 	if a.DeployMode == "" {
 		a.DeployMode = AppManaged
 	}
+	if a.AppKind == "" {
+		a.AppKind = AppKindWeb
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, internal_port, status, deploy_mode, external_url, import_source, import_ref)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		a.ID, a.ProjectSpaceID, a.Name, a.RepoDir, a.InternalPort, a.Status, a.DeployMode, a.ExternalURL, a.ImportSource, a.ImportRef)
+		`INSERT INTO appdeploy_application (id, project_space_id, name, repo_dir, internal_port, status, deploy_mode, app_kind, external_url, import_source, import_ref)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		a.ID, a.ProjectSpaceID, a.Name, a.RepoDir, a.InternalPort, a.Status, a.DeployMode, a.AppKind, a.ExternalURL, a.ImportSource, a.ImportRef)
 	return err
 }
 

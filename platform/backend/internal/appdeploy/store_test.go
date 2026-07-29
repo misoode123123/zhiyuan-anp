@@ -611,6 +611,37 @@ func TestStore_CreateImportDefault(t *testing.T) {
 	}
 }
 
+// TestStore_Create_AppKind 显式 app_kind=desktop 落库后读回。
+func TestStore_Create_AppKind(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Application{ProjectSpaceID: "ps_1", Name: "deskapp", AppKind: AppKindDesktop}
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get(ctx, "ps_1", a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.AppKind != AppKindDesktop {
+		t.Fatalf("app_kind = %q, want %q", got.AppKind, AppKindDesktop)
+	}
+}
+
+// TestStore_Create_AppKindDefaultWeb 不设 AppKind 时默认 web（向后兼容）。
+func TestStore_Create_AppKindDefaultWeb(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := &Application{ProjectSpaceID: "ps_1", Name: "webapp"}
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, _ := s.Get(ctx, "ps_1", a.ID)
+	if got.AppKind != AppKindWeb {
+		t.Fatalf("default app_kind = %q, want %q", got.AppKind, AppKindWeb)
+	}
+}
+
 // TestStore_UpdateImportDone 导入完成写 registered + imported_at + repo_dir，清 last_error。
 func TestStore_UpdateImportDone(t *testing.T) {
 	s := newTestStore(t)
