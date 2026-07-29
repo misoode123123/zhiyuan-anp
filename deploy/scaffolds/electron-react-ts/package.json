@@ -1,0 +1,38 @@
+{
+  "name": "electron-react-ts",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --mac --linux"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.anp.desktop",
+    "productName": "MyApp",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "arch": [
+        "x64"
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "arch": [
+        "universal"
+      ]
+    },
+    "linux": {
+      "target": "AppImage",
+      "arch": [
+        "x64"
+      ]
+    }
+  }
+}

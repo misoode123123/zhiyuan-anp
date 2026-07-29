@@ -1,0 +1,10 @@
+name: myapp
+description: ANP 移动应用脚手架
+publish_to: none
+environment:
+  sdk: ^3.0.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  uses-material-design: true
