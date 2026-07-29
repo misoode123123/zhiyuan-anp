@@ -1234,6 +1234,8 @@ export interface paths {
                 path: {
                     /** @description managed(默认,A类) / external(B类纳管外部应用) */
                     deploy_mode: string;
+                    /** @description 应用类型 web/desktop/mobile/cli/service */
+                    app_kind: string;
                     /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
                     external_url: string;
                     /** @description managed 可选；buildpack 检测或默认 8080 */
@@ -6484,6 +6486,8 @@ export interface components {
         "internal_appdeploy.createBody": {
             /** @description managed(默认,A类) / external(B类纳管外部应用) */
             deploy_mode?: string;
+            /** @description 应用类型 web/desktop/mobile/cli/service */
+            app_kind?: string;
             /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
             external_url?: string;
             /** @description managed 可选；buildpack 检测或默认 8080 */
@@ -6692,3 +6696,21 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export type operations = Record<string, never>;
+
+/** 构建产物（非 web/service 应用的可下载产物，如桌面安装包/CLI 二进制/移动包） */
+export interface Artifact {
+    id: string;
+    application_id: string;
+    build_version: number;
+    app_kind: string;
+    /** @description windows/macos/linux/android/ios/multi */
+    platform: string;
+    /** @description x64/arm64/x86/universal/multi */
+    arch: string;
+    filename: string;
+    size_bytes: number;
+    sha256: string;
+    storage_key: string;
+    content_type: string;
+    created_at: string;
+}

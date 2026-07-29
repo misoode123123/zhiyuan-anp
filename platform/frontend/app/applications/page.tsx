@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
+import type { Artifact } from "@/lib/api-types";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
 import { toast } from "@/lib/toast";
@@ -42,6 +43,7 @@ type App = {
   build_log: string;
   deploy_mode: string; // managed(A类) / external(B类纳管外部)
   external_url: string; // external 模式时外部应用访问地址
+  app_kind: string; // 应用类型 web/desktop/mobile/cli/service
   import_source?: "" | "git" | "dir"; // 导入来源：''=平台建仓 / git=远程仓 / dir=本机zip或服务器目录
   import_ref?: string; // git=url / dir=来源标识
   imported_at?: string; // 导入完成时间，进行中空
@@ -129,6 +131,75 @@ function DevWizard({ app }: { app: App }) {
   );
 }
 
+// 构建产物区：仅非 web/service 应用显示。
+// 调 /artifacts 列产物、/build-artifacts 触发构建、/download 浏览器直接下载（跟随 302/流式）。
+function ArtifactSection({
+  psID,
+  appID,
+  appKind,
+}: {
+  psID: string;
+  appID: string;
+  appKind: string;
+}) {
+  const [arts, setArts] = useState<Artifact[]>([]);
+  const [building, setBuilding] = useState(false);
+  useEffect(() => {
+    if (appKind === "web" || appKind === "service") return;
+    fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/artifacts`)
+      .then((r) => r.json())
+      .then((r: { data?: { artifacts?: Artifact[] } }) => setArts(r.data?.artifacts ?? []));
+  }, [psID, appID, appKind]);
+  if (appKind === "web" || appKind === "service") return null;
+  const build = async () => {
+    setBuilding(true);
+    try {
+      await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/build-artifacts`, {
+        method: "POST",
+      });
+    } finally {
+      setBuilding(false);
+    }
+    // 刷新列表
+    const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/artifacts`).then(
+      (r) => r.json()
+    );
+    setArts((r as { data?: { artifacts?: Artifact[] } }).data?.artifacts ?? []);
+  };
+  return (
+    <div className="mt-3 rounded border border-neutral-200 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold">构建产物</span>
+        <button
+          onClick={build}
+          disabled={building}
+          className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {building ? "构建中…" : "构建产物"}
+        </button>
+      </div>
+      {arts.length === 0 ? (
+        <div className="text-xs text-neutral-500">暂无产物，点「构建产物」生成</div>
+      ) : (
+        arts.map((a) => (
+          <div key={a.id} className="flex items-center justify-between py-1 text-xs">
+            <span>
+              📦 {a.filename} · {a.platform}/{a.arch} · {(a.size_bytes / 1048576).toFixed(1)}MB ·
+              sha: {a.sha256.slice(0, 8)}
+            </span>
+            <a
+              href={`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/artifacts/${a.id}/download`}
+              className="text-blue-600 hover:underline"
+            >
+              下载
+            </a>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
@@ -143,6 +214,7 @@ export default function ApplicationsPage() {
     deploy_mode: "managed" as "managed" | "external",
     external_url: "",
   });
+  const [appKind, setAppKind] = useState<string>("web"); // 应用类型 web/desktop/mobile/cli/service
   const [wsTool, setWsTool] = useState("opencode"); // 交互编码工具（开发者可选，不同人选不同）
   const [logsFor, setLogsFor] = useState<string>("");
   const [logs, setLogs] = useState("");
@@ -273,8 +345,9 @@ export default function ApplicationsPage() {
             name: form.name,
             deploy_mode: "external",
             external_url: form.external_url.trim(),
+            app_kind: appKind,
           }
-        : { name: form.name, internal_port: form.internal_port };
+        : { name: form.name, internal_port: form.internal_port, app_kind: appKind };
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -656,6 +729,21 @@ export default function ApplicationsPage() {
           >
             <option value="managed">managed · 平台托管（A 类）</option>
             <option value="external">external · 纳管外部应用（B 类）</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-neutral-500">应用类型</label>
+          <select
+            value={appKind}
+            onChange={(e) => setAppKind(e.target.value)}
+            className="rounded border border-neutral-300 px-2 py-1"
+            title="应用产物形态：web/service 走容器部署；desktop/mobile/cli 走构建产物下载"
+          >
+            <option value="web">Web 应用</option>
+            <option value="desktop">桌面应用</option>
+            <option value="mobile">移动应用</option>
+            <option value="cli">命令行工具</option>
+            <option value="service">后端服务</option>
           </select>
         </div>
         <div>
@@ -1457,6 +1545,7 @@ export default function ApplicationsPage() {
                   )}
                 </>
               )}
+              <ArtifactSection psID={psID} appID={a.id} appKind={a.app_kind} />
             </div>
           );
         })}
