@@ -233,3 +233,7 @@ func (d *Deployer) Stats(ctx context.Context, container string) (*ContainerStats
 	}
 	return &ContainerStats{CPUPerc: raw.CPUPerc, MemUsage: raw.MemUsage, MemPerc: raw.MemPerc, NetIO: raw.NetIO, PIDs: raw.PIDs}, nil
 }
+
+// dockerRun 可替换的 docker 执行函数（测试注入 fake）。默认走 runDockerOn。
+// 新代码（builders 等）调 dockerRun(...) 而非 runDockerOn，便于单测注入不执行真实 docker 的桩。
+var dockerRun = runDockerOn
