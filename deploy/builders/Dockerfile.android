@@ -1,0 +1,7 @@
+FROM cimg/android:2024.07
+# 已含 Android SDK + JDK。补 Flutter（如用 Flutter 脚手架）。
+RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.22.0-stable.tar.xz -o /tmp/flutter.tar.xz \
+    && tar -xf /tmp/flutter.tar.xz -C /opt && rm /tmp/flutter.tar.xz
+ENV PATH="/opt/flutter/bin:$PATH"
+RUN flutter precache
+WORKDIR /src

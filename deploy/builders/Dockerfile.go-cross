@@ -1,0 +1,4 @@
+FROM golang:1.25-bookworm
+ENV GOPROXY=https://goproxy.cn
+WORKDIR /src
+# 交叉编译多 OS/Arch 直接用 GOOS/GOARCH，无需额外工具链

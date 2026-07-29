@@ -1,0 +1,7 @@
+FROM node:20-bookworm
+RUN npm config set registry https://registry.npmmirror.com
+# electron-builder 依赖：解包、图形库（linux 目标需要）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget unzip libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xauth \
+    libasound2 libgbm1 libatk1.0-0 libatk-bridge2.0-0 && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
