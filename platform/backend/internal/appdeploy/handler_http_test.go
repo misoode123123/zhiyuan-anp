@@ -34,7 +34,7 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 	)
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	return h, db
 }
 
@@ -576,7 +576,7 @@ func newHTTPHandlerWithGates(t *testing.T) (*Handler, *sqlx.DB) {
 	store := NewStore(db)
 	changes := change.NewStore(db)
 	reqRepo := requirement.NewRepository(db)
-	h := NewHandler(store, NewDeployer("test"), nil, changes, nil, reqRepo, nil, nil, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, changes, nil, reqRepo, nil, nil, nil, nil, nil, nil, nil)
 	return h, db
 }
 
@@ -770,7 +770,7 @@ func TestSyncOverviewIfProd_sync(t *testing.T) {
 
 // TestHandler_NewHandlerDeps NewHandler 接受 nil 依赖（codeWS/changes/cfg/provisioner/standards）。
 func TestHandler_NewHandlerDeps(t *testing.T) {
-	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if h == nil {
 		t.Fatal("NewHandler 不应返回 nil")
 	}
@@ -825,7 +825,7 @@ func newHTTPHandlerWithExtRoute(t *testing.T) (*Handler, *extRouteStore) {
 	)
 	store := NewStore(db)
 	rw := &extRouteStore{}
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, rw, nil, nil)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, rw, nil, nil, nil, nil, nil)
 	return h, rw
 }
 
@@ -1236,5 +1236,164 @@ func TestHandler_Commit(t *testing.T) {
 	changes, _ := StatusFiles(context.Background(), wt)
 	if len(changes) != 0 {
 		t.Fatalf("提交后应无未提交改动，得到 %v", changes)
+	}
+}
+
+// --- Task 10: 非 web 应用构建产物链路测试 ---
+
+// setupHandlerWithAppKind 建 Handler（store=anp_test PG）+ 装配构建产物链路
+// （ArtifactStore/BuildConfigStore/LocalArtifactStorage），路由注册到 gin。
+// 建表 SQL 由 testutil.TestDB 跑迁移 000022 提供（app_kind 列 + appdeploy_artifact + appdeploy_build_config）。
+func setupHandlerWithAppKind(t *testing.T) (*Handler, *gin.Engine) {
+	t.Helper()
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db,
+		"release_record", "change_request", "requirement",
+		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+		"appdeploy_artifact", "appdeploy_build_config",
+	)
+	store := NewStore(db)
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil,
+		NewBuildConfigStore(db), NewArtifactStore(db), NewLocalArtifactStorage(t.TempDir()))
+	return h, newRouterWith(h)
+}
+
+// withManagedRepoBaseTmp 临时把 ManagedRepoBase 指向 t.TempDir()，让 Create managed 的
+// EnsureRepo 在测试可写目录建仓（默认 /data/repos 在本机/CI 可能不存在）。
+func withManagedRepoBaseTmp(t *testing.T) func() {
+	t.Helper()
+	old := ManagedRepoBase
+	ManagedRepoBase = t.TempDir()
+	return func() { ManagedRepoBase = old }
+}
+
+// TestHandler_Create_WithAppKind Create 带 app_kind=desktop 落库后回读 app_kind=desktop。
+// managed 模式触发 EnsureRepo，故覆盖 ManagedRepoBase 到临时目录。
+func TestHandler_Create_WithAppKind(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	restore := withManagedRepoBaseTmp(t)
+	defer restore()
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name": "deskapp", "deploy_mode": "managed", "app_kind": "desktop",
+	})
+	if code != 201 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatalf("应返回应用本体，得到 %v", resp)
+	}
+	if data["app_kind"] != "desktop" {
+		t.Fatalf("app_kind 应 desktop，得到 %v", data["app_kind"])
+	}
+	appID, _ := data["id"].(string)
+	got, _ := h.store.GetByAppID(context.Background(), appID)
+	if got == nil || got.AppKind != AppKindDesktop {
+		t.Fatalf("落库 app_kind 不匹配: %+v", got)
+	}
+}
+
+// TestHandler_Create_DefaultAppKindWeb 空 app_kind 默认 web（向后兼容存量应用）。
+func TestHandler_Create_DefaultAppKindWeb(t *testing.T) {
+	_, r := setupHandlerWithAppKind(t)
+	restore := withManagedRepoBaseTmp(t)
+	defer restore()
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name": "webapp", "deploy_mode": "managed",
+	})
+	if code != 201 {
+		t.Fatalf("code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data["app_kind"] != AppKindWeb {
+		t.Fatalf("空 app_kind 应默认 web，得到 %v", data["app_kind"])
+	}
+}
+
+// TestHandler_Create_InvalidAppKind 非法 app_kind → 400（不落库）。
+func TestHandler_Create_InvalidAppKind(t *testing.T) {
+	_, r := setupHandlerWithAppKind(t)
+	restore := withManagedRepoBaseTmp(t)
+	defer restore()
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name": "badapp", "deploy_mode": "managed", "app_kind": "game",
+	})
+	if code != 400 {
+		t.Fatalf("非法 app_kind 应 400，得到 %d body=%v", code, resp)
+	}
+}
+
+// TestHandler_ListArtifacts_Empty 已建应用无产物时 ListArtifacts 返回空列表（不报错）。
+// 验证路由注册 + artifactStore 装配后空查询正常返回。
+func TestHandler_ListArtifacts_Empty(t *testing.T) {
+	_, r := setupHandlerWithAppKind(t)
+	restore := withManagedRepoBaseTmp(t)
+	defer restore()
+	// 建一个 desktop 应用（name 须 ≥2 字符过 validateAppName）
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name": "desk", "app_kind": "desktop",
+	})
+	if code != 201 {
+		t.Fatalf("建应用 code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	if appID == "" {
+		t.Fatalf("未返回 app id: %v", data)
+	}
+	// 列产物：空列表
+	code, resp = doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+appID+"/artifacts", nil)
+	if code != 200 {
+		t.Fatalf("ListArtifacts code=%d body=%v", code, resp)
+	}
+	d, _ := resp["data"].(map[string]interface{})
+	arts, _ := d["artifacts"].([]interface{})
+	if len(arts) != 0 {
+		t.Fatalf("无产物应空列表，得到 %v", arts)
+	}
+}
+
+// TestHandler_ListArtifacts_NotConfigured artifactStore 未注入（nil）→ 500 "功能未配置"。
+// 验证 nil-safe：Task 13 前未装配不应 panic。
+func TestHandler_ListArtifacts_NotConfigured(t *testing.T) {
+	h, _ := newHTTPHandler(t) // artifactStore=nil
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/app_ghost/artifacts", nil)
+	if code != 500 {
+		t.Fatalf("未装配应 500，得到 %d body=%v", code, resp)
+	}
+}
+
+// TestHandler_BuildArtifacts_WebRejected web 应用调构建产物接口 → 400（web 走部署流程）。
+func TestHandler_BuildArtifacts_WebRejected(t *testing.T) {
+	_, r := setupHandlerWithAppKind(t)
+	restore := withManagedRepoBaseTmp(t)
+	defer restore()
+	// 建 web 应用（默认）
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps", map[string]interface{}{
+		"name": "webapp",
+	})
+	if code != 201 {
+		t.Fatalf("建应用 code=%d body=%v", code, resp)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	appID, _ := data["id"].(string)
+	code, resp = doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+appID+"/build-artifacts", nil)
+	if code != 400 {
+		t.Fatalf("web 应用构建产物应 400，得到 %d body=%v", code, resp)
+	}
+}
+
+// TestValidAppKind 应用形态合法性校验纯函数。
+func TestValidAppKind(t *testing.T) {
+	for _, k := range []string{AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService} {
+		if !validAppKind(k) {
+			t.Fatalf("合法 app_kind %q 应 true", k)
+		}
+	}
+	for _, bad := range []string{"", "game", "WEB", "desktop ", "cli/app"} {
+		if validAppKind(bad) {
+			t.Fatalf("非法 app_kind %q 应 false", bad)
+		}
 	}
 }

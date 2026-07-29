@@ -213,7 +213,7 @@ func main() {
 	v1.Use(audit.Middleware(auditStore))
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc)
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, nil, nil, nil) // Task 10: 构建产物链路（buildCfgStore/artifactStore/artifactStorage）由 Task 13 注入
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)

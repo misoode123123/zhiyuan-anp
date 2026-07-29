@@ -51,6 +51,11 @@ type Handler struct {
 	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
 	nodeStore   *NodeStore              // 部署节点（多机）；nil=仅本地
 	checkFn     checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
+	// 非 web 形态构建产物链路（Task 10）；nil=未装配（BuildArtifacts/ListArtifacts/DownloadArtifact 报"功能未配置"）。
+	// Task 13 在 main.go 注入真实值；在此之前 factory 调用处传 nil 保证编译。
+	buildCfgStore   *BuildConfigStore  // 构建配置（desktop/mobile/cli 按形态查镜像/命令）
+	artifactStore   *ArtifactStore     // 产物记录读写（appdeploy_artifact）
+	artifactStorage ArtifactStorage    // 产物实体存储（本地降级 / MinIO）
 }
 
 // checkFunc 需求-代码核对的函数签名(便于测试 mock)。
@@ -61,24 +66,26 @@ type checkFunc func(ctx context.Context, apiKey, code, title, criteria string) (
 func (h *Handler) CodeWS() *codews.Manager { return h.codeWS }
 
 // NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
+// buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 在 main.go 注入）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage) *Handler {
 	var nodeStore *NodeStore
 	if store != nil {
 		nodeStore = NewNodeStore(store.db)
 	}
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore}
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage}
 	h.checkFn = checkRequirement
 	return h
 }
 
 // Register 模块级装配：内部 new Deployer/codews.Manager + NewHandler + Register。
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker) *Handler {
+// buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 注入）。
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage) *Handler {
 	codeWS := codews.NewManager(appDeployHost, configStore)
 	if store != nil {
 		codeWS.SetSessionLogger(codews.NewPGSessionStore(store.db)) // 会话落库供绩效/互动统计
 	}
-	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota)
+	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage)
 	h.Register(r)
 	return h
 }
@@ -112,6 +119,11 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/file-diff", h.FileDiff)             // 单文件行级 diff（工作区 / 指定提交）
 	r.GET("/project-spaces/:id/apps/:aid/commit-files", h.CommitFilesList)   // 某次提交改了哪些文件
 	r.POST("/project-spaces/:id/apps/:aid/commit", h.CommitWorktree)         // 仅提交 dev-<user> worktree（不部署）
+
+	// 非 web 应用构建产物链路（Task 10）：触发构建 / 列产物 / 下载产物。
+	r.POST("/project-spaces/:id/apps/:aid/build-artifacts", h.BuildArtifacts)                 // 触发非 web 构建
+	r.GET("/project-spaces/:id/apps/:aid/artifacts", h.ListArtifacts)                         // 列产物
+	r.GET("/project-spaces/:id/apps/:aid/artifacts/:artid/download", h.DownloadArtifact)      // 下载产物
 
 	// 部署节点管理（多机部署）
 	r.GET("/deploy-nodes", h.ListNodes)
@@ -798,7 +810,18 @@ type createBody struct {
 	RepoDir      string `json:"repo_dir"`      // managed 可选；空=平台托管 git 仓库 /data/repos/<name>
 	InternalPort int    `json:"internal_port"` // managed 可选；buildpack 检测或默认 8080
 	DeployMode   string `json:"deploy_mode"`   // managed(默认,A类) / external(B类纳管外部应用)
+	AppKind      string `json:"app_kind"`      // web/desktop/mobile/cli/service，空默认 web
 	ExternalURL  string `json:"external_url"`  // external 必填：外部应用访问地址 http(s)://host[:port][/path]
+}
+
+// validAppKind 应用形态合法性校验（web/desktop/mobile/cli/service）。
+// 纯函数，供 Create 校验 + 测试断言。
+func validAppKind(k string) bool {
+	switch k {
+	case AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService:
+		return true
+	}
+	return false
 }
 
 // importBody 导入已有项目请求体（zip 走 ImportUpload multipart 端点）。
@@ -895,6 +918,15 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Err(c, 400, 40001, msg)
 		return
 	}
+	// app_kind 校验：空默认 web；非法拒绝。
+	in.AppKind = strings.TrimSpace(in.AppKind)
+	if in.AppKind == "" {
+		in.AppKind = AppKindWeb
+	}
+	if !validAppKind(in.AppKind) {
+		httpx.Err(c, 400, 40001, "app_kind 非法（需 web/desktop/mobile/cli/service）")
+		return
+	}
 	// 配额强制：建应用前查应用数（超限直接 409，不建仓库/记录）
 	if h.quota != nil {
 		if err := h.quota.CheckApps(c.Request.Context(), c.Param("id")); err != nil {
@@ -912,7 +944,7 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 		a := &Application{
 			ProjectSpaceID: c.Param("id"), Name: in.Name,
-			DeployMode: AppExternal, ExternalURL: extURL,
+			DeployMode: AppExternal, ExternalURL: extURL, AppKind: in.AppKind,
 			Status: "running", // external 应用外部已活，注册即"运行中"
 		}
 		if err := h.store.Create(c.Request.Context(), a); err != nil {
@@ -941,7 +973,7 @@ func (h *Handler) Create(c *gin.Context) {
 	if port == 0 {
 		port = 8080
 	}
-	a := &Application{ProjectSpaceID: c.Param("id"), Name: in.Name, RepoDir: repoDir, InternalPort: port}
+	a := &Application{ProjectSpaceID: c.Param("id"), Name: in.Name, RepoDir: repoDir, InternalPort: port, AppKind: in.AppKind}
 	if err := h.store.Create(c.Request.Context(), a); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
@@ -2050,4 +2082,139 @@ func (h *Handler) CommitWorktree(c *gin.Context) {
 		sha = latest[0].SHA
 	}
 	httpx.OK(c, gin.H{"sha": sha, "message": msg})
+}
+
+// --- 非 web 应用构建产物链路（Task 10）---
+
+// BuildArtifacts 触发非 web 应用构建产物（desktop/mobile/cli）。
+// web/service 应用走容器部署链路，不构建产物文件。同步执行：标记 building → DispatchBuilder →
+// Build → UploadArtifacts → 标记 built（部分失败也标 built，错误入 last_error 不阻塞已成功产物）。
+//
+// @Summary      构建应用产物
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "构建结果(built 数量 + 版本号)"
+// @Failure      400  {object}  map[string]interface{}  "web/service 应用不构建产物"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Failure      500  {object}  map[string]interface{}  "功能未配置/构建失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/build-artifacts [post]
+func (h *Handler) BuildArtifacts(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil || a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	// web/service 走容器部署链路（Deploy handler），不构建产物文件
+	if a.AppKind == AppKindWeb || a.AppKind == AppKindService {
+		httpx.Err(c, 400, 40001, "web/service 应用走部署流程，不构建产物")
+		return
+	}
+	// nil-safe：Task 13 前未装配构建产物链路时拒绝（而非 nil 解引用 panic）
+	if h.buildCfgStore == nil || h.artifactStorage == nil || h.artifactStore == nil {
+		httpx.Err(c, 500, 50021, "构建产物功能未配置（buildCfgStore/artifactStorage/artifactStore 未注入）")
+		return
+	}
+	ctx := c.Request.Context()
+	// 标记 building（清空上次 last_error）
+	_ = h.store.SetStatus(ctx, psID, aid, "building", "", "")
+	b, err := DispatchBuilder(a.AppKind, h.deployer, h.buildCfgStore)
+	if err != nil {
+		h.markFailed(ctx, psID, aid, err.Error(), "")
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	outs, err := b.Build(ctx, a)
+	if err != nil {
+		h.markFailed(ctx, psID, aid, "构建失败: "+err.Error(), "")
+		httpx.Err(c, 500, 50020, "构建失败: "+err.Error())
+		return
+	}
+	a.Version++
+	// 上传产物：单产物失败不阻塞其他；返回首个错误（已成功的仍落库）
+	upErr := UploadArtifacts(ctx, a, outs, h.artifactStorage, h.artifactStore)
+	if upErr != nil {
+		// 部分成功也标 built，错误入 last_error（前端可见，不阻塞已落库产物）
+		_ = h.store.SetStatus(ctx, psID, aid, StatusBuilt, upErr.Error(), "")
+	} else {
+		_ = h.store.SetStatus(ctx, psID, aid, StatusBuilt, "", "")
+	}
+	httpx.OK(c, gin.H{"id": aid, "built": len(outs), "version": a.Version, "status": StatusBuilt})
+}
+
+// ListArtifacts 列出应用全部产物（按 build_version 倒序）。
+//
+// @Summary      应用产物列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "产物列表"
+// @Failure      500  {object}  map[string]interface{}  "功能未配置/加载失败"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/artifacts [get]
+func (h *Handler) ListArtifacts(c *gin.Context) {
+	aid := c.Param("aid")
+	// nil-safe：未装配产物链路时返回"功能未配置"而非 panic
+	if h.artifactStore == nil {
+		httpx.Err(c, 500, 50021, "产物功能未配置（artifactStore 未注入）")
+		return
+	}
+	list, err := h.artifactStore.ListByApp(c.Request.Context(), aid)
+	if err != nil {
+		httpx.Err(c, 500, 50020, "加载产物失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"artifacts": list})
+}
+
+// DownloadArtifact 下载产物：MinIO 预签名 URL 存在时 302 跳转；
+// 本地降级（PresignedGet 返回空）直接流式返回文件内容。
+//
+// @Summary      下载应用产物
+// @Tags         appdeploy
+// @Produce      octet-stream
+// @Param        id     path  string  true  "项目空间ID"
+// @Param        aid    path  string  true  "应用ID"
+// @Param        artid  path  string  true  "产物ID"
+// @Success      200    {file}  binary  "产物文件"
+// @Success      302    {string} string  "跳转到预签名下载 URL"
+// @Failure      404    {object}  map[string]interface{}  "产物不存在"
+// @Failure      500    {object}  map[string]interface{}  "功能未配置/产物文件缺失"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/artifacts/{artid}/download [get]
+func (h *Handler) DownloadArtifact(c *gin.Context) {
+	artid := c.Param("artid")
+	// nil-safe：未装配产物链路时拒绝
+	if h.artifactStore == nil || h.artifactStorage == nil {
+		httpx.Err(c, 500, 50021, "产物功能未配置（artifactStore/artifactStorage 未注入）")
+		return
+	}
+	a, err := h.artifactStore.Get(c.Request.Context(), artid)
+	if err != nil || a == nil {
+		httpx.Err(c, 404, 40420, "产物不存在")
+		return
+	}
+	ctx := c.Request.Context()
+	// MinIO 路径：预签名 URL 非空 → 302 跳转
+	if u, _ := h.artifactStorage.PresignedGet(ctx, a.StorageKey); u != "" {
+		c.Redirect(302, u)
+		return
+	}
+	// 本地降级：流式返回
+	rc, err := h.artifactStorage.Open(ctx, a.StorageKey)
+	if err != nil {
+		httpx.Err(c, 500, 50020, "产物文件缺失: "+err.Error())
+		return
+	}
+	defer rc.Close()
+	c.Header("Content-Type", a.ContentType)
+	c.Header("Content-Disposition", "attachment; filename="+a.Filename)
+	if _, err := io.Copy(c.Writer, rc); err != nil {
+		// 已开始写 body，无法改状态码；仅日志
+		zap.L().Warn("流式下载产物失败", zap.String("artifact", artid), zap.Error(err))
+	}
 }
