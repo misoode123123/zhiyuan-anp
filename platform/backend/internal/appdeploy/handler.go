@@ -135,6 +135,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	// 部署节点管理（多机部署）
 	r.GET("/deploy-nodes", h.ListNodes)
 	r.POST("/deploy-nodes", h.CreateNode)
+	r.PUT("/deploy-nodes/:nid", h.UpdateNode)
 	r.DELETE("/deploy-nodes/:nid", h.DeleteNode)
 	r.POST("/deploy-nodes/:nid/test", h.TestNode) // 测试连通性
 	r.POST("/deploy-nodes/:nid/provision", h.ProvisionNode) // 异步搭建环境（SSH/WinRM 节点）
@@ -2010,6 +2011,39 @@ func (h *Handler) CreateNode(c *gin.Context) {
 		return
 	}
 	httpx.Created(c, n)
+}
+
+// UpdateNode 编辑已存在的部署节点（PUT /deploy-nodes/:nid）。
+// body 与 CreateNode 一致；ID 取路径参数（不允许改 ID）。
+func (h *Handler) UpdateNode(c *gin.Context) {
+	if h.nodeStore == nil {
+		httpx.Err(c, 500, 50014, "nodeStore 未初始化")
+		return
+	}
+	nid := c.Param("nid")
+	if nid == "" {
+		httpx.Err(c, 400, 40001, "缺少节点 id")
+		return
+	}
+	var n DeployNode
+	if err := c.ShouldBindJSON(&n); err != nil {
+		httpx.Err(c, 400, 40001, err.Error())
+		return
+	}
+	n.ID = nid
+	if err := h.nodeStore.Update(c.Request.Context(), &n); err != nil {
+		httpx.Err(c, 500, 50014, err.Error())
+		return
+	}
+	got, err := h.nodeStore.Get(c.Request.Context(), nid)
+	if err != nil || got == nil {
+		httpx.OK(c, gin.H{"id": nid, "updated": true})
+		return
+	}
+	// 与 ListNodes 一致：不回传敏感凭证
+	got.WinRMPassword = ""
+	got.SSHKey = ""
+	httpx.OK(c, got)
 }
 
 func (h *Handler) DeleteNode(c *gin.Context) {

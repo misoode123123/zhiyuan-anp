@@ -82,6 +82,7 @@ export default function ServersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<DeployNodeListItem | null>(null);
   const [busy, setBusy] = useState<Record<string, string>>({});
   const [metricsFor, setMetricsFor] = useState<string>("");
   const [metrics, setMetrics] = useState<ServerMetric[]>([]);
@@ -189,7 +190,17 @@ export default function ServersPage() {
       {error && <div className="rounded bg-danger/10 p-2 text-sm text-danger">{error}</div>}
       {loading && <div className="text-sm text-text-muted">加载中...</div>}
 
-      {showAdd && <AddNodeForm onDone={load} onCancel={() => setShowAdd(false)} />}
+      {showAdd && <NodeForm onDone={load} onCancel={() => setShowAdd(false)} />}
+      {editing && (
+        <NodeForm
+          initial={editing}
+          onDone={() => {
+            setEditing(null);
+            load();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
 
       {!loading && nodes.length === 0 && (
         <div className="rounded border border-border bg-surface p-8 text-center text-sm text-text-muted">
@@ -298,6 +309,13 @@ export default function ServersPage() {
                   详情
                 </button>
                 <button
+                  onClick={() => setEditing(n)}
+                  disabled={!!busy[n.id]}
+                  className="rounded bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
+                >
+                  编辑
+                </button>
+                <button
                   onClick={() => remove(n)}
                   disabled={!!busy[n.id] || n.id === "node_local"}
                   className="ml-auto rounded bg-danger/10 px-2 py-1 text-xs text-danger disabled:opacity-50"
@@ -353,21 +371,31 @@ export default function ServersPage() {
   );
 }
 
-function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+function NodeForm({
+  initial,
+  onDone,
+  onCancel,
+}: {
+  initial?: DeployNodeListItem;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const isEdit = !!initial;
   const [form, setForm] = useState({
-    name: "",
-    host: "",
-    os_type: "linux",
-    env: "prod",
-    connect_type: "ssh",
-    ssh_port: 22,
-    ssh_user: "root",
+    name: initial?.name ?? "",
+    host: initial?.host ?? "",
+    os_type: initial?.os_type ?? "linux",
+    env: initial?.env ?? "prod",
+    connect_type: initial?.connect_type ?? "ssh",
+    ssh_port: initial?.ssh_port ?? 22,
+    ssh_user: initial?.ssh_user ?? "root",
     ssh_key: "",
-    winrm_user: "",
+    winrm_user: initial?.winrm_user ?? "",
     winrm_password: "",
-    docker_url: "",
-    max_apps: 0,
-    description: "",
+    winrm_port: initial?.winrm_port ?? 5985,
+    docker_url: initial?.docker_url ?? "",
+    max_apps: initial?.max_apps ?? 0,
+    description: initial?.description ?? "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -380,21 +408,26 @@ function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
     }
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/deploy-nodes`, {
-        method: "POST",
+      const url = isEdit
+        ? `${API_BASE_URL}/deploy-nodes/${initial!.id}`
+        : `${API_BASE_URL}/deploy-nodes`;
+      const method = isEdit ? "PUT" : "POST";
+      // 编辑时若未填 winrm 密码则不覆盖（后端空字符串会覆盖；前端传空即清空——符合预期，用户改别的字段无需重填密码仅在新增时要求）。
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       const j = await res.json();
       if (j.code !== 0 && j.code !== undefined) {
-        toast.error(j.message || "创建失败");
+        toast.error(j.message || "保存失败");
         return;
       }
-      toast.success("节点已创建");
+      toast.success(isEdit ? "节点已更新" : "节点已创建");
       onDone();
       onCancel();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "创建失败");
+      toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
       setSaving(false);
     }
@@ -403,11 +436,15 @@ function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
   const inputCls = "w-full rounded border border-border bg-surface px-2 py-1 text-sm text-text";
   const labelCls = "text-xs text-text-muted";
   const isWin = form.os_type === "windows";
-  const isSSH = form.connect_type === "ssh";
+  const ct = form.connect_type;
+  // 按 connect_type 显示对应端口字段：ssh→ssh_port(默认 22)，winrm→winrm_port(默认 5985)，
+  // docker_tcp→默认无远程端口（展示 ssh_port 兜底，不影响逻辑）。
+  const showSSHPort = ct === "ssh" || ct === "docker_tcp";
+  const showWinRMPort = ct === "winrm";
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-      <div className="font-semibold text-text">添加部署节点</div>
+      <div className="font-semibold text-text">{isEdit ? "编辑部署节点" : "添加部署节点"}</div>
       <div className="grid gap-3 md:grid-cols-3">
         <div>
           <div className={labelCls}>名称 *</div>
@@ -462,16 +499,29 @@ function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
             <option value="docker_tcp">docker_tcp</option>
           </select>
         </div>
-        <div>
-          <div className={labelCls}>SSH 端口</div>
-          <input
-            type="number"
-            className={inputCls}
-            value={form.ssh_port}
-            onChange={(e) => set("ssh_port", Number(e.target.value))}
-          />
-        </div>
-        {isSSH && (
+        {showSSHPort && (
+          <div>
+            <div className={labelCls}>SSH 端口</div>
+            <input
+              type="number"
+              className={inputCls}
+              value={form.ssh_port}
+              onChange={(e) => set("ssh_port", Number(e.target.value))}
+            />
+          </div>
+        )}
+        {showWinRMPort && (
+          <div>
+            <div className={labelCls}>WinRM 端口</div>
+            <input
+              type="number"
+              className={inputCls}
+              value={form.winrm_port}
+              onChange={(e) => set("winrm_port", Number(e.target.value))}
+            />
+          </div>
+        )}
+        {ct === "ssh" && (
           <>
             <div>
               <div className={labelCls}>SSH 用户</div>
@@ -488,12 +538,14 @@ function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
                 rows={2}
                 value={form.ssh_key}
                 onChange={(e) => set("ssh_key", e.target.value)}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                placeholder={
+                  isEdit ? "编辑时留空不修改私钥" : "-----BEGIN OPENSSH PRIVATE KEY-----"
+                }
               />
             </div>
           </>
         )}
-        {isWin && (
+        {ct === "winrm" && (
           <>
             <div>
               <div className={labelCls}>WinRM 用户</div>
@@ -510,6 +562,7 @@ function AddNodeForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
                 type="password"
                 value={form.winrm_password}
                 onChange={(e) => set("winrm_password", e.target.value)}
+                placeholder={isEdit ? "编辑时留空不修改密码" : ""}
               />
             </div>
           </>

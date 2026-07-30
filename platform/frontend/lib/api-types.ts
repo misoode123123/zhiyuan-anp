@@ -6749,6 +6749,8 @@ export interface DeployNode {
     connect_type: string;
     ssh_port: number;
     winrm_user?: string;
+    /** @description WinRM 端口（默认 5985）；connect_type=winrm 时使用 */
+    winrm_port?: number;
     last_seen?: string;
 }
 

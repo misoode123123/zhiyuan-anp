@@ -141,7 +141,11 @@ func NewWinRMExecutor(n *DeployNode) (*WinRMExecutor, error) {
 }
 
 func (e *WinRMExecutor) endpoint() *winrm.Endpoint {
-	return &winrm.Endpoint{Host: e.node.Host, Port: 5985, HTTPS: false, Insecure: true}
+	port := e.node.WinRMPort
+	if port <= 0 {
+		port = 5985
+	}
+	return &winrm.Endpoint{Host: e.node.Host, Port: port, HTTPS: false, Insecure: true}
 }
 
 // Run 用 masterzen/winrm 的 RunWithContext 执行命令。

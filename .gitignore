@@ -5,6 +5,7 @@ Thumbs.db
 .vscode/
 *.swp
 .claude/
+.superpowers/
 
 # ===== Env / Secrets =====
 .env

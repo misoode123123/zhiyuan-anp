@@ -1,6 +1,7 @@
 package appdeploy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -22,7 +23,7 @@ func setupNodeTestDB(t *testing.T) *sqlx.DB {
 	id TEXT PRIMARY KEY, name TEXT, host TEXT, docker_url TEXT, ssh_user TEXT,
 	status TEXT, max_apps INTEGER, description TEXT, created_at DATETIME,
 	os_type TEXT, env TEXT, connect_type TEXT, ssh_port INTEGER, ssh_key TEXT,
-	winrm_user TEXT, winrm_password TEXT, last_seen DATETIME, provision_log TEXT)`)
+	winrm_user TEXT, winrm_password TEXT, winrm_port INTEGER, last_seen DATETIME, provision_log TEXT)`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,93 @@ func TestNodeStore_SetNodeStatus(t *testing.T) {
 	}
 }
 
-// TestProvisionNode_RejectDockerTCP docker_tcp 节点不应走 provision。
+// TestNodeStore_Create_WinRMPortDefault 新建 WinRM 节点未填 winrm_port 时默认 5985。
+func TestNodeStore_Create_WinRMPortDefault(t *testing.T) {
+	db := setupNodeTestDB(t)
+	s := NewNodeStore(db)
+	n := &DeployNode{Name: "win-srv", Host: "10.0.0.20", OSType: "windows", ConnectType: "winrm", WinRMUser: "admin", WinRMPassword: "pass"}
+	if err := s.Create(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(context.Background(), n.ID)
+	if got.WinRMPort != 5985 {
+		t.Fatalf("winrm_port default = %d, want 5985", got.WinRMPort)
+	}
+}
+
+// TestNodeStore_Update 验证 Update 能改字段且保留 created_at/ID。
+func TestNodeStore_Update(t *testing.T) {
+	db := setupNodeTestDB(t)
+	s := NewNodeStore(db)
+	n := &DeployNode{Name: "srv-edit", Host: "10.0.0.5", OSType: "linux", Env: "dev", ConnectType: "ssh", SSHPort: 22}
+	if err := s.Create(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := s.Get(context.Background(), n.ID)
+	orig.Name = "srv-renamed"
+	orig.Host = "10.0.0.55"
+	orig.ConnectType = "winrm"
+	orig.WinRMPort = 6985
+	orig.WinRMUser = "admin"
+	orig.WinRMPassword = "newpass"
+	orig.MaxApps = 30
+	orig.Description = "edited"
+	if err := s.Update(context.Background(), orig); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(context.Background(), n.ID)
+	if got.Name != "srv-renamed" || got.Host != "10.0.0.55" || got.WinRMPort != 6985 || got.MaxApps != 30 || got.Description != "edited" {
+		t.Fatalf("update not applied: %+v", got)
+	}
+	if !got.CreatedAt.Equal(orig.CreatedAt) {
+		t.Fatalf("created_at changed: got %v want %v", got.CreatedAt, orig.CreatedAt)
+	}
+}
+
+// TestUpdateNode_Handler PUT /deploy-nodes/:nid 返回更新后的节点（凭证掩码）。
+func TestUpdateNode_Handler(t *testing.T) {
+	db := setupNodeTestDB(t)
+	store := NewStore(db)
+	h := NewHandler(store, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.Register(r.Group("/api/v1"))
+
+	n := &DeployNode{Name: "h-srv", Host: "10.0.0.6", ConnectType: "winrm", WinRMUser: "admin", WinRMPassword: "secret", WinRMPort: 5985}
+	if err := h.nodeStore.Create(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"name": "h-srv-2", "host": "10.0.0.66", "connect_type": "winrm",
+		"winrm_user": "admin", "winrm_password": "newsecret", "winrm_port": 6985,
+		"os_type": "windows", "env": "prod",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/deploy-nodes/"+n.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 0 {
+		t.Fatalf("code=%d", resp.Code)
+	}
+	if resp.Data["name"] != "h-srv-2" || resp.Data["host"] != "10.0.0.66" {
+		t.Fatalf("update response wrong: %v", resp.Data)
+	}
+	if v, _ := resp.Data["winrm_password"].(string); v != "" {
+		t.Errorf("winrm_password not masked in update response: %v", v)
+	}
+	got, _ := h.nodeStore.Get(context.Background(), n.ID)
+	if got.WinRMPort != 6985 {
+		t.Fatalf("winrm_port not persisted: %d", got.WinRMPort)
+	}
+}
 func TestProvisionNode_RejectDockerTCP(t *testing.T) {
 	db := setupNodeTestDB(t)
 	store := NewStore(db)

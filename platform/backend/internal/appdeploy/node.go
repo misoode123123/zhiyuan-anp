@@ -26,6 +26,7 @@ type DeployNode struct {
 	SSHKey        string     `json:"ssh_key,omitempty" db:"ssh_key"`
 	WinRMUser     string     `json:"winrm_user,omitempty" db:"winrm_user"`
 	WinRMPassword string     `json:"winrm_password,omitempty" db:"winrm_password"`
+	WinRMPort     int        `json:"winrm_port,omitempty" db:"winrm_port"`
 	LastSeen      *time.Time `json:"last_seen,omitempty" db:"last_seen"`
 	ProvisionLog  string     `json:"provision_log,omitempty" db:"provision_log"`
 }
@@ -43,7 +44,7 @@ func (s *NodeStore) List(ctx context.Context) ([]DeployNode, error) {
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
 			os_type, env, connect_type, ssh_port,
 			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
-			last_seen, COALESCE(provision_log,'') AS provision_log
+			winrm_port, last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node ORDER BY created_at`)
 	return list, err
 }
@@ -54,7 +55,7 @@ func (s *NodeStore) Get(ctx context.Context, id string) (*DeployNode, error) {
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
 			os_type, env, connect_type, ssh_port,
 			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
-			last_seen, COALESCE(provision_log,'') AS provision_log
+			winrm_port, last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node WHERE id = $1`, id)
 	return &n, err
 }
@@ -82,18 +83,42 @@ func (s *NodeStore) Create(ctx context.Context, n *DeployNode) error {
 	if n.SSHPort == 0 {
 		n.SSHPort = 22
 	}
+	if n.WinRMPort == 0 {
+		n.WinRMPort = 5985
+	}
 	n.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO deploy_node (id, name, host, docker_url, ssh_user, status, max_apps, description,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, winrm_port, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		n.ID, n.Name, n.Host, n.DockerURL, n.SSHUser, n.Status, n.MaxApps, n.Description,
-		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey, n.WinRMUser, n.WinRMPassword, n.CreatedAt)
+		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey, n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.CreatedAt)
 	return err
 }
 
 func (s *NodeStore) Delete(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM deploy_node WHERE id = $1 AND id != 'node_local'`, id)
+	return err
+}
+
+// Update 编辑节点（不含 created_at；updated_at 若表有该列则一并写 now()，无则不写）。
+// 与 Delete 一致：不硬保护 node_local，由前端控制是否允许编辑本地节点。
+func (s *NodeStore) Update(ctx context.Context, n *DeployNode) error {
+	if n.WinRMPort == 0 {
+		n.WinRMPort = 5985
+	}
+	if n.SSHPort == 0 {
+		n.SSHPort = 22
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE deploy_node SET
+			name=$1, host=$2, docker_url=$3, ssh_user=$4, status=$5, max_apps=$6, description=$7,
+			os_type=$8, env=$9, connect_type=$10, ssh_port=$11, ssh_key=$12,
+			winrm_user=$13, winrm_password=$14, winrm_port=$15
+		 WHERE id=$16`,
+		n.Name, n.Host, n.DockerURL, n.SSHUser, n.Status, n.MaxApps, n.Description,
+		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey,
+		n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.ID)
 	return err
 }
 
