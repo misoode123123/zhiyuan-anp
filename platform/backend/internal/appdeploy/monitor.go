@@ -45,7 +45,7 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 	} else {
 		cpu, _, _, _ := exec.Run(ctx, `top -bn1 | grep "Cpu(s)"`)
 		mem, _, _, _ := exec.Run(ctx, `free -k`)
-		disk, _, _, _ := exec.Run(ctx, `df -k /`)
+		disk, _, _, _ := exec.Run(ctx, `df -kP /`)
 		load, _, _, _ := exec.Run(ctx, `cat /proc/loadavg`)
 		up, _, _, _ := exec.Run(ctx, `uptime -p`)
 		parsed, err := parseLinuxMetrics(cpu, mem, disk, load, up)
@@ -86,7 +86,9 @@ func (m *ServerMonitor) Start(ctx context.Context) {
 						continue // docker_tcp 节点不采（非 SSH/WinRM）
 					}
 					if err := m.collectNode(ctx, &n); err != nil {
-						// 采集失败：标记 degraded（log）
+						// I5 修复（spec §6.5）：采集失败标 degraded，前端看到节点异常。
+						// 注意：成功采集后不覆盖 ready/provision 等状态（避免误把已 ready 节点刷回 online）。
+						_ = m.nodeStore.SetNodeStatus(ctx, n.ID, "degraded", "采集失败: "+err.Error())
 						fmt.Printf("collect %s failed: %v\n", n.ID, err)
 					}
 				}
@@ -112,14 +114,16 @@ func parseLinuxMetrics(cpuOut, memOut, diskOut, loadOut, upOut string) (ServerMe
 	} else {
 		return m, fmt.Errorf("parseLinuxMetrics: mem 'Mem:' not found in %q", memOut)
 	}
-	// df -k /：1K-blocks  Used ... 行末挂载点 /。提取前两个整数（兼容带单位后缀如 20G）。
-	diskRe := regexp.MustCompile(`(\d+)[A-Za-z%]*\s+(\d+)[A-Za-z%]*`)
-	if sm := diskRe.FindStringSubmatch(diskOut); len(sm) >= 3 {
-		m.DiskTotal, _ = strconv.ParseInt(sm[1], 10, 64)
-		m.DiskUsed, _ = strconv.ParseInt(sm[2], 10, 64)
-	} else {
+	// disk：df -kP / 输出（POSIX 可预测，无换行折行）。按行 split 跳过表头，
+	// 取数据行第 2 列(1024-blocks=Total) 与第 3 列(Used)。
+	// I3 修复：原正则 (\d+)[A-Za-z%]*\s+(\d+) 会先匹配设备名尾数字（/dev/vda1 的 1），
+	// 导致 DiskTotal=1。改为按行 + 字段索引，可靠。
+	dt, du, ok := parseDiskOut(diskOut)
+	if !ok {
 		return m, fmt.Errorf("parseLinuxMetrics: disk numbers not found in %q", diskOut)
 	}
+	m.DiskTotal = dt
+	m.DiskUsed = du
 	// loadavg: 0.50 0.40 0.30 ...
 	if la := extractFloat(loadOut, `^(\d+\.?\d*)`); la >= 0 {
 		m.LoadAvg = la
@@ -176,4 +180,26 @@ func extractInt(s, pattern string) int64 {
 	}
 	i, _ := strconv.ParseInt(sm[1], 10, 64)
 	return i
+}
+
+// parseDiskOut 解析 `df -kP /` 输出：跳过表头，取首个数据行第 2(1K-blocks=Total)、
+// 第 3(Used) 列。df -kP 保证每挂载点一行、列名固定，避免旧正则误抓设备名尾数字。
+func parseDiskOut(diskOut string) (total, used int64, ok bool) {
+	lines := strings.Split(strings.TrimSpace(diskOut), "\n")
+	if len(lines) < 2 {
+		return 0, 0, false
+	}
+	for _, line := range lines[1:] { // 跳过表头 "Filesystem 1024-blocks ..."
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		t, e1 := strconv.ParseInt(fields[1], 10, 64) // 1024-blocks
+		u, e2 := strconv.ParseInt(fields[2], 10, 64) // Used
+		if e1 != nil || e2 != nil {
+			continue
+		}
+		return t, u, true
+	}
+	return 0, 0, false
 }

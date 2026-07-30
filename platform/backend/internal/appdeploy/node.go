@@ -27,6 +27,7 @@ type DeployNode struct {
 	WinRMUser     string     `json:"winrm_user,omitempty" db:"winrm_user"`
 	WinRMPassword string     `json:"winrm_password,omitempty" db:"winrm_password"`
 	LastSeen      *time.Time `json:"last_seen,omitempty" db:"last_seen"`
+	ProvisionLog  string     `json:"provision_log,omitempty" db:"provision_log"`
 }
 
 // NodeStore 节点数据访问。
@@ -40,7 +41,8 @@ func (s *NodeStore) List(ctx context.Context) ([]DeployNode, error) {
 	var list []DeployNode
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen
+			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen,
+			COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node ORDER BY created_at`)
 	return list, err
 }
@@ -49,7 +51,8 @@ func (s *NodeStore) Get(ctx context.Context, id string) (*DeployNode, error) {
 	var n DeployNode
 	err := s.db.GetContext(ctx, &n,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen
+			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen,
+			COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node WHERE id = $1`, id)
 	return &n, err
 }
@@ -106,11 +109,11 @@ func (s *NodeStore) AppCount(ctx context.Context, nodeID string) (int, error) {
 	return n, err
 }
 
-// SetNodeStatus 更新节点 status + last_seen。
-// buildLog 参数当前不落库（deploy_node 无日志列），Task 9 如需持久化再加列；
-// 此处接收以保持 ProvisionNode 流的调用契约稳定。
+// SetNodeStatus 更新节点 status + last_seen + provision_log（I4 修复：provision 日志落库，
+// spec §4.4）。buildLog 为空时清空旧日志（如重新 provisioning 前重置）。
 func (s *NodeStore) SetNodeStatus(ctx context.Context, id, status, buildLog string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE deploy_node SET status=$1, last_seen=$2 WHERE id=$3`, status, time.Now(), id)
+		`UPDATE deploy_node SET status=$1, last_seen=$2, provision_log=$3 WHERE id=$4`,
+		status, time.Now(), buildLog, id)
 	return err
 }

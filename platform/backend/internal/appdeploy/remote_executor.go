@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/masterzen/winrm"
 	"golang.org/x/crypto/ssh"
@@ -54,8 +55,10 @@ func (e *SSHExecutor) dial(ctx context.Context) (*ssh.Client, error) {
 		return nil, fmt.Errorf("parse ssh key: %w", err)
 	}
 	cfg := &ssh.ClientConfig{
-		User:            firstNonEmpty(e.node.SSHUser, "root"),
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		User: firstNonEmpty(e.node.SSHUser, "root"),
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		// TODO(security): 生产环境换用 ssh.FixedHostKey + 读取 ~/.ssh/known_hosts 校验，
+		// 防中间人攻击。本期为打通多机部署链路暂用 InsecureIgnoreHostKey（defer 真正修复）。
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	addr := fmt.Sprintf("%s:%d", e.node.Host, sshPort(e.node))
@@ -91,10 +94,12 @@ func (e *SSHExecutor) Run(ctx context.Context, cmd string) (string, string, int,
 	exitCode := 0
 	if err != nil {
 		if ee, ok := err.(*ssh.ExitError); ok {
+			// 非零退出：返回非 nil error，调用方只判 err 即可（I1 修复）。
+			// 携带 exit + stderr 摘要，避免上游 Provisioner/NativeDeployer 失败误报成功。
 			exitCode = ee.ExitStatus()
-		} else {
-			return stdout.String(), stderr.String(), -1, err
+			return stdout.String(), stderr.String(), exitCode, fmt.Errorf("exit %d: %s", exitCode, stderrOr(stdout, stderr))
 		}
+		return stdout.String(), stderr.String(), -1, err
 	}
 	return stdout.String(), stderr.String(), exitCode, nil
 }
@@ -116,7 +121,9 @@ func (e *SSHExecutor) PutFile(ctx context.Context, localPath, remotePath string)
 		return err
 	}
 	defer sess.Close()
-	return sess.Run(fmt.Sprintf("echo %s | base64 -d > %s", b64, remotePath))
+	// M3 修复：remotePath 单引号包裹，防 deploy.yaml 不可信时的 shell 注入。
+	// 单引号内再内联转义出现的单引号（' → '\''）。
+	return sess.Run(fmt.Sprintf("echo %s | base64 -d > '%s'", b64, sshQuote(remotePath)))
 }
 
 func (e *SSHExecutor) TestConnection(ctx context.Context) error {
@@ -146,6 +153,11 @@ func (e *WinRMExecutor) Run(ctx context.Context, cmd string) (string, string, in
 	}
 	var stdout, stderr bytes.Buffer
 	exitCode, runErr := c.RunWithContext(ctx, cmd, &stdout, &stderr)
+	// I2 修复：非零退出转成非 nil error（masterzen/winrm 仅对连接层错误返回 err）。
+	// 调用方只判 err 即可，Provisioner/NativeDeployer 失败不再被吞。
+	if runErr == nil && exitCode != 0 {
+		runErr = fmt.Errorf("exit %d: %s", exitCode, stderrOr(stdout, stderr))
+	}
 	return stdout.String(), stderr.String(), exitCode, runErr
 }
 
@@ -156,7 +168,9 @@ func (e *WinRMExecutor) PutFile(ctx context.Context, localPath, remotePath strin
 		return err
 	}
 	b64 := base64.StdEncoding.EncodeToString(data)
-	ps := fmt.Sprintf(`$b=[Convert]::FromBase64String("%s"); [IO.File]::WriteAllBytes("%s",$b)`, b64, remotePath)
+	// M3 修复：remotePath 用单引号包裹进 PowerShell 字符串，防注入。
+	// PowerShell 单引号字符串内 ' 转义为 ''。
+	ps := fmt.Sprintf(`$b=[Convert]::FromBase64String("%s"); [IO.File]::WriteAllBytes('%s',$b)`, b64, psQuote(remotePath))
 	_, _, _, err = e.Run(ctx, ps)
 	return err
 }
@@ -188,4 +202,32 @@ func homeDir() string {
 	}
 	// 兜底：Windows %USERPROFILE% / Unix $HOME
 	return os.Getenv("HOME")
+}
+
+// stderrOr 返回 stderr（非空）或 stdout 的截断摘要，用于非零退出的错误信息。
+func stderrOr(stdout, stderr bytes.Buffer) string {
+	if s := stderr.String(); s != "" {
+		return truncateMsg(s, 200)
+	}
+	return truncateMsg(stdout.String(), 200)
+}
+
+func truncateMsg(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// sshQuote 把 remotePath 转成 bash 单引号安全字面量（'…'），' 转义为 '\''。
+// 用于 SSH PutFile 的重定向目标，防 deploy.yaml 不可信时的 shell 注入。
+func sshQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// psQuote 把 remotePath 转成 PowerShell 单引号字符串字面量，' 转义为 ''。
+// 用于 WinRM PutFile 的 [IO.File]::WriteAllBytes 路径参数，防注入。
+func psQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }

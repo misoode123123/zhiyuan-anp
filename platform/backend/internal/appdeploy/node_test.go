@@ -22,7 +22,7 @@ func setupNodeTestDB(t *testing.T) *sqlx.DB {
 	id TEXT PRIMARY KEY, name TEXT, host TEXT, docker_url TEXT, ssh_user TEXT,
 	status TEXT, max_apps INTEGER, description TEXT, created_at DATETIME,
 	os_type TEXT, env TEXT, connect_type TEXT, ssh_port INTEGER, ssh_key TEXT,
-	winrm_user TEXT, winrm_password TEXT, last_seen DATETIME)`)
+	winrm_user TEXT, winrm_password TEXT, last_seen DATETIME, provision_log TEXT)`)
 	if err != nil {
 		t.Fatal(err)
 	}

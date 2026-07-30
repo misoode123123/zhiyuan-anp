@@ -1516,6 +1516,23 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		h.markFailed(ctx, psID, a.ID, reason, "")
 		return
 	}
+	// I6 修复：原生部署分流 —— 若应用 RepoDir 含 deploy.yaml 且目标节点为 ssh/winrm，
+	// 走 NativeDeployer（非容器原生部署：传文件 + 渲染脚本 + 远程执行 + 健康检查），
+	// 不走 docker build/run。web 应用（无 deploy.yaml 或节点为 docker_tcp）仍走下方 docker 链路。
+	if nodeID != "" && nodeID != "node_local" && h.nodeStore != nil {
+		if node, e := h.nodeStore.Get(ctx, nodeID); e == nil && node != nil &&
+			(node.ConnectType == "ssh" || node.ConnectType == "winrm") {
+			if desc, derr := loadDeployDesc(a.RepoDir); derr == nil && desc != nil {
+				if nerr := h.deployNative(ctx, a, ins, env, node, desc); nerr != nil {
+					ins.Status = "failed"
+					ins.LastError = nerr.Error()
+					_ = h.store.UpdateInstance(ctx, ins)
+					h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog)
+				}
+				return
+			}
+		}
+	}
 	// 清理该 app+env 所有历史容器（DB 记录的 + 孤儿残留），彻底释放端口避免漂移/Conflict
 	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+a.Name+"-"+env+"-"); err != nil {
 		zap.L().Warn("清理历史容器失败（不阻塞部署）",
@@ -1593,6 +1610,44 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	if env != EnvProd {
 		_ = h.store.UpdateAppStatus(ctx, a.ID, "running") // test 成功也回 running，避免卡 building
 	}
+}
+
+// deployNative 原生部署链路（I6）：应用 RepoDir 含 deploy.yaml 且目标节点为 ssh/winrm 时，
+// 经 NativeDeployer 远程传文件 + 执行渲染脚本 + 健康检查，不走 docker build/run。
+// 成功写 instance(running) + 概览；失败返回 error，由调用方回写 failed。
+func (h *Handler) deployNative(ctx context.Context, a *Application, ins *AppInstance, env string, node *DeployNode, desc *DeployDesc) error {
+	exec, err := NewRemoteExecutor(node)
+	if err != nil {
+		return fmt.Errorf("new remote executor: %w", err)
+	}
+	// 原生部署限 10 分钟：远程执行/健康检查卡住时避免 goroutine 永挂。
+	deployCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	res, err := (&NativeDeployer{}).Deploy(deployCtx, a, node, exec, desc)
+	if err != nil {
+		ins.Status = "failed"
+		ins.LastError = err.Error()
+		ins.BuildLog = tail(res.Log, 2000)
+		_ = h.store.UpdateInstance(ctx, ins)
+		return err
+	}
+	ins.Status = "running"
+	ins.LastError = ""
+	ins.BuildLog = tail(res.Log, 2000)
+	// 原生部署无容器端口映射，URL 指向节点主机（具体端口由 deploy.yaml 内服务决定）。
+	if ins.URL == "" {
+		ins.URL = "http://" + node.Host
+	}
+	_ = h.store.UpdateInstance(ctx, ins)
+	// 写 appgw 路由表（与 docker 链路一致，失败不阻塞）。
+	if h.routeWriter != nil {
+		_ = h.routeWriter.UpsertRoute(ctx, a.ID, a.ProjectSpaceID, env, node.Host, 0)
+	}
+	h.syncOverviewIfProd(ctx, a, env)
+	if env != EnvProd {
+		_ = h.store.UpdateAppStatus(ctx, a.ID, "running")
+	}
+	return nil
 }
 
 // syncOverviewAll 所有环境都同步实例态到 application 概览。
