@@ -21,10 +21,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INLINE_SCRIPT }} />
-      </head>
       <body className="min-h-full bg-bg text-text">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INLINE_SCRIPT }} />
         <ThemeProvider>
           <Shell>{children}</Shell>
         </ThemeProvider>

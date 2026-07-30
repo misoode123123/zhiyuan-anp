@@ -37,9 +37,11 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 	metric.NodeID = n.ID
 	metric.CapturedAt = time.Now()
 	if n.OSType == "windows" {
-		cpu, _, _, _ := exec.Run(ctx, `(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue`)
-		mem, _, _, _ := exec.Run(ctx, `Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory | ConvertTo-Json`)
-		disk, _, _, _ := exec.Run(ctx, `(Get-Volume -DriveLetter C).Size,(Get-Volume -DriveLetter C).SizeRemaining`)
+		// WinRM 默认远端 shell 是 cmd.exe，不解析 PowerShell cmdlet，须 powershell -NoProfile -Command 包装。
+		// -NoProfile 加快启动（不加载用户 profile）。
+		cpu, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue"`)
+		mem, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory | ConvertTo-Json"`)
+		disk, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "(Get-Volume -DriveLetter C).Size,(Get-Volume -DriveLetter C).SizeRemaining"`)
 		parsed, err := parseWindowsMetrics(cpu, mem, disk, "")
 		if err != nil {
 			return err

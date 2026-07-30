@@ -41,7 +41,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored =
       typeof localStorage !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null;
-    if (stored) return; // 用户已手动选，不跟随系统
+    if (stored) {
+      // 同步 state 到 stored：SSR 渲染时 readInitialTheme 无 document 返回 'light'，
+      // hydration 后图标需对齐实际主题（用户选了 dark 但 server 渲染了太阳图标）。
+      setTheme(stored === "dark" ? "dark" : "light");
+      return; // 用户已手动选，不跟随系统
+    }
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => {
       // 重读 localStorage：用户在 mount 后手动切换过会写入 stored，此时停止跟随系统。
