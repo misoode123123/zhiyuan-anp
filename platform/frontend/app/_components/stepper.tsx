@@ -9,18 +9,18 @@ export function FlowStepper({ current }: { current: number }) {
           <span
             className={`rounded-full px-2 py-1 ${
               i === current
-                ? "bg-blue-600 text-white"
+                ? "bg-accent text-white"
                 : i < current
                   ? "bg-emerald-500 text-white"
-                  : "bg-neutral-200 text-neutral-500"
+                  : "bg-surface-2 text-text-muted"
             }`}
           >
             {i + 1}. {s}
           </span>
-          {i < STEPS.length - 1 && <span className="text-neutral-400">→</span>}
+          {i < STEPS.length - 1 && <span className="text-text-muted">→</span>}
         </div>
       ))}
-      <span className="ml-2 text-neutral-400">您在此</span>
+      <span className="ml-2 text-text-muted">您在此</span>
     </div>
   );
 }

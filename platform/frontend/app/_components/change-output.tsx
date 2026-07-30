@@ -16,20 +16,20 @@ export function ChangeOutput({ output }: { output: string }) {
   const s = parseChangeOutput(output);
   return (
     <div className="mt-2 space-y-1 text-xs">
-      {s["总结"] && <div className="rounded bg-blue-50 p-1.5 text-neutral-700">{s["总结"]}</div>}
-      {s["需求"] && <div className="text-neutral-400">关联需求: {s["需求"]}</div>}
-      {s["说明"] && <div className="text-neutral-600">📝 {s["说明"]}</div>}
+      {s["总结"] && <div className="rounded bg-blue-50 p-1.5 text-text">{s["总结"]}</div>}
+      {s["需求"] && <div className="text-text-muted">关联需求: {s["需求"]}</div>}
+      {s["说明"] && <div className="text-text-muted">📝 {s["说明"]}</div>}
       {s["commits"] && (
         <details>
-          <summary className="cursor-pointer text-neutral-500">commits</summary>
-          <pre className="mt-1 whitespace-pre-wrap rounded bg-neutral-100 p-1.5 text-neutral-600">
+          <summary className="cursor-pointer text-text-muted">commits</summary>
+          <pre className="mt-1 whitespace-pre-wrap rounded bg-surface-2 p-1.5 text-text-muted">
             {s["commits"]}
           </pre>
         </details>
       )}
       {s["diff"] && (
         <details>
-          <summary className="cursor-pointer font-medium text-blue-600">
+          <summary className="cursor-pointer font-medium text-accent">
             📄 代码 diff(点击展开)
           </summary>
           <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-green-300">
@@ -39,8 +39,8 @@ export function ChangeOutput({ output }: { output: string }) {
       )}
       {s["对话"] && (
         <details>
-          <summary className="cursor-pointer text-neutral-500">💬 opencode 对话</summary>
-          <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-1.5 text-neutral-500">
+          <summary className="cursor-pointer text-text-muted">💬 opencode 对话</summary>
+          <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap rounded bg-bg p-1.5 text-text-muted">
             {s["对话"]}
           </pre>
         </details>

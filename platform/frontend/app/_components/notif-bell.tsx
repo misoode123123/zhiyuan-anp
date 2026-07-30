@@ -80,7 +80,7 @@ export function NotifBell() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="relative rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100"
+        className="relative rounded-lg p-1.5 text-text-muted hover:bg-surface-2"
         aria-label="通知"
       >
         {/* 铃铛 SVG */}
@@ -105,23 +105,23 @@ export function NotifBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-neutral-200 bg-white shadow-xl">
+          <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-border bg-surface shadow-xl">
             <div className="flex items-center justify-between border-b px-3 py-2">
               <span className="text-sm font-semibold">通知</span>
               {unread > 0 && (
-                <button onClick={markAllRead} className="text-xs text-blue-600">
+                <button onClick={markAllRead} className="text-xs text-accent">
                   全部已读
                 </button>
               )}
             </div>
             <div className="max-h-80 overflow-y-auto">
               {items.length === 0 && (
-                <div className="px-3 py-6 text-center text-sm text-neutral-400">暂无通知</div>
+                <div className="px-3 py-6 text-center text-sm text-text-muted">暂无通知</div>
               )}
               {items.map((n) => (
                 <div
                   key={n.id}
-                  className={`cursor-pointer border-b px-3 py-2 hover:bg-neutral-50 ${n.read ? "opacity-50" : ""}`}
+                  className={`cursor-pointer border-b px-3 py-2 hover:bg-bg ${n.read ? "opacity-50" : ""}`}
                   onClick={() => {
                     markRead(n.id);
                     if (n.link) router.push(n.link);
@@ -129,11 +129,11 @@ export function NotifBell() {
                   }}
                 >
                   <div className="flex items-start gap-2">
-                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" />}
+                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />}
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium">{n.title}</div>
-                      {n.message && <div className="text-xs text-neutral-500">{n.message}</div>}
-                      <div className="text-[10px] text-neutral-400">
+                      {n.message && <div className="text-xs text-text-muted">{n.message}</div>}
+                      <div className="text-[10px] text-text-muted">
                         {new Date(n.created_at).toLocaleString("zh-CN", { hour12: false })}
                       </div>
                     </div>

@@ -10,7 +10,7 @@ export function TabBar() {
   const { tabs, close, refresh } = useTabs();
 
   return (
-    <div className="flex items-center gap-1 overflow-x-auto border-b border-neutral-200 bg-neutral-100 px-2 py-1">
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-border bg-surface-2 px-2 py-1">
       {tabs.map((t) => {
         const active = pathname === t.path;
         return (
@@ -20,8 +20,8 @@ export function TabBar() {
             onDoubleClick={() => refresh()}
             className={`flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-t px-3 py-1.5 text-xs ${
               active
-                ? "border-t-2 border-blue-600 bg-white text-blue-700"
-                : "text-neutral-600 hover:bg-neutral-200"
+                ? "border-t-2 border-blue-600 bg-surface text-blue-700"
+                : "text-text-muted hover:bg-surface-2"
             }`}
             title="单击切换 · 双击刷新"
           >
@@ -34,7 +34,7 @@ export function TabBar() {
                   close(t.path);
                   if (pathname === t.path) router.push("/");
                 }}
-                className="ml-1 text-neutral-400 hover:text-red-600"
+                className="ml-1 text-text-muted hover:text-red-600"
                 title="关闭"
               >
                 ×

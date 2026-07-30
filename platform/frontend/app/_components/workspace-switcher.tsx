@@ -48,10 +48,10 @@ export function WorkspaceSwitcher() {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs text-neutral-500">项目空间</span>
+        <span className="text-xs text-text-muted">项目空间</span>
         <button
           onClick={() => setCreating(!creating)}
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs text-accent hover:underline"
           title="新建项目空间（浏览器创建为 UTF-8，避免乱码）"
         >
           {creating ? "取消" : "＋ 新建"}
@@ -59,20 +59,20 @@ export function WorkspaceSwitcher() {
       </div>
 
       {creating && (
-        <div className="mb-2 space-y-1 rounded-md bg-neutral-50 p-2">
+        <div className="mb-2 space-y-1 rounded-md bg-bg p-2">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="名称（如：客服系统）"
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-border px-2 py-1 text-sm"
           />
           <input
             value={newSlug}
             onChange={(e) => setNewSlug(e.target.value)}
             placeholder="英文标识（如：cs）"
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-border px-2 py-1 text-sm"
           />
-          <button onClick={create} className="w-full rounded bg-blue-600 py-1 text-xs text-white">
+          <button onClick={create} className="w-full rounded bg-accent py-1 text-xs text-white">
             创建
           </button>
         </div>
@@ -81,7 +81,7 @@ export function WorkspaceSwitcher() {
       <select
         value={current}
         onChange={(e) => pick(e.target.value)}
-        className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        className="w-full rounded-md border border-border px-2 py-1.5 text-sm"
       >
         <option value="">— 选择 —</option>
         {spaces.map((s) => (

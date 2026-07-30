@@ -65,7 +65,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
       {/* 侧边栏：桌面固定 / 移动端抽屉 */}
       <aside
-        className={`fixed z-40 flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-neutral-200 bg-[#f7f8fa] p-4 transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed z-40 flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-surface p-4 transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
         style={{ height: "100vh" }}
@@ -86,15 +86,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <WorkspaceSwitcher />
         <UserSwitcher />
         <Sidebar />
-        <div className="mt-auto text-xs text-neutral-400">v0.1.0</div>
+        <div className="mt-auto text-xs text-text-muted">v0.1.0</div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* 移动端顶栏（汉堡 + 标题） */}
-        <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 lg:hidden">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2 lg:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="rounded p-1.5 hover:bg-neutral-100"
+            className="rounded p-1.5 hover:bg-surface-2"
             aria-label="菜单"
           >
             <svg
