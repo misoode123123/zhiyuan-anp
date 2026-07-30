@@ -252,8 +252,16 @@ func main() {
 	artifactStore := appdeploy.NewArtifactStore(database)
 	artifactStorage := appdeploy.NewLocalArtifactStorage(artifactsBase)
 
+	// ---- 服务器监控：MetricStore + NodeStore + ServerMonitor（Task 9 注入）----
+	// metricStore 落库 server_metric/node_metric 快照；nodeStore 读 server_node；
+	// monitor.Start 后台采 CPU/内存/磁盘/网络 + 落库（interval 见 monitor.go）。
+	// appCount 取 nodeStore.AppCount（方法值，签名 func(ctx, nodeID)(int, error)）。
+	metricStore := appdeploy.NewMetricStore(database)
+	nodeStore := appdeploy.NewNodeStore(database)
+	monitor := appdeploy.NewServerMonitor(nodeStore, metricStore, nodeStore.AppCount)
+
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
-	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, nil, nil)
+	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, monitor, metricStore)
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)
@@ -313,6 +321,11 @@ func main() {
 	// ---- appgw_access_log TTL 清理（每天 1 次；保留窗口 ACCESS_LOG_RETAIN_DAYS 默认 30 天；0=关闭）----
 	// appgw 每请求记一条，不清理会无限涨。PurgeAccessLogs 删 created_at 早于 retainDays 前的行。
 	go runAccessLogPurgeTicker(backupCtx, logger, appgwStore)
+
+	// ---- 服务器指标采集（Task 9）：monitor.Start 内部 ticker 循环采 node metric → metricStore ----
+	// 复用 backupCtx：收到 SIGINT/SIGTERM 后一并优雅停止采集。Start 非阻塞，内部自起 goroutine。
+	monitor.Start(backupCtx)
+	logger.Info("server monitor started")
 
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
