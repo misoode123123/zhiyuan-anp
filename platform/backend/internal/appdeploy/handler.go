@@ -2124,9 +2124,8 @@ func (h *Handler) CollectNode(c *gin.Context) {
 		httpx.Err(c, 404, 40401, "节点不存在")
 		return
 	}
-	// docker_tcp 节点（如 node_local 本地节点）不走 RemoteExecutor，不远程采集。
-	// 本地节点指标由宿主监控负责（留下期），此处友好跳过不报 500。
-	if n.ConnectType == "docker_tcp" {
+	// node_local 走本地采集（读宿主 /host/proc）；其他 docker_tcp 节点（如远程 node_30）不远程采集。
+	if n.ConnectType == "docker_tcp" && n.ID != "node_local" {
 		httpx.OK(c, gin.H{"id": nid, "status": "skipped", "message": "docker_tcp 节点不走远程采集（本地节点用宿主监控）"})
 		return
 	}

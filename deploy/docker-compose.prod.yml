@@ -37,6 +37,7 @@ services:
       - ../data:/data
       - ../platform/opencode.json:/app/opencode.json
       - /var/run/docker.sock:/var/run/docker.sock # 应用部署引擎：后端控制宿主 Docker
+      - /proc:/host/proc:ro # 宿主 /proc 只读（node_local 本地采集 CPU/内存/负载/uptime）
       - ../data/repos:/data/repos # 产出应用源码（docker build 上下文）
       - ../data/opencode:/root/.local/share/opencode # opencode 会话/凭据持久化(跨 backend 重建不丢)
       - ../data/claude:/root/.claude # claude(Claude Code) 会话/凭据持久化(ttyd 工作台 --continue 据此恢复)

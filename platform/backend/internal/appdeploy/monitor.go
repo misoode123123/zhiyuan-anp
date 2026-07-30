@@ -3,6 +3,8 @@ package appdeploy
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,8 +24,11 @@ func NewServerMonitor(nodeStore *NodeStore, metricStore *MetricStore, appCount f
 	return &ServerMonitor{nodeStore: nodeStore, metricStore: metricStore, nodeAppCount: appCount, interval: 60 * time.Second}
 }
 
-// collectNode 经 RemoteExecutor 采集单节点指标。
+// collectNode 经 RemoteExecutor 采集单节点指标；node_local 走本地采集（读宿主 /host/proc）。
 func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
+	if n.ID == "node_local" {
+		return m.localCollectNode(ctx, n)
+	}
 	exec, err := NewRemoteExecutor(n)
 	if err != nil {
 		return err
@@ -82,8 +87,9 @@ func (m *ServerMonitor) Start(ctx context.Context) {
 			case <-ticker.C:
 				nodes, _ := m.nodeStore.List(ctx)
 				for _, n := range nodes {
-					if n.ConnectType == "docker_tcp" {
-						continue // docker_tcp 节点不采（非 SSH/WinRM）
+					// node_local 走本地采集（读宿主 /host/proc）；其他 docker_tcp 节点（如远程 node_30）仍跳过。
+					if n.ConnectType == "docker_tcp" && n.ID != "node_local" {
+						continue
 					}
 					if err := m.collectNode(ctx, &n); err != nil {
 						// I5 修复（spec §6.5）：采集失败标 degraded，前端看到节点异常。
@@ -202,4 +208,107 @@ func parseDiskOut(diskOut string) (total, used int64, ok bool) {
 		return t, u, true
 	}
 	return 0, 0, false
+}
+
+// localCollectNode 读宿主 /host/proc 采集本地节点（node_local）指标，不走 RemoteExecutor。
+// 依赖 docker-compose 把宿主 /proc 只读挂载到容器 /host/proc。磁盘用 df -k /data（/data 挂自宿主 /opt/anp/data）。
+func (m *ServerMonitor) localCollectNode(ctx context.Context, n *DeployNode) error {
+	var metric ServerMetric
+	metric.NodeID = n.ID
+	metric.CapturedAt = time.Now()
+
+	if b, err := os.ReadFile("/host/proc/stat"); err == nil {
+		if cpu, ok := parseHostProcStat(string(b)); ok {
+			metric.CPUPercent = cpu
+		}
+	}
+	if b, err := os.ReadFile("/host/proc/meminfo"); err == nil {
+		if total, avail, ok := parseHostProcMeminfo(string(b)); ok {
+			metric.MemTotal = total
+			metric.MemUsed = total - avail
+		}
+	}
+	if b, err := os.ReadFile("/host/proc/loadavg"); err == nil {
+		metric.LoadAvg = parseHostProcLoadavg(string(b))
+	}
+	if b, err := os.ReadFile("/host/proc/uptime"); err == nil {
+		metric.Uptime = formatUptime(string(b))
+	}
+	// 磁盘：df -kP /data（容器内 /data 挂自宿主 /opt/anp/data，df 看宿主分区）
+	if out, err := exec.CommandContext(ctx, "df", "-kP", "/data").Output(); err == nil {
+		if t, u, ok := parseDiskOut(string(out)); ok {
+			metric.DiskTotal = t
+			metric.DiskUsed = u
+		}
+	}
+	if m.nodeAppCount != nil {
+		metric.AppCount, _ = m.nodeAppCount(ctx, n.ID)
+	}
+	return m.metricStore.Insert(ctx, &metric)
+}
+
+// parseHostProcStat 解析 /host/proc/stat 第一行 `cpu user nice system idle iowait ...`，
+// 返回 CPU% = (1 - idle/total)*100（从启动累计平均，非实时，近似）。纯函数。
+func parseHostProcStat(stat string) (float64, bool) {
+	lines := strings.Split(stat, "\n")
+	if len(lines) == 0 {
+		return 0, false
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return 0, false
+	}
+	var vals []int64
+	for _, f := range fields[1:] {
+		n, err := strconv.ParseInt(f, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		vals = append(vals, n)
+	}
+	var total, idle int64
+	for i, v := range vals {
+		total += v
+		if i == 3 { // idle 在第 4 个值（index 3）
+			idle = v
+		}
+	}
+	if total == 0 {
+		return 0, false
+	}
+	return (1 - float64(idle)/float64(total)) * 100, true
+}
+
+// parseHostProcMeminfo 解析 /host/proc/meminfo，返回 MemTotal 与 MemAvailable（KB）。纯函数。
+func parseHostProcMeminfo(mem string) (total, avail int64, ok bool) {
+	total = extractInt(mem, `MemTotal:\s*(\d+)`)
+	avail = extractInt(mem, `MemAvailable:\s*(\d+)`)
+	if avail == 0 { // 老内核无 MemAvailable，降级 MemFree
+		avail = extractInt(mem, `MemFree:\s*(\d+)`)
+	}
+	return total, avail, total > 0
+}
+
+// parseHostProcLoadavg 解析 /host/proc/loadavg 第一列（1min 负载）。纯函数。
+func parseHostProcLoadavg(load string) float64 {
+	return extractFloat(load, `^(\d+\.?\d*)`)
+}
+
+// formatUptime 把 /host/proc/uptime 第一列秒数格式化为 "X days Yh Zm"。
+func formatUptime(up string) string {
+	fields := strings.Fields(up)
+	if len(fields) == 0 {
+		return ""
+	}
+	secs, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return ""
+	}
+	d := int(secs) / 86400
+	h := (int(secs) % 86400) / 3600
+	min := (int(secs) % 3600) / 60
+	if d > 0 {
+		return fmt.Sprintf("%d days %dh %dm", d, h, min)
+	}
+	return fmt.Sprintf("%dh %dm", h, min)
 }
