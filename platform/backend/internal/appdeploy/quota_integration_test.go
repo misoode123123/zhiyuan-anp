@@ -29,7 +29,7 @@ func newHTTPHandlerWithQuota(t *testing.T, quota fakeAppQuotaChecker) (*Handler,
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 	)
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, quota, nil, nil, nil, "")
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, quota, nil, nil, nil, "", nil, nil)
 	return h, db
 }
 
@@ -80,7 +80,7 @@ func TestHandler_Create_NoQuotaChecker(t *testing.T) {
 	db := testutil.TestDB(t)
 	testutil.Truncate(t, db, "appdeploy_application")
 	store := NewStore(db)
-	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "")
+	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
 	if h.quota != nil {
 		t.Errorf("quota 应为 nil")
 	}

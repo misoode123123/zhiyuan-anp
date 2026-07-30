@@ -50,6 +50,8 @@ type Handler struct {
 	standards   *standard.Store         // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
 	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
 	nodeStore   *NodeStore              // 部署节点（多机）；nil=仅本地
+	monitor     *ServerMonitor          // 服务器指标采集（Task 8 加；nil=未启用，Task 9 注入）
+	metricStore  *MetricStore            // 服务器指标持久化（Task 8 加；nil=未启用，Task 9 注入）
 	checkFn     checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 	// 非 web 形态构建产物链路（Task 10）；nil=未装配（BuildArtifacts/ListArtifacts/DownloadArtifact 报"功能未配置"）。
 	// Task 13 在 main.go 注入真实值；在此之前 factory 调用处传 nil 保证编译。
@@ -69,12 +71,13 @@ func (h *Handler) CodeWS() *codews.Manager { return h.codeWS }
 // NewHandler 构造。codeWS/changes/cfg/reqRepo/provisioner/routeWriter/standards/quota 可为 nil（不启用对应能力）。
 // buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 在 main.go 注入）。
 // scaffoldsBase 为脚手架种子根目录（建非 web 应用时克隆到 RepoDir）；空=不克隆脚手架。
-func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string) *Handler {
+// monitor/metricStore 为服务器指标采集链路（Task 8 加）；nil=未启用（Task 9 在 main.go 注入）。
+func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, changes *change.Store, cfg *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string, monitor *ServerMonitor, metricStore *MetricStore) *Handler {
 	var nodeStore *NodeStore
 	if store != nil {
 		nodeStore = NewNodeStore(store.db)
 	}
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage, scaffoldsBase: scaffoldsBase}
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, monitor: monitor, metricStore: metricStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage, scaffoldsBase: scaffoldsBase}
 	h.checkFn = checkRequirement
 	return h
 }
@@ -83,12 +86,13 @@ func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, change
 // 返回 *Handler 供 release 模块（发布后自动部署）复用。
 // buildCfgStore/artifactStore/artifactStorage 为非 web 构建产物链路；nil=未装配（Task 13 注入）。
 // scaffoldsBase 为脚手架种子根目录（建非 web 应用时克隆到 RepoDir）；空=不克隆。
-func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string) *Handler {
+// monitor/metricStore 为服务器指标采集链路（Task 8 加）；nil=未启用（Task 9 注入）。
+func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *change.Store, configStore *config.Store, reqRepo *requirement.Repository, provisioner *pgsupply.Provisioner, routeWriter appgw.RouteWriter, standards *standard.Store, quota AppQuotaChecker, buildCfgStore *BuildConfigStore, artifactStore *ArtifactStore, artifactStorage ArtifactStorage, scaffoldsBase string, monitor *ServerMonitor, metricStore *MetricStore) *Handler {
 	codeWS := codews.NewManager(appDeployHost, configStore)
 	if store != nil {
 		codeWS.SetSessionLogger(codews.NewPGSessionStore(store.db)) // 会话落库供绩效/互动统计
 	}
-	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase)
+	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, monitor, metricStore)
 	h.Register(r)
 	return h
 }
@@ -133,6 +137,9 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/deploy-nodes", h.CreateNode)
 	r.DELETE("/deploy-nodes/:nid", h.DeleteNode)
 	r.POST("/deploy-nodes/:nid/test", h.TestNode) // 测试连通性
+	r.POST("/deploy-nodes/:nid/provision", h.ProvisionNode) // 异步搭建环境（SSH/WinRM 节点）
+	r.POST("/deploy-nodes/:nid/collect", h.CollectNode)    // 手动触发一次指标采集
+	r.GET("/deploy-nodes/:nid/metrics", h.NodeMetrics)     // 历史指标趋势
 }
 
 // List 应用列表，附带各环境实例（前端展示 test/prod URL）。
@@ -1910,15 +1917,25 @@ func (h *Handler) ListNodes(c *gin.Context) {
 		httpx.Err(c, 500, 50014, err.Error())
 		return
 	}
-	// 附带每节点应用数
+	// 附带每节点应用数 + 最新指标（metricStore 为 nil 时跳过指标填充）
 	type nodeWithCount struct {
 		DeployNode
-		AppCount int `json:"app_count"`
+		AppCount     int            `json:"app_count"`
+		LatestMetric *ServerMetric  `json:"latest_metric,omitempty"`
 	}
 	out := []nodeWithCount{}
 	for _, n := range list {
 		cnt, _ := h.nodeStore.AppCount(c.Request.Context(), n.ID)
-		out = append(out, nodeWithCount{DeployNode: n, AppCount: cnt})
+		item := nodeWithCount{DeployNode: n, AppCount: cnt}
+		if h.metricStore != nil {
+			if m, err := h.metricStore.Latest(c.Request.Context(), n.ID); err == nil {
+				item.LatestMetric = m
+			}
+		}
+		// 掩码凭证：列表不回传敏感字段
+		item.WinRMPassword = ""
+		item.SSHKey = ""
+		out = append(out, item)
 	}
 	httpx.OK(c, out)
 }
@@ -1969,6 +1986,71 @@ func (h *Handler) TestNode(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"status": "ok", "detail": "Docker 连通"})
+}
+
+// ProvisionNode 异步搭建节点环境（docker_tcp 节点不支持，走 docker -H）。
+// 立即返回 provisioning，后台 goroutine 跑 Provisioner 并更新节点 status + last_seen。
+func (h *Handler) ProvisionNode(c *gin.Context) {
+	if h.nodeStore == nil {
+		httpx.Err(c, 500, 50014, "nodeStore 未初始化")
+		return
+	}
+	nid := c.Param("nid")
+	n, err := h.nodeStore.Get(c.Request.Context(), nid)
+	if err != nil || n == nil {
+		httpx.Err(c, 404, 40401, "节点不存在")
+		return
+	}
+	// docker_tcp 节点不走 RemoteExecutor（docker -H 直连），无法 provision
+	if n.ConnectType == "docker_tcp" || n.ConnectType == "" {
+		httpx.Err(c, 400, 40010, "docker_tcp 节点无需 provision（直接 docker -H 连通）")
+		return
+	}
+	_ = h.nodeStore.SetNodeStatus(c.Request.Context(), nid, "provisioning", "")
+	go func() {
+		exec, err := NewRemoteExecutor(n)
+		if err != nil {
+			_ = h.nodeStore.SetNodeStatus(context.Background(), nid, "provision_failed", err.Error())
+			return
+		}
+		log, err := (&Provisioner{}).Provision(context.Background(), n, exec)
+		if err != nil {
+			_ = h.nodeStore.SetNodeStatus(context.Background(), nid, "provision_failed", log+":"+err.Error())
+			return
+		}
+		_ = h.nodeStore.SetNodeStatus(context.Background(), nid, "ready", log)
+	}()
+	httpx.OK(c, gin.H{"id": nid, "status": "provisioning"})
+}
+
+// CollectNode 手动触发一次节点指标采集（monitor 为 nil 时报未启用）。
+func (h *Handler) CollectNode(c *gin.Context) {
+	if h.monitor == nil {
+		httpx.Err(c, 500, 50020, "监控未启用（monitor 未注入）")
+		return
+	}
+	nid := c.Param("nid")
+	if err := h.monitor.CollectOnce(c.Request.Context(), nid); err != nil {
+		httpx.Err(c, 500, 50020, "采集失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"id": nid, "status": "collected"})
+}
+
+// NodeMetrics 返回节点历史指标趋势（默认最近 60 条）。
+func (h *Handler) NodeMetrics(c *gin.Context) {
+	if h.metricStore == nil {
+		httpx.Err(c, 500, 50020, "指标库未启用（metricStore 未注入）")
+		return
+	}
+	nid := c.Param("nid")
+	limit := 60
+	list, err := h.metricStore.History(c.Request.Context(), nid, limit)
+	if err != nil {
+		httpx.Err(c, 500, 50020, "加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"metrics": list})
 }
 
 // worktreeDir 解析当前开发者 dev-<user> worktree 路径（与 Deploy 一致，handler.go:1277）。

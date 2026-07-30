@@ -105,3 +105,12 @@ func (s *NodeStore) AppCount(ctx context.Context, nodeID string) (int, error) {
 		`SELECT COUNT(*) FROM appdeploy_application WHERE deploy_node_id = $1 AND status = 'running'`, nodeID)
 	return n, err
 }
+
+// SetNodeStatus 更新节点 status + last_seen。
+// buildLog 参数当前不落库（deploy_node 无日志列），Task 9 如需持久化再加列；
+// 此处接收以保持 ProvisionNode 流的调用契约稳定。
+func (s *NodeStore) SetNodeStatus(ctx context.Context, id, status, buildLog string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE deploy_node SET status=$1, last_seen=$2 WHERE id=$3`, status, time.Now(), id)
+	return err
+}
