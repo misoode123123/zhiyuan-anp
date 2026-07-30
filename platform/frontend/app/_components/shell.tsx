@@ -12,6 +12,7 @@ import { installAuthInterceptor, isLoggedIn } from "@/lib/api";
 import { initErrorCapture } from "@/lib/error-report";
 import { ToastContainer } from "@/lib/toast";
 import { NotifBell } from "./notif-bell";
+import { ThemeToggle } from "./theme-toggle";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -74,9 +75,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             智源 <span className="text-blue-600">ANP</span>
           </div>
           <div className="flex items-center gap-1">
+            <ThemeToggle />
             <NotifBell />
             {/* 移动端关闭按钮 */}
-            <button onClick={() => setSidebarOpen(false)} className="text-neutral-400 lg:hidden">
+            <button onClick={() => setSidebarOpen(false)} className="text-text-muted lg:hidden">
               ×
             </button>
           </div>
