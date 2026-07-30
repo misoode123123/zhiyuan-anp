@@ -41,8 +41,9 @@ func (s *NodeStore) List(ctx context.Context) ([]DeployNode, error) {
 	var list []DeployNode
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen,
-			COALESCE(provision_log,'') AS provision_log
+			os_type, env, connect_type, ssh_port,
+			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
+			last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node ORDER BY created_at`)
 	return list, err
 }
@@ -51,8 +52,9 @@ func (s *NodeStore) Get(ctx context.Context, id string) (*DeployNode, error) {
 	var n DeployNode
 	err := s.db.GetContext(ctx, &n,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, last_seen,
-			COALESCE(provision_log,'') AS provision_log
+			os_type, env, connect_type, ssh_port,
+			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
+			last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node WHERE id = $1`, id)
 	return &n, err
 }
