@@ -44,14 +44,14 @@ type SOP = {
 };
 
 const HEALTH_COLOR: Record<string, string> = {
-  healthy: "bg-emerald-100 text-emerald-700",
-  degraded: "bg-amber-100 text-amber-700",
-  down: "bg-red-100 text-red-700",
+  healthy: "bg-success/10 text-success",
+  degraded: "bg-warn/10 text-warn",
+  down: "bg-danger/10 text-danger",
 };
 const SEV_COLOR: Record<string, string> = {
-  critical: "bg-red-100 text-red-700",
-  warning: "bg-amber-100 text-amber-700",
-  info: "bg-blue-100 text-blue-700",
+  critical: "bg-danger/10 text-danger",
+  warning: "bg-warn/10 text-warn",
+  info: "bg-accent/10 text-accent",
 };
 const HEALTH_ICON: Record<string, string> = { healthy: "✅", degraded: "⚠️", down: "❌" };
 
@@ -158,7 +158,7 @@ export default function OpsPage() {
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -169,26 +169,26 @@ export default function OpsPage() {
         <button
           onClick={inspect}
           disabled={busy}
-          className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="ml-auto rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {busy ? "巡检中…" : "🔍 巡检"}
         </button>
       </div>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         平台健康看板 + 告警 + SOP
         预案库。点击「巡检」触发健康检查，异常组件自动产生告警。高风险自愈经 🚪G6 人工确认。
       </p>
 
       {/* 总览健康 */}
       <div className="mb-4 flex items-center gap-2">
-        <span className="text-sm text-neutral-500">总体健康：</span>
+        <span className="text-sm text-text-muted">总体健康：</span>
         <span
           className={`rounded-md px-2 py-0.5 text-sm font-medium ${HEALTH_COLOR[dash?.overall_health ?? "healthy"]}`}
         >
           {HEALTH_ICON[dash?.overall_health ?? "healthy"]} {dash?.overall_health ?? "—"}
         </span>
         {dash && dash.open_alerts > 0 && (
-          <span className="rounded-md bg-red-100 px-2 py-0.5 text-sm text-red-700">
+          <span className="rounded-md bg-danger/10 px-2 py-0.5 text-sm text-danger">
             {dash.open_alerts} 个未恢复告警
           </span>
         )}
@@ -197,18 +197,18 @@ export default function OpsPage() {
       {/* 组件健康 */}
       <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         {(dash?.components ?? []).map((c) => (
-          <div key={c.name} className="rounded-lg border border-neutral-200 bg-white p-3">
+          <div key={c.name} className="rounded-lg border border-border bg-surface p-3">
             <div className="flex items-center justify-between">
               <span className="font-mono text-sm font-medium">{c.name}</span>
               <span
-                className={`rounded px-1.5 py-0.5 text-xs ${HEALTH_COLOR[c.status] ?? "bg-neutral-100"}`}
+                className={`rounded px-1.5 py-0.5 text-xs ${HEALTH_COLOR[c.status] ?? "bg-surface-2"}`}
               >
                 {HEALTH_ICON[c.status]} {c.status}
               </span>
             </div>
-            <div className="mt-1 text-xs text-neutral-500">{c.detail}</div>
+            <div className="mt-1 text-xs text-text-muted">{c.detail}</div>
             {c.latency_ms ? (
-              <div className="mt-1 text-[11px] text-neutral-400">{c.latency_ms} ms</div>
+              <div className="mt-1 text-[11px] text-text-muted">{c.latency_ms} ms</div>
             ) : null}
           </div>
         ))}
@@ -243,17 +243,17 @@ export default function OpsPage() {
             <span className="text-sm font-semibold">告警（{alerts.length}）</span>
             <button
               onClick={() => setShowAlertForm(!showAlertForm)}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-accent hover:underline"
             >
               ＋ 新建
             </button>
           </div>
           {showAlertForm && (
-            <div className="mb-2 space-y-1 rounded-md border border-neutral-200 bg-white p-2">
+            <div className="mb-2 space-y-1 rounded-md border border-border bg-surface p-2">
               <select
                 value={alertForm.severity}
                 onChange={(e) => setAlertForm({ ...alertForm, severity: e.target.value })}
-                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="rounded border border-border px-2 py-1 text-sm"
               >
                 <option value="critical">critical</option>
                 <option value="warning">warning</option>
@@ -263,17 +263,17 @@ export default function OpsPage() {
                 placeholder="标题"
                 value={alertForm.title}
                 onChange={(e) => setAlertForm({ ...alertForm, title: e.target.value })}
-                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="w-full rounded border border-border px-2 py-1 text-sm"
               />
               <input
                 placeholder="描述（可选）"
                 value={alertForm.description}
                 onChange={(e) => setAlertForm({ ...alertForm, description: e.target.value })}
-                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="w-full rounded border border-border px-2 py-1 text-sm"
               />
               <button
                 onClick={submitAlert}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+                className="rounded bg-accent px-3 py-1 text-xs text-white"
               >
                 创建告警
               </button>
@@ -281,33 +281,33 @@ export default function OpsPage() {
           )}
           <div className="space-y-2">
             {alerts.map((a) => (
-              <div key={a.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+              <div key={a.id} className="rounded-md border border-border bg-surface p-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${SEV_COLOR[a.severity] ?? "bg-neutral-100"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${SEV_COLOR[a.severity] ?? "bg-surface-2"}`}
                   >
                     {a.severity}
                   </span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${a.status === "firing" ? "bg-red-50 text-red-600" : "bg-neutral-100 text-neutral-500"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${a.status === "firing" ? "bg-danger/10 text-danger" : "bg-surface-2 text-text-muted"}`}
                   >
                     {a.status}
                   </span>
-                  <span className="font-mono text-xs text-neutral-400">{a.source}</span>
+                  <span className="font-mono text-xs text-text-muted">{a.source}</span>
                   {a.status === "firing" && (
                     <button
                       onClick={() => resolveAlert(a.id)}
-                      className="ml-auto text-xs text-blue-600 hover:underline"
+                      className="ml-auto text-xs text-accent hover:underline"
                     >
                       恢复
                     </button>
                   )}
                 </div>
                 <div className="mt-1 font-medium">{a.title}</div>
-                {a.description && <div className="text-xs text-neutral-500">{a.description}</div>}
+                {a.description && <div className="text-xs text-text-muted">{a.description}</div>}
               </div>
             ))}
-            {alerts.length === 0 && <div className="text-sm text-neutral-400">暂无告警</div>}
+            {alerts.length === 0 && <div className="text-sm text-text-muted">暂无告警</div>}
           </div>
         </div>
 
@@ -319,18 +319,18 @@ export default function OpsPage() {
               {(dash?.activity ?? []).map((it, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+                  className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-xs"
                 >
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono">{it.kind}</span>
-                  <span className="text-neutral-500">{it.action}</span>
-                  <span className="truncate text-neutral-700">{it.title}</span>
-                  <span className="ml-auto shrink-0 text-neutral-400">
+                  <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono">{it.kind}</span>
+                  <span className="text-text-muted">{it.action}</span>
+                  <span className="truncate text-text">{it.title}</span>
+                  <span className="ml-auto shrink-0 text-text-muted">
                     {new Date(it.time).toLocaleString()}
                   </span>
                 </div>
               ))}
               {(dash?.activity ?? []).length === 0 && (
-                <div className="text-sm text-neutral-400">暂无活动</div>
+                <div className="text-sm text-text-muted">暂无活动</div>
               )}
             </div>
           </div>
@@ -340,32 +340,32 @@ export default function OpsPage() {
               <span className="text-sm font-semibold">SOP 预案（{sops.length}）</span>
               <button
                 onClick={() => setShowSopForm(!showSopForm)}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs text-accent hover:underline"
               >
                 ＋ 新建
               </button>
             </div>
             {showSopForm && (
-              <div className="mb-2 space-y-1 rounded-md border border-neutral-200 bg-white p-2">
+              <div className="mb-2 space-y-1 rounded-md border border-border bg-surface p-2">
                 <div className="flex gap-2">
                   <input
                     placeholder="编码（如 RESTART-POD）"
                     value={sopForm.code}
                     onChange={(e) => setSopForm({ ...sopForm, code: e.target.value })}
-                    className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-border px-2 py-1 text-sm"
                   />
                   <input
                     placeholder="名称"
                     value={sopForm.name}
                     onChange={(e) => setSopForm({ ...sopForm, name: e.target.value })}
-                    className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-border px-2 py-1 text-sm"
                   />
                 </div>
                 <div className="flex gap-2 text-sm">
                   <select
                     value={sopForm.category}
                     onChange={(e) => setSopForm({ ...sopForm, category: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["restart", "scale", "cache", "traffic", "data"].map((c) => (
                       <option key={c} value={c}>
@@ -376,7 +376,7 @@ export default function OpsPage() {
                   <select
                     value={sopForm.risk_level}
                     onChange={(e) => setSopForm({ ...sopForm, risk_level: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["low", "medium", "high"].map((c) => (
                       <option key={c} value={c}>
@@ -387,7 +387,7 @@ export default function OpsPage() {
                   <select
                     value={sopForm.status}
                     onChange={(e) => setSopForm({ ...sopForm, status: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["draft", "active", "deprecated"].map((c) => (
                       <option key={c} value={c}>
@@ -401,11 +401,11 @@ export default function OpsPage() {
                   value={sopForm.steps}
                   onChange={(e) => setSopForm({ ...sopForm, steps: e.target.value })}
                   rows={2}
-                  className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                  className="w-full rounded border border-border px-2 py-1 text-sm"
                 />
                 <button
                   onClick={submitSop}
-                  className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+                  className="rounded bg-accent px-3 py-1 text-xs text-white"
                 >
                   创建 SOP
                 </button>
@@ -413,42 +413,37 @@ export default function OpsPage() {
             )}
             <div className="space-y-2">
               {sops.map((s) => (
-                <div
-                  key={s.id}
-                  className="rounded-md border border-neutral-200 bg-white p-2 text-sm"
-                >
+                <div key={s.id} className="rounded-md border border-border bg-surface p-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-neutral-400">{s.code}</span>
+                    <span className="font-mono text-xs text-text-muted">{s.code}</span>
                     <span className="font-medium">{s.name}</span>
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs">
-                      {s.category}
-                    </span>
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">{s.category}</span>
                     <span
-                      className={`rounded px-1.5 py-0.5 text-xs ${s.risk_level === "high" ? "bg-red-100 text-red-700" : s.risk_level === "medium" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
+                      className={`rounded px-1.5 py-0.5 text-xs ${s.risk_level === "high" ? "bg-danger/10 text-danger" : s.risk_level === "medium" ? "bg-warn/10 text-warn" : "bg-success/10 text-success"}`}
                     >
                       {s.risk_level}
                     </span>
                     <span
-                      className={`rounded px-1.5 py-0.5 text-xs ${s.status === "active" ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-500"}`}
+                      className={`rounded px-1.5 py-0.5 text-xs ${s.status === "active" ? "bg-accent/10 text-accent" : "bg-surface-2 text-text-muted"}`}
                     >
                       {s.status}
                     </span>
-                    {s.requires_approval && <span className="text-xs text-amber-600">需审批</span>}
+                    {s.requires_approval && <span className="text-xs text-warn">需审批</span>}
                     <button
                       onClick={() => deleteSop(s.id)}
-                      className="ml-auto text-xs text-red-600 hover:underline"
+                      className="ml-auto text-xs text-danger hover:underline"
                     >
                       删除
                     </button>
                   </div>
                   {s.steps && (
-                    <div className="mt-1 whitespace-pre-wrap text-xs text-neutral-600">
+                    <div className="mt-1 whitespace-pre-wrap text-xs text-text-muted">
                       {s.steps}
                     </div>
                   )}
                 </div>
               ))}
-              {sops.length === 0 && <div className="text-sm text-neutral-400">暂无 SOP</div>}
+              {sops.length === 0 && <div className="text-sm text-text-muted">暂无 SOP</div>}
             </div>
           </div>
         </div>
@@ -459,10 +454,10 @@ export default function OpsPage() {
 
 function Stat({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-3">
-      <div className="text-xs text-neutral-500">{label}</div>
+    <div className="rounded-lg border border-border bg-surface p-3">
+      <div className="text-xs text-text-muted">{label}</div>
       <div className="text-xl font-bold">{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-neutral-400">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[11px] text-text-muted">{sub}</div>}
     </div>
   );
 }

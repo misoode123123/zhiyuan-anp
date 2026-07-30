@@ -65,21 +65,21 @@ type ActionLog = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-700",
-  ready: "bg-emerald-100 text-emerald-700",
-  provisioning: "bg-amber-100 text-amber-700",
-  draining: "bg-amber-100 text-amber-700",
-  failed: "bg-red-100 text-red-700",
-  maintenance: "bg-neutral-100 text-neutral-500",
+  active: "bg-success/10 text-success",
+  ready: "bg-success/10 text-success",
+  provisioning: "bg-warn/10 text-warn",
+  draining: "bg-warn/10 text-warn",
+  failed: "bg-danger/10 text-danger",
+  maintenance: "bg-surface-2 text-text-muted",
 };
 
 const ACTION_COLOR: Record<string, string> = {
-  SELECT: "bg-blue-100 text-blue-700",
-  INSERT: "bg-emerald-100 text-emerald-700",
-  UPDATE: "bg-amber-100 text-amber-700",
-  DELETE: "bg-orange-100 text-orange-700",
-  DDL: "bg-purple-100 text-purple-700",
-  OTHER: "bg-neutral-100 text-neutral-500",
+  SELECT: "bg-accent/10 text-accent",
+  INSERT: "bg-success/10 text-success",
+  UPDATE: "bg-warn/10 text-warn",
+  DELETE: "bg-danger/10 text-danger",
+  DDL: "bg-warn/10 text-warn",
+  OTHER: "bg-surface-2 text-text-muted",
 };
 
 // formatBytes 字节 → 自适应单位（KB/MB/GB），保留 2 位小数；0 显示「—」。
@@ -146,38 +146,38 @@ export default function DatabasesPage() {
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">🗄️ 数据库管理</h1>
-        <button onClick={load} className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white">
+        <button onClick={load} className="rounded bg-accent px-3 py-1.5 text-sm text-white">
           刷新
         </button>
       </div>
-      {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-      {loading && <div className="text-sm text-neutral-400">加载中...</div>}
+      {error && <div className="rounded bg-danger/10 p-2 text-sm text-danger">{error}</div>}
+      {loading && <div className="text-sm text-text-muted">加载中...</div>}
 
       {/* PG 实例 */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-700">
+        <h2 className="mb-2 text-sm font-semibold text-text">
           PG 实例（每项目一个独立实例，无 pgbouncer）
         </h2>
         {!loading && instances.length === 0 && (
-          <div className="text-sm text-neutral-400">暂无实例</div>
+          <div className="text-sm text-text-muted">暂无实例</div>
         )}
         <div className="space-y-2">
           {instances.map((ins) => (
-            <div key={ins.id} className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+            <div key={ins.id} className="rounded-lg border border-border bg-surface p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono">
                   {ins.host}:{ins.port}
                 </span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[ins.status] ?? "bg-neutral-100 text-neutral-500"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[ins.status] ?? "bg-surface-2 text-text-muted"}`}
                 >
                   {ins.status}
                 </span>
-                <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
+                <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
                   {ins.deploy_mode}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-neutral-500">
+              <div className="mt-1 text-xs text-text-muted">
                 项目 {ins.project_space_id} · 实例 {ins.id} · 创建 {ins.created_at}
               </div>
             </div>
@@ -187,17 +187,17 @@ export default function DatabasesPage() {
 
       {/* 应用库 */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-700">
+        <h2 className="mb-2 text-sm font-semibold text-text">
           应用库（database-per-app，应用直连）
         </h2>
         {!loading && databases.length === 0 && (
-          <div className="text-sm text-neutral-400">
+          <div className="text-sm text-text-muted">
             暂无应用库（建应用后自动供给独立库 + DATABASE_URL）
           </div>
         )}
         <div className="space-y-2">
           {databases.map((db) => (
-            <div key={db.id} className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+            <div key={db.id} className="rounded-lg border border-border bg-surface p-3 text-sm">
               <button
                 onClick={() => showDetail(db.project_space_id, db.app_id)}
                 className="flex w-full items-center justify-between text-left"
@@ -205,46 +205,46 @@ export default function DatabasesPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono">{db.db_name}</span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[db.status] ?? "bg-neutral-100 text-neutral-500"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[db.status] ?? "bg-surface-2 text-text-muted"}`}
                   >
                     {db.status}
                   </span>
                   {db.backup_enabled && (
-                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-600">
+                    <span className="rounded bg-success/10 px-1.5 py-0.5 text-xs text-success">
                       备份开
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs text-text-muted">
                   {detailFor === db.app_id ? "▲" : "▼"}
                 </span>
               </button>
-              <div className="mt-1 text-xs text-neutral-500">
+              <div className="mt-1 text-xs text-text-muted">
                 应用 {db.app_id} · 项目 {db.project_space_id} · {db.db_host}:{db.db_port} · 大小{" "}
                 {formatBytes(db.size_bytes)} ·{" "}
                 {db.last_backup_at ? `备份 ${db.last_backup_at}` : "未备份"}
               </div>
               {detailFor === db.app_id && (
-                <div className="mt-2 space-y-2 rounded bg-neutral-50 p-2 text-xs">
+                <div className="mt-2 space-y-2 rounded bg-bg p-2 text-xs">
                   {detail ? (
                     <>
                       <div>
-                        <span className="text-neutral-500">DATABASE_URL：</span>
+                        <span className="text-text-muted">DATABASE_URL：</span>
                         <code className="break-all font-mono">{detail.database_url}</code>
                       </div>
                       <div>
-                        <span className="text-neutral-500">role：</span>
+                        <span className="text-text-muted">role：</span>
                         {db.db_role}
                       </div>
                       <div>
-                        <span className="text-neutral-500">实例：</span>
+                        <span className="text-text-muted">实例：</span>
                         {db.pg_instance_id}
                       </div>
                       {/* 数据库工具（类 DBeaver）：表结构 / SQL 执行 / 操作日志 */}
                       <DatabaseTools psID={db.project_space_id} appID={db.app_id} />
                     </>
                   ) : (
-                    <div className="text-neutral-400">加载详情...</div>
+                    <div className="text-text-muted">加载详情...</div>
                   )}
                 </div>
               )}
@@ -360,7 +360,7 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
     <button
       onClick={() => setTab(id)}
       className={`rounded px-2 py-1 text-xs ${
-        tab === id ? "bg-blue-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-100"
+        tab === id ? "bg-accent text-white" : "bg-surface text-text-muted hover:bg-surface-2"
       }`}
     >
       {label}
@@ -368,7 +368,7 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
   );
 
   return (
-    <div className="mt-2 border-t border-neutral-200 pt-2">
+    <div className="mt-2 border-t border-border pt-2">
       <div className="flex items-center gap-1">
         <TabBtn id="tables" label="📋 表结构" />
         <TabBtn id="sql" label="▶ SQL 执行" />
@@ -377,10 +377,10 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
 
       {tab === "tables" && (
         <div className="mt-2">
-          {tblLoading && <div className="text-neutral-400">加载表...</div>}
-          {tblError && <div className="text-red-600 break-all">表结构加载失败：{tblError}</div>}
+          {tblLoading && <div className="text-text-muted">加载表...</div>}
+          {tblError && <div className="text-danger break-all">表结构加载失败：{tblError}</div>}
           {!tblLoading && tables.length === 0 && !tblError && (
-            <div className="text-neutral-400">暂无表（public schema）</div>
+            <div className="text-text-muted">暂无表（public schema）</div>
           )}
           {tables.length > 0 && (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -391,7 +391,7 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
                     key={t.name}
                     onClick={() => loadColumns(t.name)}
                     className={`block w-full truncate rounded px-1.5 py-0.5 text-left font-mono ${
-                      selTable === t.name ? "bg-blue-50 text-blue-700" : "hover:bg-neutral-100"
+                      selTable === t.name ? "bg-accent/10 text-accent" : "hover:bg-surface-2"
                     }`}
                     title={t.name}
                   >
@@ -402,11 +402,11 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
               </div>
               {/* 右：列详情 */}
               <div className="md:col-span-2">
-                {!selTable && <div className="text-neutral-400">点左侧表名查看列</div>}
+                {!selTable && <div className="text-text-muted">点左侧表名查看列</div>}
                 {selTable && (
                   <table className="w-full border-collapse text-[11px]">
                     <thead>
-                      <tr className="bg-neutral-100 text-left">
+                      <tr className="bg-surface-2 text-left">
                         <th className="border px-1 py-0.5">列名</th>
                         <th className="border px-1 py-0.5">类型</th>
                         <th className="border px-1 py-0.5">可空</th>
@@ -418,25 +418,23 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
                       {columns.map((c) => (
                         <tr key={c.name} className="align-top">
                           <td className="border px-1 py-0.5 font-mono">{c.name}</td>
-                          <td className="border px-1 py-0.5 font-mono text-blue-700">
+                          <td className="border px-1 py-0.5 font-mono text-accent">
                             {c.data_type}
                           </td>
                           <td
-                            className={`border px-1 py-0.5 ${c.is_nullable === "NO" ? "text-red-600" : "text-neutral-400"}`}
+                            className={`border px-1 py-0.5 ${c.is_nullable === "NO" ? "text-danger" : "text-text-muted"}`}
                           >
                             {c.is_nullable === "NO" ? "NOT NULL" : "NULL"}
                           </td>
-                          <td className="border px-1 py-0.5 font-mono text-neutral-500">
+                          <td className="border px-1 py-0.5 font-mono text-text-muted">
                             {c.column_default || "—"}
                           </td>
-                          <td className="border px-1 py-0.5 text-neutral-500">
-                            {c.comment || "—"}
-                          </td>
+                          <td className="border px-1 py-0.5 text-text-muted">{c.comment || "—"}</td>
                         </tr>
                       ))}
                       {columns.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="border px-1 py-0.5 text-neutral-400">
+                          <td colSpan={5} className="border px-1 py-0.5 text-text-muted">
                             加载列...
                           </td>
                         </tr>
@@ -457,31 +455,31 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
             onChange={(e) => setSql(e.target.value)}
             rows={4}
             spellCheck={false}
-            className="w-full rounded border border-neutral-300 p-1 font-mono text-[11px]"
+            className="w-full rounded border border-border p-1 font-mono text-[11px]"
             placeholder="输入 SQL（SELECT 返回结果集；DDL/DML 返回影响行数）"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={runSQL}
               disabled={running || !sql.trim()}
-              className="rounded bg-emerald-600 px-2 py-0.5 text-xs text-white disabled:bg-neutral-300"
+              className="rounded bg-success px-2 py-0.5 text-xs text-white disabled:bg-surface-2"
             >
               {running ? "执行中..." : "▶ 执行"}
             </button>
-            <span className="text-[11px] text-neutral-400">
+            <span className="text-[11px] text-text-muted">
               以应用 role 执行（仅本库权限）；每次执行均记审计
             </span>
           </div>
           {sqlError && (
-            <div className="rounded bg-red-50 p-1 text-[11px] text-red-700 break-all">
+            <div className="rounded bg-danger/10 p-1 text-[11px] text-danger break-all">
               {sqlError}
             </div>
           )}
           {result && (
-            <div className="rounded bg-neutral-100 p-1">
-              <div className="mb-1 text-[11px] text-neutral-500">
+            <div className="rounded bg-surface-2 p-1">
+              <div className="mb-1 text-[11px] text-text-muted">
                 <span
-                  className={`rounded px-1 ${ACTION_COLOR[result.action_type] ?? "bg-neutral-200"}`}
+                  className={`rounded px-1 ${ACTION_COLOR[result.action_type] ?? "bg-surface-2"}`}
                 >
                   {result.action_type}
                 </span>{" "}
@@ -491,7 +489,7 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
                 <div className="max-h-64 overflow-auto">
                   <table className="w-full border-collapse text-[11px]">
                     <thead>
-                      <tr className="bg-neutral-200 text-left">
+                      <tr className="bg-surface-2 text-left">
                         {result.columns.map((c) => (
                           <th key={c} className="border px-1 py-0.5 font-mono whitespace-nowrap">
                             {c}
@@ -513,7 +511,7 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
                         <tr>
                           <td
                             colSpan={result.columns.length}
-                            className="border px-1 py-0.5 text-neutral-400"
+                            className="border px-1 py-0.5 text-text-muted"
                           >
                             （空结果集）
                           </td>
@@ -531,50 +529,45 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
       {tab === "actions" && (
         <div className="mt-2">
           <div className="mb-1 flex items-center gap-2">
-            <span className="text-neutral-500">最近 SQL 操作（倒序）</span>
+            <span className="text-text-muted">最近 SQL 操作（倒序）</span>
             <button
               onClick={loadActions}
-              className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px]"
+              className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px]"
             >
               ↻ 刷新
             </button>
           </div>
-          {actLoading && <div className="text-neutral-400">加载...</div>}
+          {actLoading && <div className="text-text-muted">加载...</div>}
           {!actLoading && actions.length === 0 && (
-            <div className="text-neutral-400">暂无操作日志</div>
+            <div className="text-text-muted">暂无操作日志</div>
           )}
           {actions.length > 0 && (
             <div className="space-y-0.5">
               {actions.map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded bg-white p-1 text-[11px] border border-neutral-100"
-                >
+                <div key={a.id} className="rounded bg-surface p-1 text-[11px] border border-border">
                   <div className="flex flex-wrap items-center gap-1">
                     <span
-                      className={`rounded px-1 ${ACTION_COLOR[a.action_type] ?? "bg-neutral-100"}`}
+                      className={`rounded px-1 ${ACTION_COLOR[a.action_type] ?? "bg-surface-2"}`}
                     >
                       {a.action_type}
                     </span>
                     <span
-                      className={`rounded px-1 ${a.status === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}
+                      className={`rounded px-1 ${a.status === "success" ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}
                     >
                       {a.status}
                     </span>
                     {a.status === "success" && (
-                      <span className="text-neutral-500">{a.row_count} 行</span>
+                      <span className="text-text-muted">{a.row_count} 行</span>
                     )}
-                    <span className="text-neutral-500">操作人 {a.actor}</span>
-                    <span className="text-neutral-400">
+                    <span className="text-text-muted">操作人 {a.actor}</span>
+                    <span className="text-text-muted">
                       {new Date(a.created_at).toLocaleString("zh-CN", {
                         hour12: false,
                       })}
                     </span>
                   </div>
-                  <code className="mt-0.5 block truncate font-mono text-neutral-700">
-                    {a.statement}
-                  </code>
-                  {a.error && <div className="mt-0.5 text-red-600 break-all">{a.error}</div>}
+                  <code className="mt-0.5 block truncate font-mono text-text">{a.statement}</code>
+                  {a.error && <div className="mt-0.5 text-danger break-all">{a.error}</div>}
                 </div>
               ))}
             </div>

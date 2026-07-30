@@ -180,7 +180,7 @@ export default function ComputePage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">⚡ 算力中心</h1>
-      <p className="mb-4 text-sm text-neutral-600">多平台多模型统一管理 · 智能路由 · 成本核算</p>
+      <p className="mb-4 text-sm text-text-muted">多平台多模型统一管理 · 智能路由 · 成本核算</p>
 
       <div className="mb-4 flex gap-2">
         {[
@@ -192,13 +192,13 @@ export default function ComputePage() {
           <button
             key={t.k}
             onClick={() => setTab(t.k as any)}
-            className={`rounded-md px-3 py-1.5 text-sm ${tab === t.k ? "bg-blue-600 text-white" : "bg-neutral-100"}`}
+            className={`rounded-md px-3 py-1.5 text-sm ${tab === t.k ? "bg-accent text-white" : "bg-surface-2"}`}
           >
             {t.l}
           </button>
         ))}
       </div>
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       {/* 供应商 Tab */}
       {tab === "providers" && (
@@ -207,14 +207,14 @@ export default function ComputePage() {
             <span className="text-sm font-semibold">供应商（{providers.length}）</span>
             <button
               onClick={() => setShowPForm(!showPForm)}
-              className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+              className="rounded bg-accent px-3 py-1 text-xs text-white"
             >
               {showPForm ? "取消" : "＋ 添加供应商"}
             </button>
           </div>
 
           {showPForm && (
-            <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border bg-white p-3 sm:grid-cols-2">
+            <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border bg-surface p-3 sm:grid-cols-2">
               <input
                 placeholder="名称（如：智谱 GLM）"
                 value={pForm.name}
@@ -250,7 +250,7 @@ export default function ComputePage() {
               />
               <button
                 onClick={saveProvider}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white col-span-2"
+                className="rounded bg-success px-3 py-1.5 text-sm text-white col-span-2"
               >
                 保存
               </button>
@@ -261,22 +261,20 @@ export default function ComputePage() {
             {providers.map((p) => (
               <div
                 key={p.id}
-                className={`flex items-center justify-between rounded-md border bg-white p-3 text-sm ${p.enabled ? "" : "opacity-50"}`}
+                className={`flex items-center justify-between rounded-md border bg-surface p-3 text-sm ${p.enabled ? "" : "opacity-50"}`}
               >
                 <div>
                   <span className="font-medium">{p.name}</span>
-                  <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs">
-                    {p.type}
-                  </span>
-                  <div className="mt-0.5 text-xs text-neutral-500">{p.base_url}</div>
-                  {p.description && <div className="text-xs text-neutral-400">{p.description}</div>}
+                  <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-xs">{p.type}</span>
+                  <div className="mt-0.5 text-xs text-text-muted">{p.base_url}</div>
+                  {p.description && <div className="text-xs text-text-muted">{p.description}</div>}
                 </div>
-                <button onClick={() => toggleProvider(p)} className="text-xs text-blue-600">
+                <button onClick={() => toggleProvider(p)} className="text-xs text-accent">
                   {p.enabled ? "禁用" : "启用"}
                 </button>
               </div>
             ))}
-            {providers.length === 0 && <div className="text-sm text-neutral-400">暂无供应商</div>}
+            {providers.length === 0 && <div className="text-sm text-text-muted">暂无供应商</div>}
           </div>
         </div>
       )}
@@ -291,14 +289,14 @@ export default function ComputePage() {
                 setMForm({ ...mForm, provider_id: providers[0]?.id || "" });
                 setShowMForm(!showMForm);
               }}
-              className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+              className="rounded bg-accent px-3 py-1 text-xs text-white"
             >
               {showMForm ? "取消" : "＋ 添加模型"}
             </button>
           </div>
 
           {showMForm && (
-            <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border bg-white p-3 sm:grid-cols-2">
+            <div className="mb-3 grid grid-cols-1 gap-2 rounded-lg border bg-surface p-3 sm:grid-cols-2">
               <select
                 value={mForm.provider_id}
                 onChange={(e) => setMForm({ ...mForm, provider_id: e.target.value })}
@@ -365,7 +363,7 @@ export default function ComputePage() {
               />
               <button
                 onClick={saveModel}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white col-span-2"
+                className="rounded bg-success px-3 py-1.5 text-sm text-white col-span-2"
               >
                 保存
               </button>
@@ -374,41 +372,41 @@ export default function ComputePage() {
 
           {providers.map((p) => (
             <div key={p.id} className="mb-4">
-              <div className="mb-1 text-xs font-semibold text-neutral-600">{p.name}</div>
+              <div className="mb-1 text-xs font-semibold text-text-muted">{p.name}</div>
               <div className="space-y-1">
                 {(modelsByProvider[p.id] || []).map((m) => (
                   <div
                     key={m.id}
-                    className={`flex items-center justify-between rounded border bg-white p-2 text-sm ${m.enabled ? "" : "opacity-50"}`}
+                    className={`flex items-center justify-between rounded border bg-surface p-2 text-sm ${m.enabled ? "" : "opacity-50"}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{m.display_name || m.name}</span>
-                      <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
                         {MODALITY_LABEL[m.modality] || m.modality}
                       </span>
                       {m.context_window && m.context_window > 0 && (
-                        <span className="text-xs text-neutral-400">
+                        <span className="text-xs text-text-muted">
                           {(m.context_window / 1000).toFixed(0)}K ctx
                         </span>
                       )}
                       {(m.cost_input > 0 || m.cost_output > 0) && (
-                        <span className="text-xs text-neutral-400">
+                        <span className="text-xs text-text-muted">
                           ¥{m.cost_input}/{m.cost_output}
                         </span>
                       )}
                     </div>
-                    <button onClick={() => toggleModel(m)} className="text-xs text-blue-600">
+                    <button onClick={() => toggleModel(m)} className="text-xs text-accent">
                       {m.enabled ? "禁用" : "启用"}
                     </button>
                   </div>
                 ))}
                 {(!modelsByProvider[p.id] || []).length === 0 && (
-                  <div className="text-xs text-neutral-400">无模型</div>
+                  <div className="text-xs text-text-muted">无模型</div>
                 )}
               </div>
             </div>
           ))}
-          {providers.length === 0 && <div className="text-sm text-neutral-400">请先添加供应商</div>}
+          {providers.length === 0 && <div className="text-sm text-text-muted">请先添加供应商</div>}
         </div>
       )}
 
@@ -419,7 +417,7 @@ export default function ComputePage() {
       {tab === "routes" && (
         <div>
           <div className="mb-2 text-sm font-semibold">路由策略（任务类型 → 模型 + fallback）</div>
-          <p className="mb-3 text-xs text-neutral-500">
+          <p className="mb-3 text-xs text-text-muted">
             不同任务自动选不同模型：需求规格用快的、编码用强的。主模型失败自动切 fallback。
           </p>
           <div className="space-y-2">
@@ -464,7 +462,7 @@ function UsageDashboard() {
   return (
     <div>
       <div className="mb-3">
-        <label className="text-xs text-neutral-500">项目空间</label>
+        <label className="text-xs text-text-muted">项目空间</label>
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
@@ -478,12 +476,12 @@ function UsageDashboard() {
         </select>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border bg-white p-4">
-          <div className="text-sm text-neutral-500">总 Token</div>
+        <div className="rounded-lg border bg-surface p-4">
+          <div className="text-sm text-text-muted">总 Token</div>
           <div className="text-2xl font-bold">{stats?.total_tokens?.toLocaleString() ?? 0}</div>
         </div>
-        <div className="rounded-lg border bg-white p-4">
-          <div className="text-sm text-neutral-500">总调用</div>
+        <div className="rounded-lg border bg-surface p-4">
+          <div className="text-sm text-text-muted">总调用</div>
           <div className="text-2xl font-bold">{stats?.total_calls ?? 0}</div>
         </div>
       </div>
@@ -493,7 +491,7 @@ function UsageDashboard() {
           {stats.by_model.map((m) => (
             <div key={m.model} className="mb-1 flex items-center gap-2 text-sm">
               <span className="w-32 truncate">{m.model}</span>
-              <div className="flex-1 rounded-full bg-neutral-100">
+              <div className="flex-1 rounded-full bg-surface-2">
                 <div
                   className="h-5 rounded-full bg-blue-500 px-2 text-xs leading-5 text-white"
                   style={{
@@ -503,7 +501,7 @@ function UsageDashboard() {
                   {m.tokens.toLocaleString()}
                 </div>
               </div>
-              <span className="text-xs text-neutral-400">{m.calls}次</span>
+              <span className="text-xs text-text-muted">{m.calls}次</span>
             </div>
           ))}
         </div>
@@ -533,7 +531,7 @@ function RouteRow({
   }, [route]);
 
   return (
-    <div className="flex items-center gap-2 rounded-md border bg-white p-2 text-sm">
+    <div className="flex items-center gap-2 rounded-md border bg-surface p-2 text-sm">
       <span className="w-28 font-medium">{TASK_LABELS[taskType] || taskType}</span>
       <select
         value={primary}
@@ -549,7 +547,7 @@ function RouteRow({
             </option>
           ))}
       </select>
-      <span className="text-xs text-neutral-400">fallback</span>
+      <span className="text-xs text-text-muted">fallback</span>
       <select
         value={fallback}
         onChange={(e) => setFallback(e.target.value)}
@@ -567,7 +565,7 @@ function RouteRow({
       <button
         onClick={() => onSave(taskType, primary, fallback)}
         disabled={!primary}
-        className="rounded bg-blue-600 px-2 py-1 text-xs text-white disabled:opacity-40"
+        className="rounded bg-accent px-2 py-1 text-xs text-white disabled:opacity-40"
       >
         保存
       </button>

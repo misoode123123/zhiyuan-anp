@@ -98,16 +98,16 @@ export default function TeamPage() {
   }
 
   const reqCard = (q: Req, claimable: boolean) => (
-    <div key={q.id} className="mb-2 rounded border border-neutral-200 bg-white p-2 text-xs">
-      <div className="truncate font-medium text-neutral-800">{q.title || q.id.slice(0, 12)}</div>
-      <div className="mt-0.5 text-neutral-500">
+    <div key={q.id} className="mb-2 rounded border border-border bg-surface p-2 text-xs">
+      <div className="truncate font-medium text-text">{q.title || q.id.slice(0, 12)}</div>
+      <div className="mt-0.5 text-text-muted">
         👤 {q.assignee || "未认领"}
         {q.priority && <span className="ml-1">{q.priority}</span>}
       </div>
-      {q.created_at && <div className="text-neutral-400">📅 {fmt(q.created_at)}</div>}
+      {q.created_at && <div className="text-text-muted">📅 {fmt(q.created_at)}</div>}
       {claimable && !q.assignee && (
         <select
-          className="mt-1 w-full rounded border border-neutral-300 px-1 py-0.5"
+          className="mt-1 w-full rounded border border-border px-1 py-0.5"
           defaultValue=""
           onChange={(e) => assign(q.id, e.target.value)}
         >
@@ -122,9 +122,9 @@ export default function TeamPage() {
     </div>
   );
   const chgCard = (c: Chg) => (
-    <div key={c.id} className="mb-2 rounded border border-neutral-200 bg-white p-2 text-xs">
-      <div className="truncate font-medium text-neutral-800">{c.app_name || c.id.slice(0, 12)}</div>
-      <div className="text-neutral-500">
+    <div key={c.id} className="mb-2 rounded border border-border bg-surface p-2 text-xs">
+      <div className="truncate font-medium text-text">{c.app_name || c.id.slice(0, 12)}</div>
+      <div className="text-text-muted">
         👤 {c.reviewer || "?"}
         {c.created_at && <span className="ml-1">· {fmt(c.created_at)}</span>}
       </div>
@@ -149,7 +149,7 @@ export default function TeamPage() {
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -157,14 +157,14 @@ export default function TeamPage() {
             </option>
           ))}
         </select>
-        <span className="text-xs text-neutral-400">全队任务全景 · 待认领可直接指派给成员</span>
+        <span className="text-xs text-text-muted">全队任务全景 · 待认领可直接指派给成员</span>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {COLS.map((col, i) => (
-          <div key={i} className="rounded-lg bg-neutral-50 p-2">
-            <div className="mb-2 text-xs font-semibold text-neutral-600">{col.title}</div>
+          <div key={i} className="rounded-lg bg-bg p-2">
+            <div className="mb-2 text-xs font-semibold text-text-muted">{col.title}</div>
             {col.body}
-            {col.body.length === 0 && <div className="text-xs text-neutral-300">—</div>}
+            {col.body.length === 0 && <div className="text-xs text-text-muted">—</div>}
           </div>
         ))}
       </div>

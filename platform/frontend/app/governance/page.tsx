@@ -42,16 +42,16 @@ const ACTION_LABEL: Record<string, string> = {
   require_approval: "需审批",
 };
 const ACTION_COLOR: Record<string, string> = {
-  block: "bg-red-100 text-red-700",
-  warn: "bg-amber-100 text-amber-700",
-  require_approval: "bg-blue-100 text-blue-700",
+  block: "bg-danger/10 text-danger",
+  warn: "bg-warn/10 text-warn",
+  require_approval: "bg-accent/10 text-accent",
 };
 const STD_CAT_COLOR: Record<string, string> = {
-  general: "bg-neutral-100 text-neutral-700",
-  language: "bg-blue-100 text-blue-700",
-  framework: "bg-purple-100 text-purple-700",
-  security: "bg-red-100 text-red-700",
-  testing: "bg-emerald-100 text-emerald-700",
+  general: "bg-surface-2 text-text",
+  language: "bg-accent/10 text-accent",
+  framework: "bg-warn/10 text-warn",
+  security: "bg-danger/10 text-danger",
+  testing: "bg-success/10 text-success",
 };
 // 开发规范分层
 const SCOPE_LABEL: Record<DevStdScope, string> = {
@@ -60,9 +60,9 @@ const SCOPE_LABEL: Record<DevStdScope, string> = {
   module: "模块级",
 };
 const SCOPE_COLOR: Record<DevStdScope, string> = {
-  platform: "bg-indigo-100 text-indigo-700",
-  app: "bg-cyan-100 text-cyan-700",
-  module: "bg-amber-100 text-amber-700",
+  platform: "bg-accent/10 text-accent",
+  app: "bg-accent/10 text-accent",
+  module: "bg-warn/10 text-warn",
 };
 const MODULE_LABEL: Record<DevStdModule, string> = {
   api: "API",
@@ -307,7 +307,7 @@ export default function GovernancePage() {
     <select
       value={(form as Record<string, string>)[k]}
       onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-      className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+      className="rounded-md border border-border px-2 py-1 text-sm"
     >
       {opts.map((o) => (
         <option key={o} value={o}>
@@ -323,47 +323,47 @@ export default function GovernancePage() {
       <div className="mb-4 flex gap-2">
         <button
           onClick={() => setTab("rules")}
-          className={`rounded-md px-3 py-1.5 text-sm ${tab === "rules" ? "bg-blue-600 text-white" : "bg-neutral-200 text-neutral-700"}`}
+          className={`rounded-md px-3 py-1.5 text-sm ${tab === "rules" ? "bg-accent text-white" : "bg-surface-2 text-text"}`}
         >
           规则 (RaC)
         </button>
         <button
           onClick={() => setTab("devstd")}
-          className={`rounded-md px-3 py-1.5 text-sm ${tab === "devstd" ? "bg-blue-600 text-white" : "bg-neutral-200 text-neutral-700"}`}
+          className={`rounded-md px-3 py-1.5 text-sm ${tab === "devstd" ? "bg-accent text-white" : "bg-surface-2 text-text"}`}
         >
           开发规范
         </button>
       </div>
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       {tab === "rules" && (
         <>
           <div className="mb-1 flex items-center justify-between">
-            <p className="text-sm text-neutral-600">
+            <p className="text-sm text-text-muted">
               制度/红线结构化为可执行规则（RaC），约束所有 AI 行为。<b>block</b> 规则违反将阻断 AI
               操作（需🚪人工评估）。
             </p>
             <button
               onClick={() => setShowForm(!showForm)}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
             >
               {showForm ? "取消" : "＋ 新建规则"}
             </button>
           </div>
 
           {showForm && (
-            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-border bg-surface p-4">
               <input
                 placeholder="规则名称"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="col-span-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                className="col-span-2 rounded-md border border-border px-2 py-1 text-sm"
               />
               <input
                 placeholder="条件（正则或关键字，大小写不敏感）"
                 value={form.condition}
                 onChange={(e) => setForm({ ...form, condition: e.target.value })}
-                className="col-span-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                className="col-span-2 rounded-md border border-border px-2 py-1 text-sm"
               />
               {sel("category", ["coding", "security", "process", "general"])}
               {sel("type", ["mandatory", "should", "reference"], TYPE_LABEL)}
@@ -373,17 +373,17 @@ export default function GovernancePage() {
                 placeholder="匹配字段 prompt/output/code_path"
                 value={form.condition_field}
                 onChange={(e) => setForm({ ...form, condition_field: e.target.value })}
-                className="col-span-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                className="col-span-2 rounded-md border border-border px-2 py-1 text-sm"
               />
               <input
                 placeholder="说明（可选）"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="col-span-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                className="col-span-2 rounded-md border border-border px-2 py-1 text-sm"
               />
               <button
                 onClick={create}
-                className="col-span-2 rounded-md bg-emerald-600 px-4 py-1.5 text-sm text-white"
+                className="col-span-2 rounded-md bg-success px-4 py-1.5 text-sm text-white"
               >
                 创建规则
               </button>
@@ -392,64 +392,64 @@ export default function GovernancePage() {
 
           {Object.entries(grouped).map(([cat, list]) => (
             <div key={cat} className="mb-5">
-              <div className="mb-2 text-sm font-semibold text-neutral-700">{cat}</div>
+              <div className="mb-2 text-sm font-semibold text-text">{cat}</div>
               <div className="space-y-2">
                 {list.map((r) => (
                   <div
                     key={r.id}
-                    className={`rounded-md border border-neutral-200 bg-white p-3 text-sm ${r.enabled ? "" : "opacity-50"}`}
+                    className={`rounded-md border border-border bg-surface p-3 text-sm ${r.enabled ? "" : "opacity-50"}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{r.name}</span>
                         <span
-                          className={`rounded px-1.5 py-0.5 text-xs ${ACTION_COLOR[r.action] ?? "bg-neutral-100"}`}
+                          className={`rounded px-1.5 py-0.5 text-xs ${ACTION_COLOR[r.action] ?? "bg-surface-2"}`}
                         >
                           {ACTION_LABEL[r.action] ?? r.action}
                         </span>
-                        <span className="text-xs text-neutral-400">
+                        <span className="text-xs text-text-muted">
                           {TYPE_LABEL[r.type] ?? r.type} · {r.scope} · {r.condition_field}
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => toggle(r)} className="text-xs text-blue-600">
+                        <button onClick={() => toggle(r)} className="text-xs text-accent">
                           {r.enabled ? "禁用" : "启用"}
                         </button>
-                        <button onClick={() => del(r.id)} className="text-xs text-red-600">
+                        <button onClick={() => del(r.id)} className="text-xs text-danger">
                           删除
                         </button>
                       </div>
                     </div>
-                    <div className="mt-1 font-mono text-xs text-neutral-500">{r.condition}</div>
+                    <div className="mt-1 font-mono text-xs text-text-muted">{r.condition}</div>
                     {r.description && (
-                      <div className="mt-1 text-xs text-neutral-400">{r.description}</div>
+                      <div className="mt-1 text-xs text-text-muted">{r.description}</div>
                     )}
                   </div>
                 ))}
               </div>
             </div>
           ))}
-          {rules.length === 0 && <div className="text-sm text-neutral-400">暂无规则</div>}
+          {rules.length === 0 && <div className="text-sm text-text-muted">暂无规则</div>}
         </>
       )}
 
       {tab === "devstd" && (
         <div>
-          <p className="mb-3 text-sm text-neutral-600">
+          <p className="mb-3 text-sm text-text-muted">
             开发规范分层：<b>平台级(L1) &gt; 应用级(L2) &gt; 模块级(L3)</b>。 AI
             编码注入时合并三层（上层优先）；右侧维护当前节点规范，顶部可<b>导出应用 AGENTS.md</b>
             （聚合后供 AI 编码使用）。
           </p>
 
           {/* 顶部：导出 AGENTS.md */}
-          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-3">
-            <span className="text-xs text-neutral-500">
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-3">
+            <span className="text-xs text-text-muted">
               导出 AGENTS.md（聚合 平台 + 应用 + 模块）：
             </span>
             <select
               value={exportPick}
               onChange={(e) => setExportPick(e.target.value as DevStdModule | "")}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded-md border border-border px-2 py-1 text-sm"
             >
               <option value="">仅平台+应用</option>
               {(Object.keys(MODULE_LABEL) as DevStdModule[]).map((m) => (
@@ -460,29 +460,29 @@ export default function GovernancePage() {
             </select>
             <button
               onClick={exportAgentsMd}
-              className="rounded-md bg-emerald-600 px-3 py-1 text-sm text-white"
+              className="rounded-md bg-success px-3 py-1 text-sm text-white"
             >
               生成 AGENTS.md
             </button>
           </div>
 
           {agentsMd.visible && (
-            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="mb-4 rounded-lg border border-success bg-success/10 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <div className="text-sm font-semibold text-emerald-800">
+                <div className="text-sm font-semibold text-success">
                   AGENTS.md 预览
                   {agentsMd.module ? `（含模块：${agentsMd.module}）` : "（平台 + 应用）"}
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={copyAgentsMd}
-                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+                    className="rounded bg-success px-2 py-1 text-xs text-white"
                   >
                     复制
                   </button>
                   <button
                     onClick={() => setAgentsMd({ ...agentsMd, visible: false })}
-                    className="rounded bg-neutral-200 px-2 py-1 text-xs text-neutral-700"
+                    className="rounded bg-surface-2 px-2 py-1 text-xs text-text"
                   >
                     关闭
                   </button>
@@ -496,8 +496,8 @@ export default function GovernancePage() {
 
           <div className="flex gap-4">
             {/* 左：层级树 */}
-            <div className="w-44 shrink-0 rounded-lg border border-neutral-200 bg-white p-2">
-              <div className="mb-2 px-2 text-xs font-semibold text-neutral-500">层级（L1→L3）</div>
+            <div className="w-44 shrink-0 rounded-lg border border-border bg-surface p-2">
+              <div className="mb-2 px-2 text-xs font-semibold text-text-muted">层级（L1→L3）</div>
               <div className="space-y-0.5">
                 {STD_TREE.filter((n) => n.scope !== "module").map((n) => {
                   const active = devNode.scope === n.scope;
@@ -505,7 +505,7 @@ export default function GovernancePage() {
                     <button
                       key={n.scope}
                       onClick={() => pickDevNode(n)}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${active ? "bg-blue-50 text-blue-700" : "hover:bg-neutral-100"}`}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${active ? "bg-accent/10 text-accent" : "hover:bg-surface-2"}`}
                     >
                       <span>{n.icon}</span>
                       <span className="font-medium">{n.label}</span>
@@ -515,14 +515,14 @@ export default function GovernancePage() {
                     </button>
                   );
                 })}
-                <div className="mt-2 px-2 text-xs font-semibold text-neutral-500">模块级（L3）</div>
+                <div className="mt-2 px-2 text-xs font-semibold text-text-muted">模块级（L3）</div>
                 {STD_TREE.filter((n) => n.scope === "module").map((n) => {
                   const active = devNode.scope === "module" && devNode.module === n.module;
                   return (
                     <button
                       key={n.module}
                       onClick={() => pickDevNode(n)}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm pl-6 ${active ? "bg-blue-50 text-blue-700" : "hover:bg-neutral-100"}`}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm pl-6 ${active ? "bg-accent/10 text-accent" : "hover:bg-surface-2"}`}
                     >
                       <span>{n.icon}</span>
                       <span>{n.label}</span>
@@ -539,11 +539,11 @@ export default function GovernancePage() {
                   {SCOPE_LABEL[devNode.scope]}
                 </span>
                 {devNode.scope === "module" && (
-                  <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+                  <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-text-muted">
                     {devNode.module ? `${MODULE_LABEL[devNode.module]}（${devNode.module}）` : ""}
                   </span>
                 )}
-                <span className="text-xs text-neutral-400">共 {devStds.length} 条</span>
+                <span className="text-xs text-text-muted">共 {devStds.length} 条</span>
                 <button
                   onClick={() => {
                     setDevEditing(null);
@@ -555,15 +555,15 @@ export default function GovernancePage() {
                       module: devNode.module ?? "",
                     });
                   }}
-                  className="ml-auto rounded-md bg-blue-600 px-3 py-1 text-sm text-white"
+                  className="ml-auto rounded-md bg-accent px-3 py-1 text-sm text-white"
                 >
                   ＋ 新建规范
                 </button>
               </div>
 
               {/* 编辑/新建表单 */}
-              <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3">
-                <div className="mb-2 text-xs text-neutral-500">
+              <div className="mb-4 rounded-lg border border-border bg-surface p-3">
+                <div className="mb-2 text-xs text-text-muted">
                   {devEditing
                     ? `编辑：${devEditing.name}`
                     : `新建【${SCOPE_LABEL[devNode.scope]}${devNode.module ? " · " + MODULE_LABEL[devNode.module] : ""}】规范`}
@@ -573,12 +573,12 @@ export default function GovernancePage() {
                     placeholder="规范名"
                     value={devForm.name}
                     onChange={(e) => setDevForm({ ...devForm, name: e.target.value })}
-                    className="min-w-[160px] flex-1 rounded border border-neutral-300 px-2 py-1"
+                    className="min-w-[160px] flex-1 rounded border border-border px-2 py-1"
                   />
                   <select
                     value={devForm.category}
                     onChange={(e) => setDevForm({ ...devForm, category: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["general", "language", "framework", "security", "testing"].map((c) => (
                       <option key={c} value={c}>
@@ -590,7 +590,7 @@ export default function GovernancePage() {
                     type="number"
                     value={devForm.priority}
                     onChange={(e) => setDevForm({ ...devForm, priority: Number(e.target.value) })}
-                    className="w-20 rounded border border-neutral-300 px-2 py-1"
+                    className="w-20 rounded border border-border px-2 py-1"
                     title="priority（小=靠前）"
                   />
                   {devNode.scope === "module" && (
@@ -599,7 +599,7 @@ export default function GovernancePage() {
                       onChange={(e) =>
                         setDevForm({ ...devForm, module: e.target.value as DevStdModule })
                       }
-                      className="rounded border border-neutral-300 px-2 py-1"
+                      className="rounded border border-border px-2 py-1"
                     >
                       <option value="">选模块…</option>
                       {(Object.keys(MODULE_LABEL) as DevStdModule[]).map((m) => (
@@ -615,12 +615,12 @@ export default function GovernancePage() {
                   value={devForm.content}
                   onChange={(e) => setDevForm({ ...devForm, content: e.target.value })}
                   rows={3}
-                  className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                  className="w-full rounded border border-border px-2 py-1 text-sm"
                 />
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={submitDevStd}
-                    className="rounded bg-blue-600 px-3 py-1 text-sm text-white"
+                    className="rounded bg-accent px-3 py-1 text-sm text-white"
                   >
                     {devEditing ? "保存修改" : "新建规范"}
                   </button>
@@ -636,7 +636,7 @@ export default function GovernancePage() {
                           module: devNode.module ?? "",
                         });
                       }}
-                      className="rounded bg-neutral-200 px-3 py-1 text-sm text-neutral-700"
+                      className="rounded bg-surface-2 px-3 py-1 text-sm text-text"
                     >
                       取消编辑
                     </button>
@@ -649,15 +649,17 @@ export default function GovernancePage() {
                 {devStds.map((s) => (
                   <div
                     key={s.id}
-                    className={`rounded-md border border-neutral-200 bg-white p-3 text-sm ${s.enabled ? "" : "opacity-50"}`}
+                    className={`rounded-md border border-border bg-surface p-3 text-sm ${s.enabled ? "" : "opacity-50"}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={`rounded px-1.5 py-0.5 text-xs ${SCOPE_COLOR[devNode.scope]}`}>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-xs ${SCOPE_COLOR[devNode.scope]}`}
+                        >
                           {SCOPE_LABEL[devNode.scope]}
                         </span>
                         {s.module && (
-                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-text-muted">
                             {MODULE_LABEL[s.module as DevStdModule] ?? s.module}
                           </span>
                         )}
@@ -667,27 +669,27 @@ export default function GovernancePage() {
                           {s.category}
                         </span>
                         <span className="font-medium">{s.name}</span>
-                        <span className="text-xs text-neutral-400">prio {s.priority}</span>
+                        <span className="text-xs text-text-muted">prio {s.priority}</span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => editDevStd(s)} className="text-xs text-neutral-600">
+                        <button onClick={() => editDevStd(s)} className="text-xs text-text-muted">
                           编辑
                         </button>
-                        <button onClick={() => toggleDevStd(s)} className="text-xs text-blue-600">
+                        <button onClick={() => toggleDevStd(s)} className="text-xs text-accent">
                           {s.enabled ? "禁用" : "启用"}
                         </button>
-                        <button onClick={() => deleteDevStd(s.id)} className="text-xs text-red-600">
+                        <button onClick={() => deleteDevStd(s.id)} className="text-xs text-danger">
                           删除
                         </button>
                       </div>
                     </div>
-                    <div className="mt-1 whitespace-pre-wrap text-xs text-neutral-600">
+                    <div className="mt-1 whitespace-pre-wrap text-xs text-text-muted">
                       {s.content}
                     </div>
                   </div>
                 ))}
                 {devStds.length === 0 && (
-                  <div className="text-sm text-neutral-400">本节点暂无规范，点「新建规范」添加</div>
+                  <div className="text-sm text-text-muted">本节点暂无规范，点「新建规范」添加</div>
                 )}
               </div>
             </div>

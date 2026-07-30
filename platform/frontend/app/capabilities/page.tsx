@@ -36,10 +36,10 @@ type UsageStat = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-700",
-  draft: "bg-neutral-100 text-neutral-500",
-  pending_review: "bg-amber-100 text-amber-700",
-  offline: "bg-red-100 text-red-700",
+  active: "bg-success/10 text-success",
+  draft: "bg-surface-2 text-text-muted",
+  pending_review: "bg-warn/10 text-warn",
+  offline: "bg-danger/10 text-danger",
 };
 
 export default function CapabilitiesPage() {
@@ -167,7 +167,7 @@ export default function CapabilitiesPage() {
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -176,7 +176,7 @@ export default function CapabilitiesPage() {
           ))}
         </select>
       </div>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         平台 AI 能力的统一对外窗口：技能注册/上架 + APIKey +
         统一调用网关（鉴权→校验→调模型→计费）。M1 用 HTTP 替代 gRPC；Copilot SDK
         与多技能编排为后续阶段。
@@ -187,22 +187,22 @@ export default function CapabilitiesPage() {
         <div className="mb-2 text-sm font-semibold">技能目录（已上架 {activeSkills.length}）</div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {activeSkills.map((s) => (
-            <div key={s.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div key={s.id} className="rounded-lg border border-border bg-surface p-3">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-blue-600">{s.code}</span>
+                <span className="font-mono text-xs text-accent">{s.code}</span>
                 <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[s.status]}`}>
                   {s.status}
                 </span>
               </div>
               <div className="mt-1 font-medium">{s.name}</div>
-              <div className="mt-1 text-xs text-neutral-500">{s.description}</div>
-              <div className="mt-1 text-[11px] text-neutral-400">
+              <div className="mt-1 text-xs text-text-muted">{s.description}</div>
+              <div className="mt-1 text-[11px] text-text-muted">
                 {s.category} · v{s.version}
               </div>
             </div>
           ))}
           {activeSkills.length === 0 && (
-            <div className="text-sm text-neutral-400">暂无已上架技能</div>
+            <div className="text-sm text-text-muted">暂无已上架技能</div>
           )}
         </div>
       </div>
@@ -214,43 +214,43 @@ export default function CapabilitiesPage() {
             <span className="text-sm font-semibold">技能管理（{skills.length}）</span>
             <button
               onClick={() => setShowSkillForm(!showSkillForm)}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-accent hover:underline"
             >
               ＋ 新建
             </button>
           </div>
           {showSkillForm && (
-            <div className="mb-2 space-y-1 rounded-md border border-neutral-200 bg-white p-2">
+            <div className="mb-2 space-y-1 rounded-md border border-border bg-surface p-2">
               <div className="flex gap-2">
                 <input
                   placeholder="code（如 data-qa）"
                   value={skillForm.code}
                   onChange={(e) => setSkillForm({ ...skillForm, code: e.target.value })}
-                  className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                  className="flex-1 rounded border border-border px-2 py-1 text-sm"
                 />
                 <input
                   placeholder="名称"
                   value={skillForm.name}
                   onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value })}
-                  className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                  className="flex-1 rounded border border-border px-2 py-1 text-sm"
                 />
               </div>
               <input
                 placeholder="描述"
                 value={skillForm.description}
                 onChange={(e) => setSkillForm({ ...skillForm, description: e.target.value })}
-                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="w-full rounded border border-border px-2 py-1 text-sm"
               />
               <textarea
                 placeholder="提示模板（用 {input} 占位用户输入）"
                 value={skillForm.prompt_template}
                 onChange={(e) => setSkillForm({ ...skillForm, prompt_template: e.target.value })}
                 rows={2}
-                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="w-full rounded border border-border px-2 py-1 text-sm"
               />
               <button
                 onClick={submitSkill}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+                className="rounded bg-accent px-3 py-1 text-xs text-white"
               >
                 创建(draft)
               </button>
@@ -258,19 +258,19 @@ export default function CapabilitiesPage() {
           )}
           <div className="space-y-2">
             {skills.map((s) => (
-              <div key={s.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+              <div key={s.id} className="rounded-md border border-border bg-surface p-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-blue-600">{s.code}</span>
+                  <span className="font-mono text-xs text-accent">{s.code}</span>
                   <span className="font-medium">{s.name}</span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[s.status] ?? "bg-neutral-100"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[s.status] ?? "bg-surface-2"}`}
                   >
                     {s.status}
                   </span>
                   {s.status === "draft" && (
                     <button
                       onClick={() => lifecycle(s.id, "submit")}
-                      className="ml-auto text-xs text-amber-600 hover:underline"
+                      className="ml-auto text-xs text-warn hover:underline"
                     >
                       提交评审
                     </button>
@@ -278,7 +278,7 @@ export default function CapabilitiesPage() {
                   {s.status === "pending_review" && (
                     <button
                       onClick={() => lifecycle(s.id, "approve")}
-                      className="ml-auto text-xs text-emerald-600 hover:underline"
+                      className="ml-auto text-xs text-success hover:underline"
                     >
                       审批上架
                     </button>
@@ -286,7 +286,7 @@ export default function CapabilitiesPage() {
                   {(s.status === "active" || s.status === "pending_review") && (
                     <button
                       onClick={() => lifecycle(s.id, "offline")}
-                      className="text-xs text-red-600 hover:underline"
+                      className="text-xs text-danger hover:underline"
                     >
                       下线
                     </button>
@@ -294,7 +294,7 @@ export default function CapabilitiesPage() {
                 </div>
               </div>
             ))}
-            {skills.length === 0 && <div className="text-sm text-neutral-400">暂无技能</div>}
+            {skills.length === 0 && <div className="text-sm text-text-muted">暂无技能</div>}
           </div>
         </div>
 
@@ -303,14 +303,14 @@ export default function CapabilitiesPage() {
           <div>
             <div className="mb-2 text-sm font-semibold">APIKey（{keys.length}）</div>
             {newKeySecret && (
-              <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs">
-                <div className="font-medium text-amber-800">
+              <div className="mb-2 rounded-md border border-warn bg-warn/10 p-2 text-xs">
+                <div className="font-medium text-warn">
                   ⚠️ 新 Key 明文仅此一次，请立即复制保存：
                 </div>
-                <code className="mt-1 block break-all rounded bg-white p-1">{newKeySecret}</code>
+                <code className="mt-1 block break-all rounded bg-surface p-1">{newKeySecret}</code>
                 <button
                   onClick={() => setNewKeySecret("")}
-                  className="mt-1 text-blue-600 hover:underline"
+                  className="mt-1 text-accent hover:underline"
                 >
                   已保存
                 </button>
@@ -321,17 +321,17 @@ export default function CapabilitiesPage() {
                 placeholder="调用方应用名"
                 value={keyForm.app_name}
                 onChange={(e) => setKeyForm({ ...keyForm, app_name: e.target.value })}
-                className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="flex-1 rounded border border-border px-2 py-1 text-sm"
               />
               <input
                 placeholder="授权技能(逗号分隔,空=全部)"
                 value={keyForm.allowed_skills}
                 onChange={(e) => setKeyForm({ ...keyForm, allowed_skills: e.target.value })}
-                className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                className="flex-1 rounded border border-border px-2 py-1 text-sm"
               />
               <button
                 onClick={createKey}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+                className="rounded bg-accent px-3 py-1 text-xs text-white"
               >
                 申请
               </button>
@@ -340,29 +340,29 @@ export default function CapabilitiesPage() {
               {keys.map((k) => (
                 <div
                   key={k.id}
-                  className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+                  className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-xs"
                 >
                   <span className="font-mono">{k.key_prefix}</span>
-                  <span className="text-neutral-500">{k.app_name}</span>
+                  <span className="text-text-muted">{k.app_name}</span>
                   {k.allowed_skills && (
-                    <span className="text-neutral-400">[{k.allowed_skills}]</span>
+                    <span className="text-text-muted">[{k.allowed_skills}]</span>
                   )}
                   <span
-                    className={`rounded px-1.5 py-0.5 ${k.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+                    className={`rounded px-1.5 py-0.5 ${k.status === "active" ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}
                   >
                     {k.status}
                   </span>
                   {k.status === "active" && (
                     <button
                       onClick={() => revokeKey(k.id)}
-                      className="ml-auto text-red-600 hover:underline"
+                      className="ml-auto text-danger hover:underline"
                     >
                       吊销
                     </button>
                   )}
                 </div>
               ))}
-              {keys.length === 0 && <div className="text-sm text-neutral-400">暂无 APIKey</div>}
+              {keys.length === 0 && <div className="text-sm text-text-muted">暂无 APIKey</div>}
             </div>
           </div>
 
@@ -372,22 +372,22 @@ export default function CapabilitiesPage() {
               {usage.map((u) => (
                 <div
                   key={u.skill_id}
-                  className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+                  className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-xs"
                 >
                   <span className="font-mono">{u.skill_id}</span>
-                  <span className="text-neutral-500">{u.calls} 次</span>
-                  <span className="text-neutral-400">{u.input_tokens + u.output_tokens} tok</span>
-                  <span className="text-emerald-600">成功 {u.success_count}</span>
+                  <span className="text-text-muted">{u.calls} 次</span>
+                  <span className="text-text-muted">{u.input_tokens + u.output_tokens} tok</span>
+                  <span className="text-success">成功 {u.success_count}</span>
                 </div>
               ))}
-              {usage.length === 0 && <div className="text-sm text-neutral-400">暂无调用记录</div>}
+              {usage.length === 0 && <div className="text-sm text-text-muted">暂无调用记录</div>}
             </div>
           </div>
         </div>
       </div>
 
       {/* 调用测试器（端到端） */}
-      <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-3">
+      <div className="mt-6 rounded-lg border border-border bg-surface p-3">
         <div className="mb-2 text-sm font-semibold">
           🔍 调用测试器（端到端：APIKey → 网关 → 模型 → 计费）
         </div>
@@ -396,13 +396,13 @@ export default function CapabilitiesPage() {
             placeholder="APIKey（申请后自动填入，或粘贴 sk_anp_...）"
             value={tester.apiKey}
             onChange={(e) => setTester({ ...tester, apiKey: e.target.value })}
-            className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-xs"
+            className="w-full rounded border border-border px-2 py-1 font-mono text-xs"
           />
           <div className="flex gap-2">
             <select
               value={tester.skillCode}
               onChange={(e) => setTester({ ...tester, skillCode: e.target.value })}
-              className="rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded border border-border px-2 py-1 text-sm"
             >
               {["data-qa", "doc-gen"].map((c) => (
                 <option key={c} value={c}>
@@ -419,20 +419,18 @@ export default function CapabilitiesPage() {
               placeholder="输入内容（如：本月发票异常有几张）"
               value={tester.input}
               onChange={(e) => setTester({ ...tester, input: e.target.value })}
-              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="flex-1 rounded border border-border px-2 py-1 text-sm"
             />
             <button
               onClick={invoke}
               disabled={invokeBusy || !tester.apiKey || !tester.input.trim()}
-              className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+              className="rounded bg-accent px-3 py-1 text-sm text-white disabled:opacity-50"
             >
               {invokeBusy ? "调用中…" : "调用"}
             </button>
           </div>
           {invokeResult && (
-            <div className="rounded bg-neutral-50 p-2 text-sm whitespace-pre-wrap">
-              {invokeResult}
-            </div>
+            <div className="rounded bg-bg p-2 text-sm whitespace-pre-wrap">{invokeResult}</div>
           )}
         </div>
       </div>

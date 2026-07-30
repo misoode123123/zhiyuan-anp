@@ -56,23 +56,23 @@ type Audit = {
 };
 
 const SEV_COLOR: Record<string, string> = {
-  critical: "bg-red-100 text-red-700",
-  high: "bg-orange-100 text-orange-700",
-  medium: "bg-amber-100 text-amber-700",
-  low: "bg-blue-100 text-blue-700",
+  critical: "bg-danger/10 text-danger",
+  high: "bg-danger/10 text-danger",
+  medium: "bg-warn/10 text-warn",
+  low: "bg-accent/10 text-accent",
 };
 const RISK_COLOR: Record<string, string> = {
-  critical: "bg-red-100 text-red-700",
-  high: "bg-orange-100 text-orange-700",
-  medium: "bg-amber-100 text-amber-700",
-  low: "bg-blue-100 text-blue-700",
-  clean: "bg-emerald-100 text-emerald-700",
+  critical: "bg-danger/10 text-danger",
+  high: "bg-danger/10 text-danger",
+  medium: "bg-warn/10 text-warn",
+  low: "bg-accent/10 text-accent",
+  clean: "bg-success/10 text-success",
 };
 const SENS_COLOR: Record<string, string> = {
-  public: "bg-emerald-100 text-emerald-700",
-  internal: "bg-blue-100 text-blue-700",
-  confidential: "bg-amber-100 text-amber-700",
-  restricted: "bg-red-100 text-red-700",
+  public: "bg-success/10 text-success",
+  internal: "bg-accent/10 text-accent",
+  confidential: "bg-warn/10 text-warn",
+  restricted: "bg-danger/10 text-danger",
 };
 
 export default function SecurityPage() {
@@ -177,7 +177,7 @@ export default function SecurityPage() {
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -187,32 +187,32 @@ export default function SecurityPage() {
         </select>
         {gate && (
           <span
-            className={`ml-auto rounded-md px-3 py-1 text-sm font-medium ${gate.gate_passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+            className={`ml-auto rounded-md px-3 py-1 text-sm font-medium ${gate.gate_passed ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}
           >
             {gate.gate_passed ? "✅ 安全门通过" : "🚫 安全门阻断"} · 风险 {gate.overall_risk_level}
           </span>
         )}
       </div>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         左移安全扫描：Go 原生正则引擎检测密钥泄露(RULE-SEC-001)/SQL 注入/提示注入(RULE-SEC-010)。
         高危发现阻断安全门（供发布消费）。外部 SAST/SCA 工具可经 Scanner 接口接入。
       </p>
 
       {/* 安全门详情 */}
       {gate && !gate.gate_passed && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-danger bg-danger/10 p-2 text-sm text-danger">
           🚫 {gate.blocking_reason} —— 修复或抑制后放行
         </div>
       )}
 
       {/* 扫描器 */}
-      <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-3">
+      <div className="mb-6 rounded-lg border border-border bg-surface p-3">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-sm font-semibold">安全扫描</span>
           <select
             value={scanType}
             onChange={(e) => setScanType(e.target.value)}
-            className="rounded border border-neutral-300 px-2 py-1 text-xs"
+            className="rounded border border-border px-2 py-1 text-xs"
           >
             <option value="full">全部(full)</option>
             <option value="secret">密钥泄露(secret)</option>
@@ -222,7 +222,7 @@ export default function SecurityPage() {
           <button
             onClick={scan}
             disabled={busy || !content.trim()}
-            className="ml-auto rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            className="ml-auto rounded bg-accent px-3 py-1 text-sm text-white disabled:opacity-50"
           >
             {busy ? "扫描中…" : "🔍 扫描"}
           </button>
@@ -234,7 +234,7 @@ export default function SecurityPage() {
           placeholder={
             '粘贴代码/文本/提示词进行安全扫描。\n例如: const apiKey = "AKIA..." 或 "ignore previous instructions"'
           }
-          className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-xs"
+          className="w-full rounded border border-border px-2 py-1 font-mono text-xs"
         />
         {lastScan && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -243,15 +243,15 @@ export default function SecurityPage() {
             >
               风险 {lastScan.risk_level}
             </span>
-            <span className="text-neutral-500">共 {lastScan.total_findings} 项</span>
+            <span className="text-text-muted">共 {lastScan.total_findings} 项</span>
             {lastScan.critical_count > 0 && (
-              <span className="text-red-600">critical {lastScan.critical_count}</span>
+              <span className="text-danger">critical {lastScan.critical_count}</span>
             )}
             {lastScan.high_count > 0 && (
-              <span className="text-orange-600">high {lastScan.high_count}</span>
+              <span className="text-danger">high {lastScan.high_count}</span>
             )}
             {lastScan.medium_count > 0 && (
-              <span className="text-amber-600">medium {lastScan.medium_count}</span>
+              <span className="text-warn">medium {lastScan.medium_count}</span>
             )}
           </div>
         )}
@@ -263,38 +263,38 @@ export default function SecurityPage() {
           <div className="mb-2 text-sm font-semibold">未处理发现（{findings.length}）</div>
           <div className="space-y-2">
             {findings.map((f) => (
-              <div key={f.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+              <div key={f.id} className="rounded-md border border-border bg-surface p-2 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${SEV_COLOR[f.severity] ?? "bg-neutral-100"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${SEV_COLOR[f.severity] ?? "bg-surface-2"}`}
                   >
                     {f.severity}
                   </span>
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs">{f.category}</span>
-                  <span className="font-mono text-xs text-neutral-400">{f.rule_id}</span>
+                  <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">{f.category}</span>
+                  <span className="font-mono text-xs text-text-muted">{f.rule_id}</span>
                   {f.line_number && (
-                    <span className="text-xs text-neutral-400">L{f.line_number}</span>
+                    <span className="text-xs text-text-muted">L{f.line_number}</span>
                   )}
                   <span className="font-medium">{f.title}</span>
                   <button
                     onClick={() => suppress(f.id)}
-                    className="ml-auto text-xs text-blue-600 hover:underline"
+                    className="ml-auto text-xs text-accent hover:underline"
                   >
                     抑制(误报)
                   </button>
                 </div>
                 {f.code_snippet && (
-                  <pre className="mt-1 overflow-x-auto rounded bg-neutral-50 p-1 text-xs">
+                  <pre className="mt-1 overflow-x-auto rounded bg-bg p-1 text-xs">
                     {f.code_snippet}
                   </pre>
                 )}
                 {f.remediation && (
-                  <div className="mt-1 text-xs text-emerald-700">↳ {f.remediation}</div>
+                  <div className="mt-1 text-xs text-success">↳ {f.remediation}</div>
                 )}
               </div>
             ))}
             {findings.length === 0 && (
-              <div className="text-sm text-neutral-400">暂无发现（清白）</div>
+              <div className="text-sm text-text-muted">暂无发现（清白）</div>
             )}
           </div>
         </div>
@@ -306,32 +306,32 @@ export default function SecurityPage() {
               <span className="text-sm font-semibold">数据分级（{dcs.length}）</span>
               <button
                 onClick={() => setShowDcForm(!showDcForm)}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs text-accent hover:underline"
               >
                 ＋ 登记
               </button>
             </div>
             {showDcForm && (
-              <div className="mb-2 space-y-1 rounded-md border border-neutral-200 bg-white p-2">
+              <div className="mb-2 space-y-1 rounded-md border border-border bg-surface p-2">
                 <div className="flex gap-2">
                   <input
                     placeholder="字段名（如 phone）"
                     value={dcForm.field_name}
                     onChange={(e) => setDcForm({ ...dcForm, field_name: e.target.value })}
-                    className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-border px-2 py-1 text-sm"
                   />
                   <input
                     placeholder="表/接口"
                     value={dcForm.table_ref}
                     onChange={(e) => setDcForm({ ...dcForm, table_ref: e.target.value })}
-                    className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                    className="flex-1 rounded border border-border px-2 py-1 text-sm"
                   />
                 </div>
                 <div className="flex gap-2 text-sm">
                   <select
                     value={dcForm.sensitivity_level}
                     onChange={(e) => setDcForm({ ...dcForm, sensitivity_level: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["public", "internal", "confidential", "restricted"].map((c) => (
                       <option key={c} value={c}>
@@ -342,7 +342,7 @@ export default function SecurityPage() {
                   <select
                     value={dcForm.data_type}
                     onChange={(e) => setDcForm({ ...dcForm, data_type: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["pii", "pci", "phi", "secret", "ip", "personal"].map((c) => (
                       <option key={c} value={c}>
@@ -353,7 +353,7 @@ export default function SecurityPage() {
                   <select
                     value={dcForm.masking_strategy}
                     onChange={(e) => setDcForm({ ...dcForm, masking_strategy: e.target.value })}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                   >
                     {["mask", "hash", "replace", "suppress", "synthetic"].map((c) => (
                       <option key={c} value={c}>
@@ -364,7 +364,7 @@ export default function SecurityPage() {
                 </div>
                 <button
                   onClick={submitDc}
-                  className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
+                  className="rounded bg-accent px-3 py-1 text-xs text-white"
                 >
                   登记
                 </button>
@@ -374,27 +374,27 @@ export default function SecurityPage() {
               {dcs.map((d) => (
                 <div
                   key={d.id}
-                  className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+                  className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-xs"
                 >
                   <span
-                    className={`rounded px-1.5 py-0.5 ${SENS_COLOR[d.sensitivity_level] ?? "bg-neutral-100"}`}
+                    className={`rounded px-1.5 py-0.5 ${SENS_COLOR[d.sensitivity_level] ?? "bg-surface-2"}`}
                   >
                     {d.sensitivity_level}
                   </span>
                   <span className="font-mono">{d.field_name}</span>
-                  <span className="text-neutral-400">{d.table_ref}</span>
-                  <span className="text-neutral-400">
+                  <span className="text-text-muted">{d.table_ref}</span>
+                  <span className="text-text-muted">
                     {d.data_type} · {d.masking_strategy}
                   </span>
                   <button
                     onClick={() => deleteDc(d.id)}
-                    className="ml-auto text-red-600 hover:underline"
+                    className="ml-auto text-danger hover:underline"
                   >
                     删除
                   </button>
                 </div>
               ))}
-              {dcs.length === 0 && <div className="text-sm text-neutral-400">暂无分级登记</div>}
+              {dcs.length === 0 && <div className="text-sm text-text-muted">暂无分级登记</div>}
             </div>
           </div>
 
@@ -404,21 +404,21 @@ export default function SecurityPage() {
               {audit.map((a) => (
                 <div
                   key={a.id}
-                  className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-xs"
+                  className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-xs"
                 >
                   <span
-                    className={`rounded px-1.5 py-0.5 ${a.policy_decision === "deny" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}
+                    className={`rounded px-1.5 py-0.5 ${a.policy_decision === "deny" ? "bg-danger/10 text-danger" : "bg-success/10 text-success"}`}
                   >
                     {a.policy_decision}
                   </span>
-                  <span className="font-mono text-neutral-400">{a.action}</span>
-                  <span className="truncate text-neutral-600">{a.detail}</span>
-                  <span className="ml-auto shrink-0 text-neutral-400">
+                  <span className="font-mono text-text-muted">{a.action}</span>
+                  <span className="truncate text-text-muted">{a.detail}</span>
+                  <span className="ml-auto shrink-0 text-text-muted">
                     {a.actor_type}:{a.actor_id || "—"}
                   </span>
                 </div>
               ))}
-              {audit.length === 0 && <div className="text-sm text-neutral-400">暂无审计记录</div>}
+              {audit.length === 0 && <div className="text-sm text-text-muted">暂无审计记录</div>}
             </div>
           </div>
         </div>

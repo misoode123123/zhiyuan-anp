@@ -229,18 +229,18 @@ export default function QuotaPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">📊 项目配额</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         4 维度强制：<b>应用数 / 库数 / 库总大小 / 每日 AI 调用</b>。建资源前
         check，超限返回友好错误。
       </p>
 
       {/* 项目空间选择器 */}
       <div className="mb-4 flex items-center gap-2">
-        <span className="text-sm text-neutral-500">项目空间：</span>
+        <span className="text-sm text-text-muted">项目空间：</span>
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="rounded-md border border-border px-2 py-1.5 text-sm"
         >
           <option value="">— 选择 —</option>
           {spaces.map((s) => (
@@ -250,24 +250,24 @@ export default function QuotaPage() {
           ))}
         </select>
         {usage?.quota.updated_at && (
-          <span className="ml-auto text-xs text-neutral-400">
+          <span className="ml-auto text-xs text-text-muted">
             更新于 {new Date(usage.quota.updated_at).toLocaleString()}
           </span>
         )}
       </div>
 
       {err && (
-        <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <div className="mb-3 rounded-md border border-danger bg-danger/10 p-2 text-sm text-danger">
           {err}
         </div>
       )}
       {msg && (
-        <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">
+        <div className="mb-3 rounded-md border border-success bg-success/10 p-2 text-sm text-success">
           {msg}
         </div>
       )}
 
-      {!psID && <div className="text-sm text-neutral-400">请先选择项目空间</div>}
+      {!psID && <div className="text-sm text-text-muted">请先选择项目空间</div>}
 
       {psID && usage && (
         <>
@@ -278,7 +278,7 @@ export default function QuotaPage() {
               const used = usage[d.usedKey];
               const ratio = limit > 0 ? used / limit : used > 0 ? 1 : 0;
               return (
-                <div key={d.key} className="rounded-lg border border-neutral-200 bg-white p-4">
+                <div key={d.key} className="rounded-lg border border-border bg-surface p-4">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{d.icon}</span>
@@ -287,10 +287,10 @@ export default function QuotaPage() {
                     <span
                       className={`rounded px-2 py-0.5 text-xs ${
                         ratio >= 1
-                          ? "bg-red-100 text-red-700"
+                          ? "bg-danger/10 text-danger"
                           : ratio >= 0.8
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-blue-100 text-blue-700"
+                            ? "bg-warn/10 text-warn"
+                            : "bg-accent/10 text-accent"
                       }`}
                     >
                       {used}
@@ -298,13 +298,13 @@ export default function QuotaPage() {
                       {d.unit}
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
                     <div
                       className={`h-full ${barClass(ratio)}`}
                       style={{ width: `${Math.min(ratio * 100, 100)}%` }}
                     />
                   </div>
-                  <div className="mt-1 text-xs text-neutral-400">
+                  <div className="mt-1 text-xs text-text-muted">
                     {ratio >= 1
                       ? "已满：建新资源会被拦截"
                       : ratio >= 0.8
@@ -317,12 +317,12 @@ export default function QuotaPage() {
           </div>
 
           {/* 编辑表单 */}
-          <div className="rounded-lg border border-neutral-200 bg-white p-4">
-            <div className="mb-3 text-sm font-semibold text-neutral-700">调整上限（admin）</div>
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="mb-3 text-sm font-semibold text-text">调整上限（admin）</div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {DIMENSIONS.map((d) => (
                 <label key={d.key} className="flex items-center gap-2 text-sm">
-                  <span className="w-32 shrink-0 text-neutral-600">
+                  <span className="w-32 shrink-0 text-text-muted">
                     {d.icon} {d.label}上限
                   </span>
                   <input
@@ -330,28 +330,26 @@ export default function QuotaPage() {
                     min={0}
                     value={form[d.key]}
                     onChange={(e) => setForm({ ...form, [d.key]: Number(e.target.value) })}
-                    className="w-28 rounded-md border border-neutral-300 px-2 py-1"
+                    className="w-28 rounded-md border border-border px-2 py-1"
                   />
-                  <span className="text-xs text-neutral-400">{d.unit || "个"}</span>
+                  <span className="text-xs text-text-muted">{d.unit || "个"}</span>
                 </label>
               ))}
             </div>
             <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={save}
-                className="rounded-md bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
+                className="rounded-md bg-accent px-4 py-1.5 text-sm text-white hover:bg-accent"
               >
                 保存
               </button>
               <button
                 onClick={() => psID && load(psID)}
-                className="rounded-md bg-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-300"
+                className="rounded-md bg-surface-2 px-3 py-1.5 text-sm text-text hover:bg-surface-2"
               >
                 重载
               </button>
-              <span className="text-xs text-neutral-400">
-                设为 0 表示完全禁用（任何已用都超限）
-              </span>
+              <span className="text-xs text-text-muted">设为 0 表示完全禁用（任何已用都超限）</span>
             </div>
           </div>
         </>
@@ -360,11 +358,9 @@ export default function QuotaPage() {
       {psID && (
         <>
           {/* ---- 3c 用量趋势 ---- */}
-          <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="mt-6 rounded-lg border border-border bg-surface p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-semibold text-neutral-700">
-                📈 用量趋势（近 {days} 天）
-              </div>
+              <div className="text-sm font-semibold text-text">📈 用量趋势（近 {days} 天）</div>
               <div className="flex items-center gap-1 text-xs">
                 {[7, 30, 90].map((d) => (
                   <button
@@ -372,8 +368,8 @@ export default function QuotaPage() {
                     onClick={() => setDays(d)}
                     className={`rounded px-2 py-1 ${
                       days === d
-                        ? "bg-blue-600 text-white"
-                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                        ? "bg-accent text-white"
+                        : "bg-surface-2 text-text-muted hover:bg-surface-2"
                     }`}
                   >
                     {d}天
@@ -381,7 +377,7 @@ export default function QuotaPage() {
                 ))}
                 <button
                   onClick={() => psID && loadTrend(psID, days)}
-                  className="ml-2 rounded bg-neutral-100 px-2 py-1 text-neutral-600 hover:bg-neutral-200"
+                  className="ml-2 rounded bg-surface-2 px-2 py-1 text-text-muted hover:bg-surface-2"
                 >
                   刷新
                 </button>
@@ -389,17 +385,17 @@ export default function QuotaPage() {
             </div>
 
             {trendErr && (
-              <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="mb-3 rounded-md border border-danger bg-danger/10 p-2 text-sm text-danger">
                 {trendErr}
               </div>
             )}
 
             {/* AI 调用趋势 */}
-            <div className="mb-4 border-t border-neutral-100 pt-3">
+            <div className="mb-4 border-t border-border pt-3">
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-neutral-700">🤖 AI 调用（次/日）</span>
+                <span className="text-sm font-medium text-text">🤖 AI 调用（次/日）</span>
                 {aiSum.calls > 0 && (
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-text-muted">
                     合计 {fmt(aiSum.calls)} 次 · {fmt(aiSum.tokens)} tokens · 均延迟{" "}
                     {Math.round(aiSum.latencySum / aiSum.calls)}ms · 成功率{" "}
                     {pct(aiSum.successW / aiSum.calls)}
@@ -410,13 +406,11 @@ export default function QuotaPage() {
             </div>
 
             {/* 应用 API 调用趋势 */}
-            <div className="mb-4 border-t border-neutral-100 pt-3">
+            <div className="mb-4 border-t border-border pt-3">
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-neutral-700">
-                  🔌 应用 API 调用（次/日）
-                </span>
+                <span className="text-sm font-medium text-text">🔌 应用 API 调用（次/日）</span>
                 {apiSum.calls > 0 && (
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-text-muted">
                     合计 {fmt(apiSum.calls)} 次 · 均延迟{" "}
                     {Math.round(apiSum.latencySum / apiSum.calls)}ms · 错误 {apiSum.errors} 次 ·
                     成功率 {pct(apiSum.successW / apiSum.calls)}
@@ -427,12 +421,12 @@ export default function QuotaPage() {
             </div>
 
             {/* 库大小趋势 */}
-            <div className="border-t border-neutral-100 pt-3">
+            <div className="border-t border-border pt-3">
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-neutral-700">
+                <span className="text-sm font-medium text-text">
                   💾 库总大小（MB/日，当日末值）
                 </span>
-                <span className="text-xs text-neutral-500">
+                <span className="text-xs text-text-muted">
                   当前 {fmt(trend?.db_size_current_mb ?? 0)} MB
                   {dbPoints.length >= 2 && (
                     <>
