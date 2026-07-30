@@ -2119,6 +2119,17 @@ func (h *Handler) CollectNode(c *gin.Context) {
 		return
 	}
 	nid := c.Param("nid")
+	n, err := h.nodeStore.Get(c.Request.Context(), nid)
+	if err != nil || n == nil {
+		httpx.Err(c, 404, 40401, "节点不存在")
+		return
+	}
+	// docker_tcp 节点（如 node_local 本地节点）不走 RemoteExecutor，不远程采集。
+	// 本地节点指标由宿主监控负责（留下期），此处友好跳过不报 500。
+	if n.ConnectType == "docker_tcp" {
+		httpx.OK(c, gin.H{"id": nid, "status": "skipped", "message": "docker_tcp 节点不走远程采集（本地节点用宿主监控）"})
+		return
+	}
 	if err := h.monitor.CollectOnce(c.Request.Context(), nid); err != nil {
 		httpx.Err(c, 500, 50020, "采集失败: "+err.Error())
 		return

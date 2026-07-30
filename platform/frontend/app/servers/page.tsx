@@ -290,7 +290,12 @@ export default function ServersPage() {
                 )}
                 <button
                   onClick={() => collect(n)}
-                  disabled={!!busy[n.id]}
+                  disabled={!!busy[n.id] || n.connect_type === "docker_tcp"}
+                  title={
+                    n.connect_type === "docker_tcp"
+                      ? "docker_tcp 节点不远程采集（本地节点用宿主监控）"
+                      : "手动采集一次"
+                  }
                   className="rounded bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
                 >
                   {busy[n.id] === "采集" ? "..." : "采集"}
