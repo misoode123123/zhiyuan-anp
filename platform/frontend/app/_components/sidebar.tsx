@@ -16,6 +16,7 @@ const NAV = [
   { href: "/compute", label: "算力资源", icon: "⚡" },
   { href: "/capabilities", label: "AI能力市场", icon: "🧩" },
   { href: "/applications", label: "应用部署", icon: "📦" },
+  { href: "/servers", label: "服务器管理", icon: "🖥" },
   { href: "/databases", label: "数据库管理", icon: "🗄️" },
   { href: "/admin/config", label: "系统配置", icon: "⚙️" },
   { href: "/admin/users", label: "用户权限", icon: "🔐" },

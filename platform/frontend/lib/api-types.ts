@@ -6721,3 +6721,59 @@ export interface Artifact {
     content_type: string;
     created_at: string;
 }
+
+/**
+ * 部署节点（.28 本地 / .30 远程）——手动维护。
+ *
+ * 后端 Task 8 扩展了 /deploy-nodes 接口（os_type/env/connect_type/ssh_port/
+ * winrm_user/last_seen + latest_metric），但 swag 注解用 map[string]interface{}
+ * 返回，openapi-typescript 再生会丢失本类型，需手动补回。
+ * 字段对应 platform/backend/internal/appdeploy/node.go 的 DeployNode struct，
+ * 敏感凭证（ssh_key/winrm_password）列表接口已掩码，故此处不暴露。
+ */
+export interface DeployNode {
+    id: string;
+    name: string;
+    host: string;
+    docker_url: string;
+    ssh_user: string;
+    status: string;
+    max_apps: number;
+    description?: string;
+    created_at: string;
+    /** @description linux/windows */
+    os_type: string;
+    /** @description dev/prod 等 */
+    env: string;
+    /** @description docker_tcp / ssh / winrm */
+    connect_type: string;
+    ssh_port: number;
+    winrm_user?: string;
+    last_seen?: string;
+}
+
+/**
+ * 服务器指标单次采样——手动维护。
+ * 字段对应 platform/backend/internal/appdeploy/metric_store.go 的 ServerMetric struct。
+ */
+export interface ServerMetric {
+    node_id: string;
+    captured_at: string;
+    cpu_percent: number;
+    mem_total: number;
+    mem_used: number;
+    disk_total: number;
+    disk_used: number;
+    load_avg?: number;
+    uptime?: string;
+    app_count: number;
+}
+
+/**
+ * /deploy-nodes 列表项：DeployNode + 应用数 + 最新指标。
+ * 对应 handler.go ListNodes 的 nodeWithCount。
+ */
+export interface DeployNodeListItem extends DeployNode {
+    app_count: number;
+    latest_metric?: ServerMetric;
+}

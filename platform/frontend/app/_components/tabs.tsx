@@ -60,6 +60,7 @@ export const NAV_MAP: Record<string, Tab> = {
   "/compute": { path: "/compute", label: "算力资源", icon: "⚡" },
   "/capabilities": { path: "/capabilities", label: "AI能力市场", icon: "🧩" },
   "/applications": { path: "/applications", label: "应用部署", icon: "📦" },
+  "/servers": { path: "/servers", label: "服务器管理", icon: "🖥" },
   "/databases": { path: "/databases", label: "数据库管理", icon: "🗄️" },
   "/workspace": { path: "/workspace", label: "编码工作台", icon: "🧑‍💻" },
   "/admin/config": { path: "/admin/config", label: "系统配置", icon: "⚙️" },
