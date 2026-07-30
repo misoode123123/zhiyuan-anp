@@ -88,29 +88,29 @@ export default function ReleasePage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">🚀 发布中心</h1>
       <FlowStepper current={3} />
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         已审批（🚪G3 通过）的变更发布上线，版本号自增。
       </p>
 
       {gateOn ? (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+        <div className="mb-4 rounded-md border border-warn bg-warn/10 p-2 text-xs text-warn">
           🧪 <b>测试门禁已开启</b>：发布前要求来源需求至少 1 条 <b>passed</b>{" "}
           测试用例，否则将被拦截。先到「测试中心」生成并运行用例；或在「系统配置」关闭{" "}
           <code>release_require_passed_test</code>。
         </div>
       ) : (
-        <div className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-500">
+        <div className="mb-4 rounded-md border border-border bg-bg p-2 text-xs text-text-muted">
           🧪 测试门禁关闭中（可在「系统配置」开启 <code>release_require_passed_test</code>
           ，让发布要求 passed 用例）。
         </div>
       )}
 
       <div className="mb-4">
-        <label className="text-xs text-neutral-500">项目空间</label>
+        <label className="text-xs text-text-muted">项目空间</label>
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="ml-2 rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -120,7 +120,7 @@ export default function ReleasePage() {
         </select>
       </div>
 
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       <div className="mb-5">
         <div className="mb-2 text-sm font-semibold">待发布（已审批变更）</div>
@@ -128,18 +128,14 @@ export default function ReleasePage() {
           {approved.map((c) => (
             <div
               key={c.id}
-              className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm"
+              className="flex items-center justify-between rounded-md border border-border bg-surface p-2 text-sm"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-neutral-800">
-                    {c.app_name || c.id.slice(0, 12)}
-                  </span>
-                  <span className="font-mono text-[10px] text-neutral-400">
-                    {c.id.slice(0, 12)}
-                  </span>
+                  <span className="font-medium text-text">{c.app_name || c.id.slice(0, 12)}</span>
+                  <span className="font-mono text-[10px] text-text-muted">{c.id.slice(0, 12)}</span>
                 </div>
-                <div className="mt-0.5 text-xs text-neutral-500">
+                <div className="mt-0.5 text-xs text-text-muted">
                   👤 提交/审批: {c.reviewer || "?"}
                   {(c.reviewed_at || c.created_at) && (
                     <span className="ml-2">
@@ -154,20 +150,20 @@ export default function ReleasePage() {
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 line-clamp-1 text-xs text-neutral-600">
+                <div className="mt-0.5 line-clamp-1 text-xs text-text-muted">
                   📝 {(c.output || "").match(/【总结】(.+)/)?.[1] || c.prompt || "(无内容说明)"}
                 </div>
               </div>
               <button
                 onClick={() => release(c.id)}
-                className="ml-2 shrink-0 rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+                className="ml-2 shrink-0 rounded bg-success px-2 py-1 text-xs text-white"
               >
                 发布
               </button>
             </div>
           ))}
           {approved.length === 0 && (
-            <div className="text-sm text-neutral-400">暂无已审批变更（先在「变更审批」批准）</div>
+            <div className="text-sm text-text-muted">暂无已审批变更（先在「变更审批」批准）</div>
           )}
         </div>
       </div>
@@ -176,17 +172,17 @@ export default function ReleasePage() {
         <div className="mb-2 text-sm font-semibold">发布历史（{releases.length}）</div>
         <div className="space-y-1">
           {releases.map((r) => (
-            <div key={r.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+            <div key={r.id} className="rounded-md border border-border bg-surface p-2 text-sm">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                <span className="rounded bg-success/10 px-2 py-0.5 text-xs text-success">
                   {r.version}
                 </span>
-                <span className="font-medium text-neutral-800">
+                <span className="font-medium text-text">
                   {r.app_name || r.change_id.slice(0, 12)}
                 </span>
-                <span className="text-xs text-neutral-400">{r.status}</span>
+                <span className="text-xs text-text-muted">{r.status}</span>
                 {r.created_at && (
-                  <span className="ml-auto text-xs text-neutral-400">
+                  <span className="ml-auto text-xs text-text-muted">
                     📅{" "}
                     {new Date(r.created_at).toLocaleString("zh-CN", {
                       hour12: false,
@@ -198,7 +194,7 @@ export default function ReleasePage() {
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-neutral-500">
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
                 <span>👤 {r.reviewer || "?"}</span>
                 <span className="min-w-0 flex-1 truncate">
                   📝 {(r.output || "").match(/【总结】(.+)/)?.[1] || "(无内容说明)"}
@@ -206,7 +202,7 @@ export default function ReleasePage() {
               </div>
             </div>
           ))}
-          {releases.length === 0 && <div className="text-sm text-neutral-400">暂无发布</div>}
+          {releases.length === 0 && <div className="text-sm text-text-muted">暂无发布</div>}
         </div>
       </div>
     </div>

@@ -22,9 +22,9 @@ type Change = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-700",
-  approved: "bg-emerald-100 text-emerald-700",
-  rejected: "bg-red-100 text-red-700",
+  pending: "bg-warn/10 text-warn",
+  approved: "bg-success/10 text-success",
+  rejected: "bg-danger/10 text-danger",
 };
 
 export default function ApprovalsPage() {
@@ -54,7 +54,7 @@ export default function ApprovalsPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">🚪 变更审批（G3 代码闸门）</h1>
       <FlowStepper current={2} />
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         AI 编码产出登记为待审批变更，人工批准/拒绝后才算合入（关键节点人决策）。
       </p>
 
@@ -63,29 +63,29 @@ export default function ApprovalsPage() {
           <button
             key={s || "all"}
             onClick={() => setFilter(s)}
-            className={`rounded-md px-3 py-1 text-sm ${filter === s ? "bg-blue-600 text-white" : "bg-neutral-100"}`}
+            className={`rounded-md px-3 py-1 text-sm ${filter === s ? "bg-accent text-white" : "bg-surface-2"}`}
           >
             {s === "" ? "全部" : s === "pending" ? "待审" : s === "approved" ? "已批准" : "已拒绝"}
           </button>
         ))}
       </div>
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       <div className="space-y-2">
         {list.map((c) => (
-          <div key={c.id} className="rounded-md border border-neutral-200 bg-white p-3 text-sm">
+          <div key={c.id} className="rounded-md border border-border bg-surface p-3 text-sm">
             <div className="flex items-center justify-between">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium text-neutral-800">
+                <span className="truncate font-medium text-text">
                   {c.app_name || c.id.slice(0, 12)}
                 </span>
-                <span className="font-mono text-[10px] text-neutral-400">{c.id.slice(0, 12)}</span>
+                <span className="font-mono text-[10px] text-text-muted">{c.id.slice(0, 12)}</span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[c.status] ?? "bg-neutral-100"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[c.status] ?? "bg-surface-2"}`}
                 >
                   {c.status}
                 </span>
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs text-text-muted">
                   {c.kind} · {c.model}
                 </span>
               </div>
@@ -93,21 +93,21 @@ export default function ApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => decide(c.id, "approve")}
-                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
+                    className="rounded bg-success px-2 py-1 text-xs text-white"
                   >
                     批准
                   </button>
                   <button
                     onClick={() => decide(c.id, "reject")}
-                    className="rounded bg-red-600 px-2 py-1 text-xs text-white"
+                    className="rounded bg-danger px-2 py-1 text-xs text-white"
                   >
                     拒绝
                   </button>
                 </div>
               )}
             </div>
-            <div className="mt-1 text-neutral-700">{c.prompt}</div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-400">
+            <div className="mt-1 text-text">{c.prompt}</div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
               {c.created_at && (
                 <span>
                   📅 创建 {new Date(c.created_at).toLocaleString("zh-CN", { hour12: false })}
@@ -123,7 +123,7 @@ export default function ApprovalsPage() {
             {c.output && <ChangeOutput output={c.output} />}
           </div>
         ))}
-        {list.length === 0 && <div className="text-sm text-neutral-400">暂无变更</div>}
+        {list.length === 0 && <div className="text-sm text-text-muted">暂无变更</div>}
       </div>
     </div>
   );

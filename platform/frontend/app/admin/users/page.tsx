@@ -16,11 +16,11 @@ const ROLES = [
   { v: "admin", l: "管理员（全部）" },
 ];
 const ROLE_COLOR: Record<string, string> = {
-  business: "bg-blue-100 text-blue-700",
-  dev: "bg-purple-100 text-purple-700",
-  rule_architect: "bg-amber-100 text-amber-700",
-  gatekeeper: "bg-emerald-100 text-emerald-700",
-  admin: "bg-red-100 text-red-700",
+  business: "bg-accent/10 text-accent",
+  dev: "bg-warn/10 text-warn",
+  rule_architect: "bg-warn/10 text-warn",
+  gatekeeper: "bg-success/10 text-success",
+  admin: "bg-danger/10 text-danger",
 };
 
 export default function UsersPage() {
@@ -90,52 +90,49 @@ export default function UsersPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">🔐 用户与权限</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         用户是一等实体（可管理的目录）。用户在某空间的角色由 membership
-        决定（用户×空间×角色）。请求带 <code className="rounded bg-neutral-100 px-1">X-User</code>{" "}
+        决定（用户×空间×角色）。请求带 <code className="rounded bg-surface-2 px-1">X-User</code>{" "}
         头（M1 模拟登录，后续接 OIDC）。
       </p>
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* 用户目录 */}
         <div>
           <div className="mb-2 text-sm font-semibold">用户目录（{users.length}）</div>
-          <div className="mb-3 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-white p-2">
+          <div className="mb-3 flex flex-wrap gap-2 rounded-lg border border-border bg-surface p-2">
             <input
               value={newUser.name}
               onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
               placeholder="用户名（如 alice）"
-              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="flex-1 rounded border border-border px-2 py-1 text-sm"
             />
             <input
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
               placeholder="邮箱（可选）"
-              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="flex-1 rounded border border-border px-2 py-1 text-sm"
             />
             <input
               type="password"
               value={newUser.password}
               onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
               placeholder="初始密码"
-              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="flex-1 rounded border border-border px-2 py-1 text-sm"
             />
-            <button
-              onClick={createUser}
-              className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
-            >
+            <button onClick={createUser} className="rounded bg-accent px-3 py-1 text-xs text-white">
               新建用户
             </button>
           </div>
           <div className="space-y-1">
             {users.map((u) => (
-              <div key={u.id} className="rounded-md border border-neutral-200 bg-white p-2 text-sm">
+              <div key={u.id} className="rounded-md border border-border bg-surface p-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{u.name}</span>
-                  {u.email && <span className="text-xs text-neutral-400">{u.email}</span>}
+                  {u.email && <span className="text-xs text-text-muted">{u.email}</span>}
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${u.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${u.status === "active" ? "bg-success/10 text-success" : "bg-surface-2"}`}
                   >
                     {u.status}
                   </span>
@@ -143,7 +140,7 @@ export default function UsersPage() {
                 {u.spaces && u.spaces.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {u.spaces.map((s, i) => (
-                      <span key={i} className="text-xs text-neutral-500">
+                      <span key={i} className="text-xs text-text-muted">
                         {spaceName(s.project_space_id)}：
                         <span className={`rounded px-1 ${ROLE_COLOR[s.role] ?? ""}`}>{s.role}</span>
                       </span>
@@ -152,7 +149,7 @@ export default function UsersPage() {
                 )}
               </div>
             ))}
-            {users.length === 0 && <div className="text-sm text-neutral-400">暂无用户</div>}
+            {users.length === 0 && <div className="text-sm text-text-muted">暂无用户</div>}
           </div>
         </div>
 
@@ -163,7 +160,7 @@ export default function UsersPage() {
             <select
               value={psID}
               onChange={(e) => setPsID(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded-md border border-border px-2 py-1 text-sm"
             >
               {spaces.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -172,11 +169,11 @@ export default function UsersPage() {
               ))}
             </select>
           </div>
-          <div className="mb-3 flex gap-2 rounded-lg border border-neutral-200 bg-white p-2">
+          <div className="mb-3 flex gap-2 rounded-lg border border-border bg-surface p-2">
             <select
               value={selUser}
               onChange={(e) => setSelUser(e.target.value)}
-              className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="flex-1 rounded border border-border px-2 py-1 text-sm"
             >
               <option value="">— 选用户 —</option>
               {users.map((u) => (
@@ -188,7 +185,7 @@ export default function UsersPage() {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="rounded border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded border border-border px-2 py-1 text-sm"
             >
               {ROLES.map((r) => (
                 <option key={r.v} value={r.v}>
@@ -196,10 +193,7 @@ export default function UsersPage() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={addMember}
-              className="rounded bg-blue-600 px-3 py-1 text-xs text-white"
-            >
+            <button onClick={addMember} className="rounded bg-accent px-3 py-1 text-xs text-white">
               加入空间
             </button>
           </div>
@@ -207,17 +201,17 @@ export default function UsersPage() {
             {members.map((m, i) => (
               <div
                 key={i}
-                className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2 text-sm"
+                className="flex items-center gap-2 rounded-md border border-border bg-surface p-2 text-sm"
               >
                 <span className="font-mono text-xs">{m.user_id}</span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${ROLE_COLOR[m.role] ?? "bg-neutral-100"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs ${ROLE_COLOR[m.role] ?? "bg-surface-2"}`}
                 >
                   {m.role}
                 </span>
               </div>
             ))}
-            {members.length === 0 && <div className="text-sm text-neutral-400">该空间暂无成员</div>}
+            {members.length === 0 && <div className="text-sm text-text-muted">该空间暂无成员</div>}
           </div>
         </div>
       </div>

@@ -199,14 +199,14 @@ export default function RequirementsPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">需求工作台</h1>
-      <p className="mb-3 text-sm text-neutral-600">
+      <p className="mb-3 text-sm text-text-muted">
         业务描述 + 截图（可选）→ AI 生成规格 → 派发编码 → 审批 → 发布
       </p>
 
       <div className="mb-4">
         <Link
           href="/requirements/chat"
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm text-white"
         >
           💬 对话式梳理需求（AI 引导，推荐）
         </Link>
@@ -217,23 +217,23 @@ export default function RequirementsPage() {
         {STEPS.map((s, i) => (
           <div key={s} className="flex items-center gap-1">
             <span
-              className={`rounded-full px-2 py-1 ${i === 0 ? "bg-blue-600 text-white" : "bg-neutral-200 text-neutral-600"}`}
+              className={`rounded-full px-2 py-1 ${i === 0 ? "bg-accent text-white" : "bg-surface-2 text-text-muted"}`}
             >
               {i + 1}. {s}
             </span>
-            {i < STEPS.length - 1 && <span className="text-neutral-400">→</span>}
+            {i < STEPS.length - 1 && <span className="text-text-muted">→</span>}
           </div>
         ))}
-        <span className="ml-2 text-neutral-400">您在此</span>
+        <span className="ml-2 text-text-muted">您在此</span>
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div>
-          <label className="text-xs text-neutral-500">项目空间</label>
+          <label className="text-xs text-text-muted">项目空间</label>
           <select
             value={psID}
             onChange={(e) => setPsID(e.target.value)}
-            className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="ml-2 rounded-md border border-border px-2 py-1 text-sm"
           >
             {spaces.map((s) => (
               <option key={s.id} value={s.id}>
@@ -243,11 +243,11 @@ export default function RequirementsPage() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500">归属应用（需求即为其开发）</label>
+          <label className="text-xs text-text-muted">归属应用（需求即为其开发）</label>
           <select
             value={selApp}
             onChange={(e) => setSelApp(e.target.value)}
-            className="ml-2 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="ml-2 rounded-md border border-border px-2 py-1 text-sm"
           >
             <option value="">— 不指定（手动填仓库） —</option>
             {apps.map((a) => (
@@ -257,22 +257,22 @@ export default function RequirementsPage() {
             ))}
           </select>
           {apps.length === 0 && (
-            <span className="ml-2 text-xs text-neutral-400">先去「应用部署」创建应用</span>
+            <span className="ml-2 text-xs text-text-muted">先去「应用部署」创建应用</span>
           )}
         </div>
       </div>
 
-      <label className="text-xs text-neutral-500">业务描述</label>
+      <label className="text-xs text-text-muted">业务描述</label>
       <textarea
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
         rows={3}
         placeholder="例：客服系统登录界面，支持账号密码和短信验证码登录"
-        className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        className="mt-1 w-full rounded-md border border-border px-2 py-1.5 text-sm"
       />
 
       <div className="mt-2">
-        <label className="text-xs text-neutral-500">
+        <label className="text-xs text-text-muted">
           附件（可选，支持 md/txt/doc/docx/pdf/图片等，最多 8 个；文本类参与规格生成）
         </label>
         <input
@@ -288,14 +288,14 @@ export default function RequirementsPage() {
               <img key={`img-${i}`} src={img} alt="" className="h-16 rounded border" />
             ))}
             {textFiles.map((t, i) => (
-              <span key={`txt-${i}`} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
+              <span key={`txt-${i}`} className="rounded bg-accent/10 px-2 py-1 text-xs text-accent">
                 📄 {t.name}（{t.content.length} 字，参与生成）
               </span>
             ))}
             {binFiles.map((t, i) => (
               <span
                 key={`bin-${i}`}
-                className="rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-500"
+                className="rounded bg-surface-2 px-2 py-1 text-xs text-text-muted"
                 title="二进制附件仅留档，不参与规格生成"
               >
                 📎 {t.name}（留档）
@@ -308,16 +308,16 @@ export default function RequirementsPage() {
       <button
         onClick={generate}
         disabled={loading || !psID}
-        className="mt-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+        className="mt-2 rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
       >
         {loading ? "AI 生成规格中…" : "① 生成需求规格"}
       </button>
-      {err && <div className="mt-2 text-sm text-red-500">{err}</div>}
-      {msg && <div className="mt-2 rounded-md bg-blue-50 p-2 text-sm text-blue-800">{msg}</div>}
+      {err && <div className="mt-2 text-sm text-danger">{err}</div>}
+      {msg && <div className="mt-2 rounded-md bg-accent/10 p-2 text-sm text-accent">{msg}</div>}
 
       {last && (
-        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <div className="text-xs text-neutral-500">最新生成 · {last.id}</div>
+        <div className="mt-4 rounded-lg border border-accent bg-accent/10 p-4">
+          <div className="text-xs text-text-muted">最新生成 · {last.id}</div>
           <div className="text-base font-semibold">{last.title}</div>
           <div className="mt-2 text-sm">
             <b>用户故事：</b>
@@ -331,16 +331,16 @@ export default function RequirementsPage() {
               ))}
             </ul>
           </div>
-          <div className="mt-3 border-t border-blue-200 pt-3">
-            <div className="mb-1 text-xs text-neutral-500">下一步：派发给 AI 编码</div>
+          <div className="mt-3 border-t border-accent pt-3">
+            <div className="mb-1 text-xs text-text-muted">下一步：派发给 AI 编码</div>
             {last.application_id ? (
-              <div className="mb-2 text-xs text-emerald-700">
+              <div className="mb-2 text-xs text-success">
                 📦 将编码到所属应用仓库「
                 {apps.find((a) => a.id === last.application_id)?.name ?? last.application_id}
                 」（自动）
               </div>
             ) : (
-              <div className="mb-2 text-xs text-blue-700">
+              <div className="mb-2 text-xs text-accent">
                 📦 未归属应用：派发时自动创建一个托管应用（代码归属即确立，可在「应用部署」查看 /
                 构建 / 版本回滚）
               </div>
@@ -348,7 +348,7 @@ export default function RequirementsPage() {
             <button
               onClick={() => dispatch(last.id)}
               disabled={!!dispatching}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              className="rounded-md bg-success px-3 py-1.5 text-sm text-white disabled:opacity-50"
             >
               {dispatching === last.id ? "派发中…" : "⚡ ② 派发编码"}
             </button>
@@ -360,12 +360,12 @@ export default function RequirementsPage() {
         <div className="mb-2 text-sm font-semibold">需求列表（{list.length}）— 每项可派发编码</div>
         <div className="space-y-2">
           {list.map((r) => (
-            <div key={r.id} className="rounded-md border border-neutral-200 bg-white p-3 text-sm">
+            <div key={r.id} className="rounded-md border border-border bg-surface p-3 text-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{r.title}</span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${r.status === "delivered" ? "bg-emerald-100 text-emerald-700" : r.status === "specified" ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-600"}`}
+                    className={`rounded px-1.5 py-0.5 text-xs ${r.status === "delivered" ? "bg-success/10 text-success" : r.status === "specified" ? "bg-accent/10 text-accent" : "bg-surface-2 text-text-muted"}`}
                   >
                     {r.status === "delivered"
                       ? "✅ 已交付"
@@ -374,12 +374,12 @@ export default function RequirementsPage() {
                         : r.status}
                   </span>
                   {r.application_id && (
-                    <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">
+                    <span className="rounded bg-warn/10 px-1.5 py-0.5 text-xs text-warn">
                       📦 {apps.find((a) => a.id === r.application_id)?.name ?? "应用"}
                     </span>
                   )}
                   {r.assignee && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
+                    <span className="rounded bg-warn/10 px-1.5 py-0.5 text-xs text-warn">
                       👤 {r.assignee}
                     </span>
                   )}
@@ -387,7 +387,7 @@ export default function RequirementsPage() {
                 <div className="flex gap-1">
                   <button
                     onClick={() => claim(r.id)}
-                    className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
+                    className="rounded bg-accent px-2 py-1 text-xs text-white"
                     title="认领此需求（人），去编码工作台开发"
                   >
                     👤 认领
@@ -395,16 +395,16 @@ export default function RequirementsPage() {
                   <button
                     onClick={() => dispatch(r.id)}
                     disabled={!!dispatching}
-                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                    className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
                   >
                     {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
                   </button>
                 </div>
               </div>
-              <div className="mt-1 text-xs text-neutral-500">{r.user_story}</div>
+              <div className="mt-1 text-xs text-text-muted">{r.user_story}</div>
             </div>
           ))}
-          {list.length === 0 && <div className="text-sm text-neutral-400">暂无需求</div>}
+          {list.length === 0 && <div className="text-sm text-text-muted">暂无需求</div>}
         </div>
       </div>
     </div>

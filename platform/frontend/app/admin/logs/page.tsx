@@ -20,11 +20,11 @@ type LogEntry = {
 };
 
 const LEVEL_COLOR: Record<string, string> = {
-  ERROR: "bg-red-100 text-red-700",
-  FATAL: "bg-red-200 text-red-900",
-  WARN: "bg-amber-100 text-amber-700",
-  INFO: "bg-blue-100 text-blue-700",
-  DEBUG: "bg-neutral-100 text-neutral-500",
+  ERROR: "bg-danger/10 text-danger",
+  FATAL: "bg-danger/20 text-danger",
+  WARN: "bg-warn/10 text-warn",
+  INFO: "bg-accent/10 text-accent",
+  DEBUG: "bg-surface-2 text-text-muted",
 };
 
 const SOURCE_ICON: Record<string, string> = {
@@ -86,7 +86,7 @@ export default function LogsPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">📋 系统日志</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         跨层（前端/后端/Python）统一错误日志 · 前端报错自动回传
       </p>
 
@@ -94,21 +94,21 @@ export default function LogsPage() {
       {stats && (
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            { l: "总日志", v: stats.total_logs, c: "text-neutral-700" },
+            { l: "总日志", v: stats.total_logs, c: "text-text" },
             {
               l: "未处理错误",
               v: stats.unresolved_errors,
-              c: stats.unresolved_errors > 0 ? "text-red-600" : "text-emerald-600",
+              c: stats.unresolved_errors > 0 ? "text-danger" : "text-success",
             },
             {
               l: "今日错误",
               v: stats.today_errors,
-              c: stats.today_errors > 0 ? "text-red-600" : "text-neutral-700",
+              c: stats.today_errors > 0 ? "text-danger" : "text-text",
             },
-            { l: "来源数", v: Object.keys(stats.by_source).length, c: "text-blue-600" },
+            { l: "来源数", v: Object.keys(stats.by_source).length, c: "text-accent" },
           ].map((s) => (
-            <div key={s.l} className="rounded-lg border bg-white p-3">
-              <div className="text-xs text-neutral-500">{s.l}</div>
+            <div key={s.l} className="rounded-lg border bg-surface p-3">
+              <div className="text-xs text-text-muted">{s.l}</div>
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
             </div>
           ))}
@@ -138,7 +138,7 @@ export default function LogsPage() {
           <option value="backend">⚙️ 后端</option>
           <option value="agent-runtime">🤖 Python</option>
         </select>
-        <button onClick={load} className="rounded-md bg-neutral-100 px-3 py-1 text-sm">
+        <button onClick={load} className="rounded-md bg-surface-2 px-3 py-1 text-sm">
           🔄 刷新
         </button>
       </div>
@@ -146,7 +146,7 @@ export default function LogsPage() {
       {/* 趋势 + 来源分布 */}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* 趋势柱状图 */}
-        <div className="rounded-lg border bg-white p-3 lg:col-span-2">
+        <div className="rounded-lg border bg-surface p-3 lg:col-span-2">
           <div className="mb-2 text-sm font-semibold">近 7 天 ERROR/WARN 趋势</div>
           <div className="flex items-end gap-1" style={{ height: "120px" }}>
             {trend.map((t, i) => {
@@ -157,34 +157,34 @@ export default function LogsPage() {
                 <div key={i} className="flex flex-1 flex-col items-center gap-1">
                   <div className="flex w-full flex-col justify-end" style={{ height: "90px" }}>
                     <div
-                      className="w-full rounded-t bg-amber-400"
+                      className="w-full rounded-t bg-warn"
                       style={{ height: `${warnH}%` }}
                       title={`WARN: ${t.warns}`}
                     />
                     <div
-                      className="w-full bg-red-500"
+                      className="w-full bg-danger"
                       style={{ height: `${errH}%` }}
                       title={`ERROR: ${t.errors}`}
                     />
                   </div>
-                  <span className="text-xs text-neutral-400">{t.date.slice(5)}</span>
+                  <span className="text-xs text-text-muted">{t.date.slice(5)}</span>
                 </div>
               );
             })}
-            {trend.length === 0 && <div className="m-auto text-sm text-neutral-400">暂无数据</div>}
+            {trend.length === 0 && <div className="m-auto text-sm text-text-muted">暂无数据</div>}
           </div>
           <div className="mt-1 flex gap-3 text-xs">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded bg-red-500"></span>ERROR
+              <span className="inline-block h-2 w-2 rounded bg-danger"></span>ERROR
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded bg-amber-400"></span>WARN
+              <span className="inline-block h-2 w-2 rounded bg-warn"></span>WARN
             </span>
           </div>
         </div>
 
         {/* 来源分布 */}
-        <div className="rounded-lg border bg-white p-3">
+        <div className="rounded-lg border bg-surface p-3">
           <div className="mb-2 text-sm font-semibold">来源分布（近 7 天）</div>
           <div className="space-y-2">
             {sources.length > 0 ? (
@@ -195,12 +195,12 @@ export default function LogsPage() {
                     <span className="w-20 truncate">
                       {SOURCE_ICON[s.source] || "❓"} {s.source}
                     </span>
-                    <span className={`rounded px-1 ${LEVEL_COLOR[s.level] || "bg-neutral-100"}`}>
+                    <span className={`rounded px-1 ${LEVEL_COLOR[s.level] || "bg-surface-2"}`}>
                       {s.level}
                     </span>
-                    <div className="flex-1 rounded-full bg-neutral-100">
+                    <div className="flex-1 rounded-full bg-surface-2">
                       <div
-                        className={`h-4 rounded-full ${s.level === "ERROR" || s.level === "FATAL" ? "bg-red-500" : s.level === "WARN" ? "bg-amber-400" : "bg-blue-400"}`}
+                        className={`h-4 rounded-full ${s.level === "ERROR" || s.level === "FATAL" ? "bg-danger" : s.level === "WARN" ? "bg-warn" : "bg-accent"}`}
                         style={{ width: `${Math.max(8, (s.count / total) * 100)}%` }}
                       />
                     </div>
@@ -209,7 +209,7 @@ export default function LogsPage() {
                 );
               })
             ) : (
-              <div className="text-sm text-neutral-400">暂无数据</div>
+              <div className="text-sm text-text-muted">暂无数据</div>
             )}
           </div>
         </div>
@@ -239,52 +239,52 @@ export default function LogsPage() {
           <option value="backend">⚙️ 后端</option>
           <option value="agent-runtime">🤖 Python</option>
         </select>
-        <button onClick={load} className="rounded-md bg-neutral-100 px-3 py-1 text-sm">
+        <button onClick={load} className="rounded-md bg-surface-2 px-3 py-1 text-sm">
           🔄 刷新
         </button>
       </div>
-      {msg && <div className="mb-2 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-2 text-sm text-accent">{msg}</div>}
 
       {/* 列表 */}
       <div className="space-y-1">
         {logs.map((l) => (
           <div
             key={l.id}
-            className={`flex items-center gap-2 rounded-md border bg-white p-2 text-sm ${l.resolved ? "opacity-50" : ""}`}
+            className={`flex items-center gap-2 rounded-md border bg-surface p-2 text-sm ${l.resolved ? "opacity-50" : ""}`}
           >
             <span
-              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-mono ${LEVEL_COLOR[l.level] || "bg-neutral-100"}`}
+              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-mono ${LEVEL_COLOR[l.level] || "bg-surface-2"}`}
             >
               {l.level}
             </span>
             <span className="shrink-0 text-xs">
               {SOURCE_ICON[l.source] || "❓"} {l.source}
             </span>
-            <span className="shrink-0 text-xs text-neutral-400">
+            <span className="shrink-0 text-xs text-text-muted">
               {new Date(l.timestamp).toLocaleString("zh-CN", { hour12: false })}
             </span>
             <span
-              className="flex-1 truncate cursor-pointer hover:text-blue-600"
+              className="flex-1 truncate cursor-pointer hover:text-accent"
               onClick={() => setSelected(l)}
             >
               {l.message}
             </span>
             {l.module && (
-              <span className="shrink-0 rounded bg-neutral-100 px-1 text-xs">{l.module}</span>
+              <span className="shrink-0 rounded bg-surface-2 px-1 text-xs">{l.module}</span>
             )}
             {l.resolved ? (
-              <span className="shrink-0 text-xs text-emerald-600">✓ {l.resolved_by}</span>
+              <span className="shrink-0 text-xs text-success">✓ {l.resolved_by}</span>
             ) : (
               <button
                 onClick={() => resolve(l.id)}
-                className="shrink-0 rounded bg-blue-600 px-1.5 py-0.5 text-xs text-white"
+                className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-xs text-white"
               >
                 处理
               </button>
             )}
           </div>
         ))}
-        {logs.length === 0 && <div className="text-sm text-neutral-400">暂无日志</div>}
+        {logs.length === 0 && <div className="text-sm text-text-muted">暂无日志</div>}
       </div>
 
       {/* 详情弹窗 */}
@@ -294,7 +294,7 @@ export default function LogsPage() {
           onClick={() => setSelected(null)}
         >
           <div
-            className="max-h-80vh max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl"
+            className="max-h-80vh max-w-2xl overflow-auto rounded-lg bg-surface p-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex items-center gap-2">
@@ -307,23 +307,23 @@ export default function LogsPage() {
                 {SOURCE_ICON[selected.source]} {selected.source}
               </span>
               {selected.module && (
-                <span className="rounded bg-neutral-100 px-1 text-xs">{selected.module}</span>
+                <span className="rounded bg-surface-2 px-1 text-xs">{selected.module}</span>
               )}
-              <span className="ml-auto text-xs text-neutral-400">#{selected.id}</span>
+              <span className="ml-auto text-xs text-text-muted">#{selected.id}</span>
             </div>
             <div className="mb-2 text-sm font-medium">{selected.message}</div>
-            <div className="mb-2 text-xs text-neutral-500">
+            <div className="mb-2 text-xs text-text-muted">
               {new Date(selected.timestamp).toLocaleString("zh-CN", { hour12: false })}
             </div>
             {selected.trace_id && (
               <div className="mb-2 text-xs">
-                <span className="text-neutral-400">trace:</span>{" "}
-                <code className="rounded bg-neutral-100 px-1">{selected.trace_id}</code>
+                <span className="text-text-muted">trace:</span>{" "}
+                <code className="rounded bg-surface-2 px-1">{selected.trace_id}</code>
               </div>
             )}
             {selected.stack_trace && (
               <div className="mb-2">
-                <div className="text-xs text-neutral-500">堆栈</div>
+                <div className="text-xs text-text-muted">堆栈</div>
                 <pre className="mt-1 max-h-40 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
                   {selected.stack_trace}
                 </pre>
@@ -331,8 +331,8 @@ export default function LogsPage() {
             )}
             {Object.keys(ctxParsed).length > 0 && (
               <div className="mb-2">
-                <div className="text-xs text-neutral-500">上下文</div>
-                <pre className="mt-1 rounded bg-neutral-100 p-2 text-xs">
+                <div className="text-xs text-text-muted">上下文</div>
+                <pre className="mt-1 rounded bg-surface-2 p-2 text-xs">
                   {JSON.stringify(ctxParsed, null, 2)}
                 </pre>
               </div>
@@ -344,14 +344,14 @@ export default function LogsPage() {
                     resolve(selected.id);
                     setSelected(null);
                   }}
-                  className="rounded bg-blue-600 px-3 py-1 text-sm text-white"
+                  className="rounded bg-accent px-3 py-1 text-sm text-white"
                 >
                   标记已处理
                 </button>
               )}
               <button
                 onClick={() => setSelected(null)}
-                className="rounded bg-neutral-100 px-3 py-1 text-sm"
+                className="rounded bg-surface-2 px-3 py-1 text-sm"
               >
                 关闭
               </button>

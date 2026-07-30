@@ -27,10 +27,10 @@ type TC = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  passed: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-  manual: "bg-amber-100 text-amber-700",
-  draft: "bg-neutral-100 text-neutral-500",
+  passed: "bg-success/10 text-success",
+  failed: "bg-danger/10 text-danger",
+  manual: "bg-warn/10 text-warn",
+  draft: "bg-surface-2 text-text-muted",
 };
 const STATUS_LABEL: Record<string, string> = {
   passed: "✓ 通过",
@@ -186,17 +186,17 @@ export default function TestingPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">🧪 测试中心</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         AI 把需求验收标准转为可执行测试用例，并对着<b>已部署应用的 URL</b> 自动发请求验收（状态码 +
         响应体比对）。
       </p>
 
       <div className="mb-4 flex items-center gap-2">
-        <label className="text-xs text-neutral-500">项目空间</label>
+        <label className="text-xs text-text-muted">项目空间</label>
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -206,7 +206,7 @@ export default function TestingPage() {
         </select>
       </div>
 
-      {msg && <div className="mb-3 rounded-md bg-blue-50 p-2 text-sm text-blue-800">{msg}</div>}
+      {msg && <div className="mb-3 rounded-md bg-accent/10 p-2 text-sm text-accent">{msg}</div>}
 
       <div className="mb-5">
         <div className="mb-2 text-sm font-semibold">需求（生成用例 / 批量验收）</div>
@@ -214,21 +214,21 @@ export default function TestingPage() {
           {reqs.map((r) => (
             <div
               key={r.id}
-              className="flex items-center justify-between rounded-md border border-neutral-200 bg-white p-2 text-sm"
+              className="flex items-center justify-between rounded-md border border-border bg-surface p-2 text-sm"
             >
               <div className="flex items-center gap-2">
                 <span>{r.title}</span>
                 {r.application_id ? (
-                  <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">
+                  <span className="rounded bg-warn/10 px-1.5 py-0.5 text-xs text-warn">
                     📦 已归属应用
                   </span>
                 ) : (
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                  <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-text-muted">
                     未归属应用
                   </span>
                 )}
                 {casesByReq.get(r.id)?.length ? (
-                  <span className="text-xs text-neutral-400">
+                  <span className="text-xs text-text-muted">
                     · {casesByReq.get(r.id)!.length} 用例
                   </span>
                 ) : null}
@@ -237,7 +237,7 @@ export default function TestingPage() {
                 <button
                   onClick={() => generate(r.id)}
                   disabled={!!genID}
-                  className="rounded bg-blue-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                  className="rounded bg-accent px-2 py-1 text-xs text-white disabled:opacity-50"
                 >
                   {genID === r.id ? "生成中…" : "生成测试用例"}
                 </button>
@@ -245,7 +245,7 @@ export default function TestingPage() {
                   <button
                     onClick={() => runAll(r.id)}
                     disabled={!!runReqID}
-                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                    className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
                   >
                     {runReqID === r.id ? "验收中…" : "⚡ 批量验收"}
                   </button>
@@ -253,7 +253,7 @@ export default function TestingPage() {
               </div>
             </div>
           ))}
-          {reqs.length === 0 && <div className="text-sm text-neutral-400">暂无需求</div>}
+          {reqs.length === 0 && <div className="text-sm text-text-muted">暂无需求</div>}
         </div>
       </div>
 
@@ -267,12 +267,12 @@ export default function TestingPage() {
             } catch {}
             const hasHTTP = !!(c.method || c.path || c.expected_status || c.expected_body);
             return (
-              <div key={c.id} className="rounded-md border border-neutral-200 bg-white p-3 text-sm">
+              <div key={c.id} className="rounded-md border border-border bg-surface p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{c.title}</span>
                     <span
-                      className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[c.status] ?? "bg-neutral-100"}`}
+                      className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[c.status] ?? "bg-surface-2"}`}
                     >
                       {STATUS_LABEL[c.status] ?? c.status}
                     </span>
@@ -284,19 +284,19 @@ export default function TestingPage() {
                           value={note}
                           onChange={(e) => setNote(e.target.value)}
                           placeholder="备注（可选）"
-                          className="w-32 rounded border border-neutral-300 px-2 py-1 text-xs"
+                          className="w-32 rounded border border-border px-2 py-1 text-xs"
                         />
                         <button
                           onClick={() => recordVerdict(c.id, "passed")}
                           disabled={!!verdictID}
-                          className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                          className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
                         >
                           {verdictID === c.id ? "…" : "✓ 通过"}
                         </button>
                         <button
                           onClick={() => recordVerdict(c.id, "failed")}
                           disabled={!!verdictID}
-                          className="rounded bg-red-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                          className="rounded bg-danger px-2 py-1 text-xs text-white disabled:opacity-50"
                         >
                           {verdictID === c.id ? "…" : "✗ 失败"}
                         </button>
@@ -305,14 +305,14 @@ export default function TestingPage() {
                             setEditTC("");
                             setNote("");
                           }}
-                          className="rounded bg-neutral-200 px-2 py-1 text-xs"
+                          className="rounded bg-surface-2 px-2 py-1 text-xs"
                         >
                           取消
                         </button>
                       </div>
                     ) : c.verifier_id ? (
                       <div className="flex items-center gap-1">
-                        <span className="text-xs text-neutral-500">
+                        <span className="text-xs text-text-muted">
                           {c.verifier_name || c.verifier_id} 验收 ·{" "}
                           {c.verified_at?.slice(0, 16).replace("T", " ")}
                         </span>
@@ -321,7 +321,7 @@ export default function TestingPage() {
                             setEditTC(c.id);
                             setNote(c.manual_note ?? "");
                           }}
-                          className="rounded bg-neutral-200 px-2 py-1 text-xs"
+                          className="rounded bg-surface-2 px-2 py-1 text-xs"
                         >
                           改判
                         </button>
@@ -332,7 +332,7 @@ export default function TestingPage() {
                           setEditTC(c.id);
                           setNote("");
                         }}
-                        className="rounded bg-amber-500 px-2 py-1 text-xs text-white"
+                        className="rounded bg-warn px-2 py-1 text-xs text-white"
                       >
                         ⊙ 人工验收
                       </button>
@@ -349,8 +349,8 @@ export default function TestingPage() {
                 </div>
 
                 {hasHTTP && (
-                  <div className="mt-1.5 rounded bg-neutral-50 px-2 py-1 font-mono text-xs text-neutral-700">
-                    <b className="text-blue-700">{c.method || "GET"}</b> {c.path || "/"}
+                  <div className="mt-1.5 rounded bg-bg px-2 py-1 font-mono text-xs text-text">
+                    <b className="text-accent">{c.method || "GET"}</b> {c.path || "/"}
                     {c.expected_status ? (
                       <>
                         {" "}
@@ -367,7 +367,7 @@ export default function TestingPage() {
                 )}
 
                 {steps.length > 0 && (
-                  <ol className="ml-5 mt-1 list-decimal text-xs text-neutral-500">
+                  <ol className="ml-5 mt-1 list-decimal text-xs text-text-muted">
                     {steps.map((s, i) => (
                       <li key={i}>{s}</li>
                     ))}
@@ -375,37 +375,37 @@ export default function TestingPage() {
                 )}
 
                 {c.run_at && (
-                  <div className="mt-1.5 rounded bg-neutral-50 px-2 py-1 text-xs">
-                    <span className="text-neutral-400">最近运行：</span>
+                  <div className="mt-1.5 rounded bg-bg px-2 py-1 text-xs">
+                    <span className="text-text-muted">最近运行：</span>
                     <b
                       className={
                         c.status === "passed"
-                          ? "text-emerald-700"
+                          ? "text-success"
                           : c.status === "failed"
-                            ? "text-red-700"
-                            : "text-amber-700"
+                            ? "text-danger"
+                            : "text-warn"
                       }
                     >
                       实际 {c.actual_status || "—"}
                     </b>
                     {c.actual_body && (
-                      <span className="ml-1 text-neutral-500">· {c.actual_body.slice(0, 160)}</span>
+                      <span className="ml-1 text-text-muted">· {c.actual_body.slice(0, 160)}</span>
                     )}
                   </div>
                 )}
                 {c.verifier_id && c.manual_note && (
-                  <div className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-xs">
-                    <span className="text-neutral-400">验收备注：</span> {c.manual_note}
+                  <div className="mt-1.5 rounded bg-warn/10 px-2 py-1 text-xs">
+                    <span className="text-text-muted">验收备注：</span> {c.manual_note}
                   </div>
                 )}
-                <div className="mt-1 text-[11px] text-neutral-300">
+                <div className="mt-1 text-[11px] text-text-muted">
                   归属：{reqMap.get(c.requirement_id)?.title ?? c.requirement_id}
                 </div>
               </div>
             );
           })}
           {cases.length === 0 && (
-            <div className="text-sm text-neutral-400">
+            <div className="text-sm text-text-muted">
               暂无测试用例（先对某需求「生成测试用例」）
             </div>
           )}

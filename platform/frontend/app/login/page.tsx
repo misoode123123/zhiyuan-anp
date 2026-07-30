@@ -39,32 +39,32 @@ export default function LoginPage() {
     <div className="flex min-h-[70vh] items-center justify-center">
       <form
         onSubmit={submit}
-        className="w-80 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+        className="w-80 rounded-lg border border-border bg-surface p-6 shadow-sm"
       >
         <h1 className="mb-1 text-xl font-bold">登录 智源 ANP</h1>
-        <p className="mb-4 text-xs text-neutral-500">企业 AI 原生研发平台 · 真实账号登录</p>
-        <label className="text-xs text-neutral-500">用户名</label>
+        <p className="mb-4 text-xs text-text-muted">企业 AI 原生研发平台 · 真实账号登录</p>
+        <label className="text-xs text-text-muted">用户名</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 mb-3 w-full rounded border border-border px-2 py-1.5 text-sm"
         />
-        <label className="text-xs text-neutral-500">密码</label>
+        <label className="text-xs text-text-muted">密码</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 mb-3 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 mb-3 w-full rounded border border-border px-2 py-1.5 text-sm"
           placeholder="初始 admin / admin123"
         />
-        {err && <div className="mb-2 text-sm text-red-500">{err}</div>}
+        {err && <div className="mb-2 text-sm text-danger">{err}</div>}
         <button
           disabled={loading}
-          className="w-full rounded bg-blue-600 py-2 text-sm text-white disabled:opacity-50"
+          className="w-full rounded bg-accent py-2 text-sm text-white disabled:opacity-50"
         >
           {loading ? "登录中…" : "登录"}
         </button>
-        <div className="mt-3 text-center text-xs text-neutral-400">
+        <div className="mt-3 text-center text-xs text-text-muted">
           初始账号 admin / admin123 · 联系管理员开通你的账号
         </div>
       </form>

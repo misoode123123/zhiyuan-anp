@@ -312,9 +312,9 @@ export default function ChatPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">💬 对话式需求梳理</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         AI agent 引导对话梳理需求，确认后生成规格入库 →{" "}
-        <Link href="/requirements" className="text-blue-600">
+        <Link href="/requirements" className="text-accent">
           返回需求工作台
         </Link>
       </p>
@@ -324,7 +324,7 @@ export default function ChatPage() {
           <select
             value={psID}
             onChange={(e) => setPsID(e.target.value)}
-            className="mb-2 w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="mb-2 w-full rounded border border-border px-2 py-1 text-sm"
           >
             {spaces.map((s) => (
               <option key={s.id} value={s.id}>
@@ -334,7 +334,7 @@ export default function ChatPage() {
           </select>
           <button
             onClick={newConv}
-            className="mb-3 w-full rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white"
+            className="mb-3 w-full rounded-md bg-accent px-3 py-1.5 text-sm text-white"
           >
             ＋ 新对话
           </button>
@@ -343,7 +343,7 @@ export default function ChatPage() {
               <button
                 key={c.id}
                 onClick={() => openConv(c.id)}
-                className={`block w-full truncate rounded px-2 py-1 text-left text-xs ${cid === c.id ? "bg-blue-50 text-blue-700" : "hover:bg-neutral-100"}`}
+                className={`block w-full truncate rounded px-2 py-1 text-left text-xs ${cid === c.id ? "bg-accent/10 text-accent" : "hover:bg-surface-2"}`}
               >
                 {c.status === "submitted" ? "✓ " : ""}
                 {c.title ?? "新对话"}
@@ -353,11 +353,11 @@ export default function ChatPage() {
         </div>
 
         <div
-          className="flex flex-col rounded-lg border border-neutral-200 bg-white"
+          className="flex flex-col rounded-lg border border-border bg-surface"
           style={{ minHeight: "60vh" }}
         >
           {!cid ? (
-            <div className="p-10 text-center text-sm text-neutral-400">
+            <div className="p-10 text-center text-sm text-text-muted">
               点「＋ 新对话」开始梳理需求
             </div>
           ) : (
@@ -372,16 +372,16 @@ export default function ChatPage() {
                       className={`flex ${mine ? "justify-end" : "justify-start"}`}
                     >
                       <div
-                        className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${mine ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-800"}`}
+                        className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${mine ? "bg-accent text-white" : "bg-surface-2 text-text"}`}
                       >
                         {t}
                       </div>
                     </div>
                   );
                 })}
-                {sending && <div className="text-xs text-neutral-400">AI 思考中…</div>}
+                {sending && <div className="text-xs text-text-muted">AI 思考中…</div>}
               </div>
-              <div className="mt-auto border-t border-neutral-200 p-3">
+              <div className="mt-auto border-t border-border p-3">
                 {images.length > 0 && (
                   <div className="mb-2 flex gap-2">
                     {images.map((img, i) => (
@@ -392,7 +392,7 @@ export default function ChatPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={toggleRec}
-                    className={`rounded px-2 py-1 text-sm text-white ${recording ? "animate-pulse bg-red-600" : "bg-neutral-700"}`}
+                    className={`rounded px-2 py-1 text-sm text-white ${recording ? "animate-pulse bg-danger" : "bg-neutral-700"}`}
                     title="语音输入"
                   >
                     {recording ? "⏹ 停止" : "🎤"}
@@ -415,19 +415,19 @@ export default function ChatPage() {
                       }
                     }}
                     placeholder="描述你的需求…（Enter 发送）"
-                    className="min-w-0 flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                    className="min-w-0 flex-1 rounded border border-border px-2 py-1 text-sm"
                   />
                   <button
                     onClick={send}
                     disabled={sending}
-                    className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+                    className="rounded bg-accent px-3 py-1 text-sm text-white disabled:opacity-50"
                   >
                     发送
                   </button>
                   <button
                     onClick={genSpec}
                     disabled={busy}
-                    className="rounded bg-emerald-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+                    className="rounded bg-success px-3 py-1 text-sm text-white disabled:opacity-50"
                   >
                     生成规格
                   </button>
@@ -445,10 +445,10 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {msg && <div className="mt-3 rounded-md bg-blue-50 p-2 text-sm text-blue-800">{msg}</div>}
+      {msg && <div className="mt-3 rounded-md bg-accent/10 p-2 text-sm text-accent">{msg}</div>}
 
       {spec && (
-        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <div className="mt-4 rounded-lg border border-success bg-success/10 p-4">
           <div className="mb-2 text-sm font-semibold">📋 规格草稿（可编辑后确认入库）</div>
           <input
             value={spec.title}
@@ -474,7 +474,7 @@ export default function ChatPage() {
           <button
             onClick={commit}
             disabled={busy}
-            className="rounded bg-emerald-700 px-4 py-1.5 text-sm text-white"
+            className="rounded bg-success px-4 py-1.5 text-sm text-white"
           >
             确认入库（生成需求）
           </button>

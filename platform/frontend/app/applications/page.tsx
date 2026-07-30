@@ -66,12 +66,12 @@ type Detail = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  running: "bg-emerald-100 text-emerald-700",
-  building: "bg-amber-100 text-amber-700",
-  registered: "bg-neutral-100 text-neutral-500",
-  stopped: "bg-blue-100 text-blue-700",
-  failed: "bg-red-100 text-red-700",
-  importing: "bg-purple-100 text-purple-700", // 导入进行中态（复用 status 列）
+  running: "bg-success/10 text-success",
+  building: "bg-warn/10 text-warn",
+  registered: "bg-surface-2 text-text-muted",
+  stopped: "bg-accent/10 text-accent",
+  failed: "bg-danger/10 text-danger",
+  importing: "bg-warn/10 text-warn", // 导入进行中态（复用 status 列）
 };
 
 // DevWizard 开发向导：编码→测试→上线 进度条 + 项目上下文 + 引导文案。
@@ -84,11 +84,7 @@ function DevWizard({ app }: { app: App }) {
     const st = s[key];
     const isCur = s.current === key;
     const cls =
-      st === "done"
-        ? "text-emerald-600"
-        : isCur
-          ? "font-semibold text-blue-600"
-          : "text-neutral-400";
+      st === "done" ? "text-success" : isCur ? "font-semibold text-accent" : "text-text-muted";
     const mark = st === "done" ? "✅" : isCur ? "●" : "○";
     return (
       <span className={cls}>
@@ -97,22 +93,22 @@ function DevWizard({ app }: { app: App }) {
     );
   };
   return (
-    <div className="mb-2 rounded-md bg-blue-50/60 p-2 text-xs">
+    <div className="mb-2 rounded-md bg-accent/60 p-2 text-xs">
       <div className="flex items-center gap-2">
         {step("code", "✏ 编码")}
-        <span className="text-neutral-300">→</span>
+        <span className="text-text-muted">→</span>
         {step("test", "🧪 测试")}
-        <span className="text-neutral-300">→</span>
+        <span className="text-text-muted">→</span>
         {step("prod", "🚀 上线")}
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 text-neutral-500">
+      <div className="mt-1 flex flex-wrap gap-x-3 text-text-muted">
         <span>
           仓库 <code>{app.repo_dir}</code>
         </span>
         {testIns && (
           <span>
             test{" "}
-            <span className={testIns.status === "running" ? "text-emerald-600" : ""}>
+            <span className={testIns.status === "running" ? "text-success" : ""}>
               :{testIns.host_port} {testIns.status}
             </span>
           </span>
@@ -120,13 +116,13 @@ function DevWizard({ app }: { app: App }) {
         {prodIns && (
           <span>
             prod{" "}
-            <span className={prodIns.status === "running" ? "text-emerald-600" : ""}>
+            <span className={prodIns.status === "running" ? "text-success" : ""}>
               :{prodIns.host_port} {prodIns.status}
             </span>
           </span>
         )}
       </div>
-      <div className="mt-1 text-blue-700">👉 {s.hint}</div>
+      <div className="mt-1 text-accent">👉 {s.hint}</div>
     </div>
   );
 }
@@ -167,19 +163,19 @@ function ArtifactSection({
     setArts((r as { data?: { artifacts?: Artifact[] } }).data?.artifacts ?? []);
   };
   return (
-    <div className="mt-3 rounded border border-neutral-200 p-3">
+    <div className="mt-3 rounded border border-border p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-semibold">构建产物</span>
         <button
           onClick={build}
           disabled={building}
-          className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded bg-accent px-2 py-0.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           {building ? "构建中…" : "构建产物"}
         </button>
       </div>
       {arts.length === 0 ? (
-        <div className="text-xs text-neutral-500">暂无产物，点「构建产物」生成</div>
+        <div className="text-xs text-text-muted">暂无产物，点「构建产物」生成</div>
       ) : (
         arts.map((a) => (
           <div key={a.id} className="flex items-center justify-between py-1 text-xs">
@@ -189,7 +185,7 @@ function ArtifactSection({
             </span>
             <a
               href={`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/artifacts/${a.id}/download`}
-              className="text-blue-600 hover:underline"
+              className="text-accent hover:underline"
             >
               下载
             </a>
@@ -664,7 +660,7 @@ export default function ApplicationsPage() {
         <select
           value={psID}
           onChange={(e) => setPsID(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded-md border border-border px-2 py-1 text-sm"
         >
           {spaces.map((s) => (
             <option key={s.id} value={s.id}>
@@ -674,11 +670,11 @@ export default function ApplicationsPage() {
         </select>
         {nodes.length > 1 && (
           <div className="flex items-center gap-1 text-sm">
-            <span className="text-xs text-neutral-500">默认部署节点</span>
+            <span className="text-xs text-text-muted">默认部署节点</span>
             <select
               value={selectedNode}
               onChange={(e) => setSelectedNode(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded-md border border-border px-2 py-1 text-sm"
               title="新增应用的默认部署节点"
             >
               <option value="">
@@ -695,26 +691,26 @@ export default function ApplicationsPage() {
           </div>
         )}
       </div>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         把研发产出的应用（含 Dockerfile 的源码目录）自动{" "}
         <b>docker build → docker run → 分配端口 → 暴露 URL</b>。 repo_dir 填{" "}
         <b>docker 守护进程可见的路径</b>（生产 .28 上形如 <code>/data/repos/myapp</code>）。
       </p>
 
       {/* 注册 */}
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface p-3 text-sm">
         <button
           onClick={() => {
             resetImportWizard();
             setImportOpen(true);
           }}
-          className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+          className="rounded bg-success px-3 py-1.5 text-white"
           title="把已有代码项目（git仓库/zip/服务器目录）导入 ANP 托管，后续走 AI 全流程"
         >
           📥 导入已有项目
         </button>
         <div>
-          <label className="block text-xs text-neutral-500">接入模式</label>
+          <label className="block text-xs text-text-muted">接入模式</label>
           <select
             value={form.deploy_mode}
             onChange={(e) =>
@@ -724,7 +720,7 @@ export default function ApplicationsPage() {
                 external_url: "",
               })
             }
-            className="rounded border border-neutral-300 px-2 py-1"
+            className="rounded border border-border px-2 py-1"
             title="managed=A 类平台托管(编码/部署);external=B 类纳管已在运行的外部应用(代码不动)"
           >
             <option value="managed">managed · 平台托管（A 类）</option>
@@ -732,11 +728,11 @@ export default function ApplicationsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">应用类型</label>
+          <label className="block text-xs text-text-muted">应用类型</label>
           <select
             value={appKind}
             onChange={(e) => setAppKind(e.target.value)}
-            className="rounded border border-neutral-300 px-2 py-1"
+            className="rounded border border-border px-2 py-1"
             title="应用产物形态：web/service 走容器部署；desktop/mobile/cli 走构建产物下载"
           >
             <option value="web">Web 应用</option>
@@ -747,41 +743,41 @@ export default function ApplicationsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">应用名</label>
+          <label className="block text-xs text-text-muted">应用名</label>
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder={form.deploy_mode === "external" ? "如 存量ERP" : "如 hello-go"}
-            className="rounded border border-neutral-300 px-2 py-1"
+            className="rounded border border-border px-2 py-1"
           />
         </div>
         {form.deploy_mode === "external" ? (
           <div className="min-w-[16rem] flex-1">
-            <label className="block text-xs text-neutral-500">
+            <label className="block text-xs text-text-muted">
               外部应用地址 external_url（必填）
             </label>
             <input
               value={form.external_url}
               onChange={(e) => setForm({ ...form, external_url: e.target.value })}
               placeholder="http://host:port 或 https://domain/path"
-              className="w-full rounded border border-neutral-300 px-2 py-1"
+              className="w-full rounded border border-border px-2 py-1"
             />
           </div>
         ) : (
           <div>
-            <label className="block text-xs text-neutral-500">容器内端口（可选）</label>
+            <label className="block text-xs text-text-muted">容器内端口（可选）</label>
             <input
               type="number"
               value={form.internal_port}
               onChange={(e) => setForm({ ...form, internal_port: Number(e.target.value) })}
-              className="w-24 rounded border border-neutral-300 px-2 py-1"
+              className="w-24 rounded border border-border px-2 py-1"
             />
           </div>
         )}
-        <button onClick={register} className="rounded bg-blue-600 px-3 py-1.5 text-white">
+        <button onClick={register} className="rounded bg-accent px-3 py-1.5 text-white">
           {form.deploy_mode === "external" ? "接入外部应用" : "创建应用"}
         </button>
-        <span className="text-xs text-neutral-400">
+        <span className="text-xs text-text-muted">
           {form.deploy_mode === "external"
             ? "B 类轻接入：仅注册 + appgw 统一入口 /apps/&lt;app_id&gt;/ + ops 按 external_url 探活。不动外部代码。"
             : "仓库自动托管到 /data/repos/<应用名>（git），opencode 编码即提交到此"}
@@ -790,30 +786,28 @@ export default function ApplicationsPage() {
 
       {/* 导入已有项目向导（条件渲染区块）：3 步 ①选来源 ②填信息 ③执行/进度 */}
       {importOpen && (
-        <div className="mb-4 rounded-lg border-2 border-emerald-300 bg-emerald-50/40 p-3 text-sm">
+        <div className="mb-4 rounded-lg border-2 border-success bg-success/40 p-3 text-sm">
           <div className="mb-3 flex items-center gap-2">
-            <span className="font-semibold text-emerald-700">📥 导入已有项目</span>
+            <span className="font-semibold text-success">📥 导入已有项目</span>
             {/* 步骤指示器 */}
             <span className="ml-2 flex gap-1 text-xs">
               {[1, 2, 3].map((n) => (
                 <span
                   key={n}
                   className={`rounded px-1.5 py-0.5 ${
-                    importStep === n
-                      ? "bg-emerald-600 text-white"
-                      : "bg-neutral-200 text-neutral-500"
+                    importStep === n ? "bg-success text-white" : "bg-surface-2 text-text-muted"
                   }`}
                 >
                   {n}
                 </span>
               ))}
             </span>
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-text-muted">
               {importStep === 1 ? "选来源" : importStep === 2 ? "填信息" : "执行"}
             </span>
             <button
               onClick={closeImportWizard}
-              className="ml-auto rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600"
+              className="ml-auto rounded bg-surface-2 px-2 py-0.5 text-xs text-text-muted"
               disabled={importing}
               title={importing ? "导入进行中，暂不能关闭" : "关闭向导"}
             >
@@ -824,7 +818,7 @@ export default function ApplicationsPage() {
           {/* 步骤 1：选来源 */}
           {importStep === 1 && (
             <div className="space-y-2">
-              <div className="text-xs text-neutral-600">
+              <div className="text-xs text-text-muted">
                 选择要导入的项目来源（导入后统一走 ANP AI 全流程：编码→测试→上线）
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -856,16 +850,16 @@ export default function ApplicationsPage() {
                       setImportSource(opt.key);
                       setImportStep(2);
                     }}
-                    className={`rounded border p-2 text-left hover:border-emerald-400 hover:bg-emerald-50 ${
+                    className={`rounded border p-2 text-left hover:border-success hover:bg-success/10 ${
                       importSource === opt.key
-                        ? "border-emerald-500 bg-emerald-50"
-                        : "border-neutral-200 bg-white"
+                        ? "border-success bg-success/10"
+                        : "border-border bg-surface"
                     }`}
                   >
                     <div className="font-medium">
                       {opt.icon} {opt.title}
                     </div>
-                    <div className="mt-1 text-xs text-neutral-500">{opt.desc}</div>
+                    <div className="mt-1 text-xs text-text-muted">{opt.desc}</div>
                   </button>
                 ))}
               </div>
@@ -877,11 +871,11 @@ export default function ApplicationsPage() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-end gap-2">
                 <div>
-                  <label className="block text-xs text-neutral-500">来源</label>
+                  <label className="block text-xs text-text-muted">来源</label>
                   <select
                     value={importSource}
                     onChange={(e) => setImportSource(e.target.value as "git" | "upload" | "dir")}
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                     disabled={importing}
                   >
                     <option value="git">📥 远程仓库 (git)</option>
@@ -890,24 +884,24 @@ export default function ApplicationsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-neutral-500">应用名（必填）</label>
+                  <label className="block text-xs text-text-muted">应用名（必填）</label>
                   <input
                     value={importForm.name}
                     onChange={(e) => setImportForm({ ...importForm, name: e.target.value })}
                     placeholder="如 hello-go（至少 2 字符，非纯数字/ID 前缀）"
-                    className="rounded border border-neutral-300 px-2 py-1"
+                    className="rounded border border-border px-2 py-1"
                     disabled={importing}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-neutral-500">容器内端口</label>
+                  <label className="block text-xs text-text-muted">容器内端口</label>
                   <input
                     type="number"
                     value={importForm.internal_port}
                     onChange={(e) =>
                       setImportForm({ ...importForm, internal_port: Number(e.target.value) })
                     }
-                    className="w-24 rounded border border-neutral-300 px-2 py-1"
+                    className="w-24 rounded border border-border px-2 py-1"
                     disabled={importing}
                   />
                 </div>
@@ -916,17 +910,17 @@ export default function ApplicationsPage() {
               {importSource === "git" && (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs text-neutral-500">git 仓库地址（必填）</label>
+                    <label className="block text-xs text-text-muted">git 仓库地址（必填）</label>
                     <input
                       value={importForm.git_url}
                       onChange={(e) => setImportForm({ ...importForm, git_url: e.target.value })}
                       placeholder="https://github.com/owner/repo.git 或 git@github.com:owner/repo.git"
-                      className="w-full rounded border border-neutral-300 px-2 py-1"
+                      className="w-full rounded border border-border px-2 py-1"
                       disabled={importing}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-neutral-500">
+                    <label className="block text-xs text-text-muted">
                       私有仓 token（可选，不落库）
                     </label>
                     <input
@@ -934,7 +928,7 @@ export default function ApplicationsPage() {
                       onChange={(e) => setImportForm({ ...importForm, auth_token: e.target.value })}
                       placeholder="HTTPS 私有仓填 token；SSH 仓留空"
                       type="password"
-                      className="w-full rounded border border-neutral-300 px-2 py-1"
+                      className="w-full rounded border border-border px-2 py-1"
                       disabled={importing}
                     />
                   </div>
@@ -942,7 +936,7 @@ export default function ApplicationsPage() {
               )}
               {importSource === "upload" && (
                 <div>
-                  <label className="block text-xs text-neutral-500">zip 文件（必填，≤500MB）</label>
+                  <label className="block text-xs text-text-muted">zip 文件（必填，≤500MB）</label>
                   <input
                     type="file"
                     accept=".zip,application/zip"
@@ -951,7 +945,7 @@ export default function ApplicationsPage() {
                     disabled={importing}
                   />
                   {importFile && (
-                    <div className="mt-1 text-xs text-neutral-500">
+                    <div className="mt-1 text-xs text-text-muted">
                       已选: {importFile.name}（{(importFile.size / 1024 / 1024).toFixed(1)} MB）
                     </div>
                   )}
@@ -959,14 +953,14 @@ export default function ApplicationsPage() {
               )}
               {importSource === "dir" && (
                 <div>
-                  <label className="block text-xs text-neutral-500">
+                  <label className="block text-xs text-text-muted">
                     服务器目录绝对路径（必填，须在 /data/、/opt/legacy/ 白名单下）
                   </label>
                   <input
                     value={importForm.server_path}
                     onChange={(e) => setImportForm({ ...importForm, server_path: e.target.value })}
                     placeholder="/data/legacy/myapp 或 /opt/legacy/svc"
-                    className="w-full rounded border border-neutral-300 px-2 py-1"
+                    className="w-full rounded border border-border px-2 py-1"
                     disabled={importing}
                   />
                 </div>
@@ -974,14 +968,14 @@ export default function ApplicationsPage() {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => setImportStep(1)}
-                  className="rounded bg-neutral-100 px-3 py-1.5 text-neutral-600"
+                  className="rounded bg-surface-2 px-3 py-1.5 text-text-muted"
                   disabled={importing}
                 >
                   ← 上一步
                 </button>
                 <button
                   onClick={startImport}
-                  className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+                  className="rounded bg-success px-3 py-1.5 text-white"
                   disabled={importing}
                 >
                   开始导入
@@ -993,14 +987,14 @@ export default function ApplicationsPage() {
           {/* 步骤 3：执行 / 进度 */}
           {importStep === 3 && (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded bg-white p-2 text-sm">
+              <div className="flex items-center gap-2 rounded bg-surface p-2 text-sm">
                 {importing && (
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"></span>
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-success border-t-transparent"></span>
                 )}
-                <span className="font-medium text-emerald-700">
+                <span className="font-medium text-success">
                   {importing ? "导入中..." : "导入结束"}
                 </span>
-                <span className="ml-auto text-xs text-neutral-400">
+                <span className="ml-auto text-xs text-text-muted">
                   {importSource === "git"
                     ? "📥 git"
                     : importSource === "upload"
@@ -1010,7 +1004,7 @@ export default function ApplicationsPage() {
                 </span>
               </div>
               <div className="rounded bg-neutral-900 p-2 text-xs text-green-300">
-                <div className="mb-1 text-neutral-400">后端进度（last_error 实时回显）：</div>
+                <div className="mb-1 text-text-muted">后端进度（last_error 实时回显）：</div>
                 <pre className="whitespace-pre-wrap break-all">
                   {importProgress || "(等待后端响应...)"}
                 </pre>
@@ -1018,7 +1012,7 @@ export default function ApplicationsPage() {
               {!importing && (
                 <button
                   onClick={closeImportWizard}
-                  className="rounded bg-emerald-600 px-3 py-1.5 text-white"
+                  className="rounded bg-success px-3 py-1.5 text-white"
                 >
                   完成 / 关闭
                 </button>
@@ -1035,44 +1029,44 @@ export default function ApplicationsPage() {
           // 导入进行中：status===importing（git clone / zip 解压 / 目录复制中），编码/部署按钮禁用
           const isImporting = a.status === "importing";
           return (
-            <div key={a.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div key={a.id} className="rounded-lg border border-border bg-surface p-3">
               {/* 导入进度提示：importing 态显示 last_error 进度（后端实时回写「正在 clone...」等） */}
               {isImporting && (
-                <div className="mb-2 flex items-center gap-2 rounded bg-purple-50 px-3 py-1.5 text-sm text-purple-700">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-purple-400 border-t-transparent"></span>
+                <div className="mb-2 flex items-center gap-2 rounded bg-warn/10 px-3 py-1.5 text-sm text-warn">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-warn border-t-transparent"></span>
                   导入已有项目中...
-                  <span className="truncate text-xs text-purple-500">
+                  <span className="truncate text-xs text-warn">
                     {a.last_error || "(等待进度...)"}
                   </span>
-                  <span className="ml-auto text-xs text-purple-400">每3秒自动刷新</span>
+                  <span className="ml-auto text-xs text-warn">每3秒自动刷新</span>
                 </div>
               )}
               {/* 部署进度提示：从 app.status 派生（切 tab 回来也可见，因为 3s 轮询刷新 status） */}
               {a.status === "building" && (
-                <div className="mb-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></span>
+                <div className="mb-2 flex items-center gap-2 rounded bg-accent/10 px-3 py-1.5 text-sm text-accent">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
                   构建部署中...
                   {a.instances?.find((i) => i.status === "building") && (
-                    <span className="text-xs text-blue-400">
+                    <span className="text-xs text-accent">
                       {a.instances.find((i) => i.status === "building")?.url || ""}
                     </span>
                   )}
-                  <span className="ml-auto text-xs text-blue-400">每3秒自动刷新</span>
+                  <span className="ml-auto text-xs text-accent">每3秒自动刷新</span>
                 </div>
               )}
               {a.status === "running" && a.instances?.some((i) => i.status === "building") && (
-                <div className="mb-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></span>
+                <div className="mb-2 flex items-center gap-2 rounded bg-accent/10 px-3 py-1.5 text-sm text-accent">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
                   {a.instances.find((i) => i.status === "building")?.env} 环境构建中...
-                  <span className="ml-auto text-xs text-blue-400">每3秒自动刷新</span>
+                  <span className="ml-auto text-xs text-accent">每3秒自动刷新</span>
                 </div>
               )}
               {a.status === "failed" && (
-                <div className="mb-2 rounded bg-red-50 px-3 py-1.5 text-sm text-red-700">
+                <div className="mb-2 rounded bg-danger/10 px-3 py-1.5 text-sm text-danger">
                   <div>❌ 构建失败：{a.last_error?.slice(0, 100) || "(无错误摘要)"}</div>
                   {a.build_log && (
                     <details className="mt-1">
-                      <summary className="cursor-pointer text-xs text-red-500">
+                      <summary className="cursor-pointer text-xs text-danger">
                         查看构建日志详情
                       </summary>
                       <pre className="mt-1 max-h-64 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300 whitespace-pre-wrap">
@@ -1086,14 +1080,14 @@ export default function ApplicationsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono font-medium">{a.name}</span>
                 {isExternal ? (
-                  <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">
+                  <span className="rounded bg-accent/10 px-1.5 py-0.5 text-xs text-accent">
                     external · 纳管
                   </span>
                 ) : null}
                 {/* 导入来源徽章：git=远程仓 / dir=本机zip或服务器目录；空=平台建仓（不显示） */}
                 {a.import_source === "git" && (
                   <span
-                    className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
+                    className="rounded bg-success/10 px-1.5 py-0.5 text-xs text-success"
                     title={"导入自 git 仓库: " + (a.import_ref || "")}
                   >
                     📥 git
@@ -1101,14 +1095,14 @@ export default function ApplicationsPage() {
                 )}
                 {a.import_source === "dir" && (
                   <span
-                    className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700"
+                    className="rounded bg-warn/10 px-1.5 py-0.5 text-xs text-warn"
                     title={"导入自 目录/zip: " + (a.import_ref || "")}
                   >
                     📁 目录
                   </span>
                 )}
                 <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-neutral-100"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[a.status] ?? "bg-surface-2"}`}
                 >
                   {a.status}
                 </span>
@@ -1116,18 +1110,18 @@ export default function ApplicationsPage() {
                 {(a.status === "building" || a.status === "running") &&
                   a.instances &&
                   a.instances.some((i) => i.status === "building") && (
-                    <span className="flex items-center gap-1 text-xs text-amber-600">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400 border-t-transparent"></span>
+                    <span className="flex items-center gap-1 text-xs text-warn">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-warn border-t-transparent"></span>
                       构建中...
                     </span>
                   )}
                 {a.status === "building" &&
                   a.instances &&
                   a.instances.some((i) => i.status === "failed") && (
-                    <span className="text-xs text-red-500">构建失败</span>
+                    <span className="text-xs text-danger">构建失败</span>
                   )}
                 {!isExternal && a.image && (
-                  <span className="text-xs text-neutral-400">
+                  <span className="text-xs text-text-muted">
                     v{a.version} · {a.image}
                   </span>
                 )}
@@ -1138,14 +1132,14 @@ export default function ApplicationsPage() {
                         href={a.external_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700"
+                        className="rounded bg-accent/10 px-2 py-0.5 text-xs text-accent"
                         title="打开外部应用地址"
                       >
                         🔗 访问
                       </a>
                       <button
                         onClick={() => showDetail(a.id)}
-                        className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                        className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         详情
                       </button>
@@ -1159,7 +1153,7 @@ export default function ApplicationsPage() {
                         <>
                           <button
                             onClick={() => act(a.id, "deploy", "test", selectedNode)}
-                            className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded bg-accent/10 px-2 py-0.5 text-xs text-accent disabled:cursor-not-allowed disabled:opacity-40"
                             disabled={isImporting}
                             title={isImporting ? "导入完成前不可部署" : "构建并部署到 test 环境"}
                           >
@@ -1167,7 +1161,7 @@ export default function ApplicationsPage() {
                           </button>
                           <button
                             onClick={() => promoteWithNode(a.id, selectedNode)}
-                            className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded bg-success/10 px-2 py-0.5 text-xs text-success disabled:cursor-not-allowed disabled:opacity-40"
                             disabled={isImporting}
                             title={isImporting ? "导入完成前不可上线" : "上线到 prod"}
                           >
@@ -1178,7 +1172,7 @@ export default function ApplicationsPage() {
                       <select
                         value={wsTool}
                         onChange={(e) => setWsTool(e.target.value)}
-                        className="rounded border border-neutral-300 px-1 py-0.5 text-xs disabled:opacity-40"
+                        className="rounded border border-border px-1 py-0.5 text-xs disabled:opacity-40"
                         title="选择交互编码工具"
                         disabled={isImporting}
                       >
@@ -1188,7 +1182,7 @@ export default function ApplicationsPage() {
                       </select>
                       <button
                         onClick={() => openWorkspace(a.id, wsTool)}
-                        className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded bg-warn/10 px-2 py-0.5 text-xs text-warn disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={isImporting}
                         title={
                           isImporting
@@ -1200,14 +1194,14 @@ export default function ApplicationsPage() {
                       </button>
                       <button
                         onClick={() => showEnv(a.id)}
-                        className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                        className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         ⚙️变量
                       </button>
                       {a.status === "running" && (
                         <button
                           onClick={() => act(a.id, "stop")}
-                          className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                          className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                         >
                           停止
                         </button>
@@ -1215,26 +1209,26 @@ export default function ApplicationsPage() {
                       {a.status === "stopped" && (
                         <button
                           onClick={() => act(a.id, "start")}
-                          className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
+                          className="rounded bg-success/10 px-2 py-0.5 text-xs text-success"
                         >
                           启动
                         </button>
                       )}
                       <button
                         onClick={() => showReqs(a.id)}
-                        className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                        className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         需求
                       </button>
                       <button
                         onClick={() => showDetail(a.id)}
-                        className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                        className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         详情
                       </button>
                       <button
                         onClick={() => showLogs(a.id)}
-                        className="rounded bg-neutral-100 px-2 py-0.5 text-xs"
+                        className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         日志
                       </button>
@@ -1242,13 +1236,13 @@ export default function ApplicationsPage() {
                   )}
                   <button
                     onClick={() => remove(a.id)}
-                    className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700"
+                    className="rounded bg-danger/10 px-2 py-0.5 text-xs text-danger"
                   >
                     删除
                   </button>
                 </div>
               </div>
-              <div className="mt-1 text-xs text-neutral-500">
+              <div className="mt-1 text-xs text-text-muted">
                 {isExternal ? (
                   <>
                     external_url:{" "}
@@ -1256,7 +1250,7 @@ export default function ApplicationsPage() {
                       href={a.external_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-indigo-600 hover:underline"
+                      className="text-accent hover:underline"
                     >
                       {a.external_url}
                     </a>{" "}
@@ -1270,7 +1264,7 @@ export default function ApplicationsPage() {
                 )}
               </div>
               {a.updated_at && (
-                <div className="text-xs text-neutral-400">
+                <div className="text-xs text-text-muted">
                   {a.status === "running" ? "部署于" : "更新于"}：
                   {new Date(a.updated_at).toLocaleString("zh-CN", { hour12: false })}
                 </div>
@@ -1278,15 +1272,15 @@ export default function ApplicationsPage() {
               {isExternal ? (
                 // external 应用探活展示：无容器/test-prod 实例，只显示 external_url 健康状态
                 appStats[a.id]?.deployed ? (
-                  <div className="mt-2 rounded bg-indigo-50 p-2 text-xs">
+                  <div className="mt-2 rounded bg-accent/10 p-2 text-xs">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-indigo-100 px-1.5 py-0.5 font-medium text-indigo-700">
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 font-medium text-accent">
                         external 探活
                       </span>
-                      <span className="text-neutral-400">健康</span>
+                      <span className="text-text-muted">健康</span>
                       <span
                         className={
-                          (appStats[a.id].health === "up" ? "text-emerald-600" : "text-red-600") +
+                          (appStats[a.id].health === "up" ? "text-success" : "text-danger") +
                           " font-medium"
                         }
                       >
@@ -1301,22 +1295,22 @@ export default function ApplicationsPage() {
                     const ins = a.instances?.find((i) => i.env === env);
                     const label = env === "prod" ? "🚀 生产 prod" : "🧪 测试 test";
                     return (
-                      <div key={env} className="rounded bg-neutral-50 p-2 text-xs">
+                      <div key={env} className="rounded bg-bg p-2 text-xs">
                         <div className="flex items-center gap-2">
                           <span
-                            className={`rounded px-1.5 py-0.5 font-medium ${env === "prod" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
+                            className={`rounded px-1.5 py-0.5 font-medium ${env === "prod" ? "bg-accent/10 text-accent" : "bg-warn/10 text-warn"}`}
                           >
                             {label}
                           </span>
                           {ins && (
                             <span
-                              className={`rounded px-1.5 py-0.5 ${STATUS_COLOR[ins.status] ?? "bg-neutral-100"}`}
+                              className={`rounded px-1.5 py-0.5 ${STATUS_COLOR[ins.status] ?? "bg-surface-2"}`}
                             >
                               {ins.status}
                             </span>
                           )}
                           {ins && ins.version > 0 && (
-                            <span className="text-neutral-400">v{ins.version}</span>
+                            <span className="text-text-muted">v{ins.version}</span>
                           )}
                         </div>
                         {ins?.url ? (
@@ -1324,12 +1318,12 @@ export default function ApplicationsPage() {
                             href={ins.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="mt-1 block truncate text-blue-600 hover:underline"
+                            className="mt-1 block truncate text-accent hover:underline"
                           >
                             {ins.url}
                           </a>
                         ) : (
-                          <div className="mt-1 text-neutral-400">
+                          <div className="mt-1 text-text-muted">
                             {env === "prod"
                               ? "未上线（点「上线」部署）"
                               : "未部署（发布或「构建部署」）"}
@@ -1337,18 +1331,17 @@ export default function ApplicationsPage() {
                         )}
                         {env === "prod" && appStats[a.id]?.deployed && (
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
-                            <span className="text-neutral-400">健康</span>
+                            <span className="text-text-muted">健康</span>
                             <span
                               className={
-                                (appStats[a.id].health === "up"
-                                  ? "text-emerald-600"
-                                  : "text-red-600") + " font-medium"
+                                (appStats[a.id].health === "up" ? "text-success" : "text-danger") +
+                                " font-medium"
                               }
                             >
                               {appStats[a.id].health}
                             </span>
                             {appStats[a.id].cpu && (
-                              <span className="text-neutral-400">
+                              <span className="text-text-muted">
                                 CPU {appStats[a.id].cpu} · 内存 {appStats[a.id].mem}
                               </span>
                             )}
@@ -1357,8 +1350,8 @@ export default function ApplicationsPage() {
                         {env === "prod" &&
                           (appChanges[a.id] || []).filter((c) => c.status === "approved").length >
                             0 && (
-                            <div className="mt-1 rounded bg-amber-50 p-1 text-[11px]">
-                              <div className="font-medium text-amber-700">
+                            <div className="mt-1 rounded bg-warn/10 p-1 text-[11px]">
+                              <div className="font-medium text-warn">
                                 📋 待上线变更(
                                 {
                                   (appChanges[a.id] || []).filter((c) => c.status === "approved")
@@ -1369,13 +1362,13 @@ export default function ApplicationsPage() {
                               {(appChanges[a.id] || [])
                                 .filter((c) => c.status === "approved")
                                 .map((c) => (
-                                  <div key={c.id} className="truncate text-amber-600">
+                                  <div key={c.id} className="truncate text-warn">
                                     {(
                                       (c.output || "").match(/【总结】(.+)/)?.[1] ||
                                       c.id.slice(0, 12)
                                     ).slice(0, 50)}
                                     {c.created_at && (
-                                      <span className="ml-1 text-[10px] text-neutral-400">
+                                      <span className="ml-1 text-[10px] text-text-muted">
                                         {new Date(c.created_at).toLocaleString("zh-CN", {
                                           hour12: false,
                                           month: "2-digit",
@@ -1395,7 +1388,7 @@ export default function ApplicationsPage() {
                 </div>
               )}
               {a.last_error && (
-                <div className="mt-1 rounded bg-red-50 p-1 text-xs text-red-700">
+                <div className="mt-1 rounded bg-danger/10 p-1 text-xs text-danger">
                   {a.last_error}
                 </div>
               )}
@@ -1405,12 +1398,12 @@ export default function ApplicationsPage() {
                 </pre>
               )}
               {reqsFor === a.id && (
-                <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
-                  <div className="mb-1 text-neutral-500">归属此应用的需求（{appReqs.length}）</div>
+                <div className="mt-2 rounded bg-bg p-2 text-xs">
+                  <div className="mb-1 text-text-muted">归属此应用的需求（{appReqs.length}）</div>
                   {appReqs.map((q) => (
                     <div key={q.id} className="flex items-center gap-2 py-0.5">
                       <span
-                        className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-neutral-100 text-neutral-500"}`}
+                        className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-success/10 text-success" : "bg-surface-2 text-text-muted"}`}
                       >
                         {q.status}
                       </span>
@@ -1418,46 +1411,46 @@ export default function ApplicationsPage() {
                     </div>
                   ))}
                   {appReqs.length === 0 && (
-                    <div className="text-neutral-400">暂无（发布此应用的需求后会自动归属到此）</div>
+                    <div className="text-text-muted">暂无（发布此应用的需求后会自动归属到此）</div>
                   )}
                 </div>
               )}
               {envFor === a.id && (
-                <div className="mt-2 rounded bg-neutral-50 p-2 text-xs">
-                  <div className="mb-1 text-neutral-500">
+                <div className="mt-2 rounded bg-bg p-2 text-xs">
+                  <div className="mb-1 text-text-muted">
                     运行时环境变量（部署时 -e 注入容器；🔒=密钥已隐藏明文）
                   </div>
                   <div className="space-y-1">
                     {appEnvs.map((e) => (
                       <div key={e.id} className="flex items-center gap-2">
-                        <code className="text-neutral-700">{e.key}</code>
-                        <span className="text-neutral-400">=</span>
-                        <span className={e.is_secret ? "text-amber-600" : "text-neutral-600"}>
+                        <code className="text-text">{e.key}</code>
+                        <span className="text-text-muted">=</span>
+                        <span className={e.is_secret ? "text-warn" : "text-text-muted"}>
                           {e.is_secret ? "🔒 已隐藏" : e.value || "(空)"}
                         </span>
                         <button
                           onClick={() => removeEnv(a.id, e.key)}
-                          className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-red-700"
+                          className="ml-auto rounded bg-danger/10 px-1.5 py-0.5 text-danger"
                         >
                           删
                         </button>
                       </div>
                     ))}
-                    {appEnvs.length === 0 && <div className="text-neutral-400">暂无</div>}
+                    {appEnvs.length === 0 && <div className="text-text-muted">暂无</div>}
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-neutral-200 pt-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
                     <input
                       value={envForm.key}
                       onChange={(ev) => setEnvForm({ ...envForm, key: ev.target.value })}
                       placeholder="KEY"
-                      className="w-28 rounded border border-neutral-300 px-1 py-0.5"
+                      className="w-28 rounded border border-border px-1 py-0.5"
                     />
                     <input
                       value={envForm.value}
                       onChange={(ev) => setEnvForm({ ...envForm, value: ev.target.value })}
                       placeholder="value"
                       type={envForm.is_secret ? "password" : "text"}
-                      className="flex-1 rounded border border-neutral-300 px-1 py-0.5"
+                      className="flex-1 rounded border border-border px-1 py-0.5"
                     />
                     <label className="flex items-center gap-1">
                       <input
@@ -1469,7 +1462,7 @@ export default function ApplicationsPage() {
                     </label>
                     <button
                       onClick={() => saveEnv(a.id)}
-                      className="rounded bg-blue-600 px-2 py-0.5 text-white"
+                      className="rounded bg-accent px-2 py-0.5 text-white"
                     >
                       保存
                     </button>
@@ -1478,16 +1471,16 @@ export default function ApplicationsPage() {
               )}
               {detailFor === a.id && detail && (
                 <>
-                  <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-neutral-50 p-2 text-xs md:grid-cols-3">
+                  <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-bg p-2 text-xs md:grid-cols-3">
                     <div>
-                      <div className="mb-1 font-medium text-neutral-500">
+                      <div className="mb-1 font-medium text-text-muted">
                         需求（{detail.requirements.length}）
                       </div>
                       {detail.requirements.map((q) => (
                         <div key={q.id} className="truncate">
                           <span
                             className={
-                              q.status === "delivered" ? "text-emerald-600" : "text-neutral-500"
+                              q.status === "delivered" ? "text-success" : "text-text-muted"
                             }
                           >
                             ●
@@ -1496,52 +1489,48 @@ export default function ApplicationsPage() {
                         </div>
                       ))}
                       {detail.requirements.length === 0 && (
-                        <div className="text-neutral-400">无</div>
+                        <div className="text-text-muted">无</div>
                       )}
                     </div>
                     <div>
-                      <div className="mb-1 font-medium text-neutral-500">
+                      <div className="mb-1 font-medium text-text-muted">
                         变更（{detail.changes.length}）
                       </div>
                       {detail.changes.map((c) => (
                         <div key={c.id}>
-                          <span
-                            className={
-                              c.status === "approved" ? "text-emerald-600" : "text-amber-600"
-                            }
-                          >
+                          <span className={c.status === "approved" ? "text-success" : "text-warn"}>
                             ●
                           </span>{" "}
                           {c.kind} · {c.status}
                         </div>
                       ))}
-                      {detail.changes.length === 0 && <div className="text-neutral-400">无</div>}
+                      {detail.changes.length === 0 && <div className="text-text-muted">无</div>}
                     </div>
                     <div>
-                      <div className="mb-1 font-medium text-neutral-500">
+                      <div className="mb-1 font-medium text-text-muted">
                         发布（{detail.releases.length}）
                       </div>
                       {detail.releases.map((r) => (
                         <div key={r.id}>
-                          <span className="text-blue-600">●</span> {r.version} · {r.status}
+                          <span className="text-accent">●</span> {r.version} · {r.status}
                         </div>
                       ))}
-                      {detail.releases.length === 0 && <div className="text-neutral-400">无</div>}
+                      {detail.releases.length === 0 && <div className="text-text-muted">无</div>}
                     </div>
                   </div>
                   {detail.commits.length > 0 && (
-                    <div className="mt-2 border-t border-neutral-200 pt-2">
-                      <div className="mb-1 font-medium text-neutral-500">
+                    <div className="mt-2 border-t border-border pt-2">
+                      <div className="mb-1 font-medium text-text-muted">
                         版本历史（{detail.commits.length}，可部署/回滚任意版本）
                       </div>
                       <div className="space-y-1">
                         {detail.commits.map((c) => (
                           <div key={c.sha} className="flex items-center gap-2">
-                            <code className="text-xs text-neutral-400">{c.sha.slice(0, 7)}</code>
-                            <span className="truncate text-neutral-700">{c.message}</span>
+                            <code className="text-xs text-text-muted">{c.sha.slice(0, 7)}</code>
+                            <span className="truncate text-text">{c.message}</span>
                             <button
                               onClick={() => deployCommit(a.id, c.sha)}
-                              className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700"
+                              className="ml-auto rounded bg-warn/10 px-2 py-0.5 text-xs text-warn"
                             >
                               部署此版本
                             </button>
@@ -1557,7 +1546,7 @@ export default function ApplicationsPage() {
           );
         })}
         {apps.length === 0 && (
-          <div className="text-sm text-neutral-400">
+          <div className="text-sm text-text-muted">
             暂无应用。注册一个（源码目录需含 Dockerfile）后点「构建部署」，或点「📥
             导入已有项目」把现有代码项目（git仓库/zip/服务器目录）导入平台，或用 external
             模式接入已在运行的外部应用。
@@ -1565,7 +1554,7 @@ export default function ApplicationsPage() {
         )}
       </div>
 
-      <div className="mt-4 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
+      <div className="mt-4 rounded-md bg-warn/10 p-2 text-xs text-warn">
         说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是
         <b>后端容器内可见</b>的路径（产出应用默认在 <code>/data/repos/&lt;应用名&gt;</code>
         ，对应宿主 <code>/opt/anp/data/repos/...</code>）。端口自动从 9100-9300 分配。

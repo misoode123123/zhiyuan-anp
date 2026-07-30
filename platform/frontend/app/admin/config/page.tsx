@@ -56,34 +56,34 @@ export default function ConfigPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">⚙️ 系统配置</h1>
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-text-muted">
         业务配置入库管理（基础运行配置仍用 .env）。修改<strong>热生效</strong>，无需改文件/重启。
       </p>
-      {msg && <div className="mb-3 text-sm text-blue-700">{msg}</div>}
+      {msg && <div className="mb-3 text-sm text-accent">{msg}</div>}
 
       {Object.entries(grouped).map(([cat, list]) => (
         <div key={cat} className="mb-6">
-          <div className="mb-2 text-sm font-semibold text-neutral-700">{cat}</div>
+          <div className="mb-2 text-sm font-semibold text-text">{cat}</div>
           <div className="space-y-2">
             {list.map((it) => (
               <div
                 key={it.key}
-                className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white p-2"
+                className="flex items-center gap-2 rounded-md border border-border bg-surface p-2"
               >
                 <div className="w-56 shrink-0">
-                  <div className="font-mono text-xs text-neutral-700">{it.key}</div>
-                  <div className="text-xs text-neutral-400">{it.description || "—"}</div>
+                  <div className="font-mono text-xs text-text">{it.key}</div>
+                  <div className="text-xs text-text-muted">{it.description || "—"}</div>
                 </div>
                 <input
                   type={isSecret(it.key) ? "password" : "text"}
                   defaultValue={it.value}
                   onChange={(e) => setDraft((d) => ({ ...d, [it.key]: e.target.value }))}
-                  className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  className="flex-1 rounded-md border border-border px-2 py-1 text-sm"
                 />
                 <button
                   onClick={() => save(it.key)}
                   disabled={draft[it.key] === undefined}
-                  className="rounded bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-40"
+                  className="rounded bg-accent px-3 py-1 text-xs text-white disabled:opacity-40"
                 >
                   保存
                 </button>
@@ -92,7 +92,7 @@ export default function ConfigPage() {
           </div>
         </div>
       ))}
-      {items.length === 0 && <div className="text-sm text-neutral-400">暂无配置</div>}
+      {items.length === 0 && <div className="text-sm text-text-muted">暂无配置</div>}
     </div>
   );
 }
