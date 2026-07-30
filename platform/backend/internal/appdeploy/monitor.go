@@ -37,12 +37,11 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 	metric.NodeID = n.ID
 	metric.CapturedAt = time.Now()
 	if n.OSType == "windows" {
-		// WinRM 默认远端 shell 是 cmd.exe，不解析 PowerShell cmdlet，须 powershell -NoProfile -Command 包装。
-		// -NoProfile 加快启动（不加载用户 profile）。
-		cpu, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue"`)
-		mem, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory | ConvertTo-Json"`)
-		disk, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "(Get-Volume -DriveLetter C).Size,(Get-Volume -DriveLetter C).SizeRemaining"`)
-		parsed, err := parseWindowsMetrics(cpu, mem, disk, "")
+		// WinRM 默认远端 shell 是 cmd.exe，须 powershell -NoProfile -Command 包装。
+		// 合并成 1 条命令（1 次 WinRM 往返 + 1 次 PowerShell 启动），避免 3 条串行超 nginx 60s。
+		// 输出格式：cpu|memTotal|memFree|diskTotal|diskFree
+		combined, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "$c=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue;$m=Get-CimInstance Win32_OperatingSystem;$d=Get-Volume -DriveLetter C;Write-Output ($c.ToString()+'|'+$m.TotalVisibleMemorySize+'|'+$m.FreePhysicalMemory+'|'+$d.Size+'|'+$d.SizeRemaining)"`)
+		parsed, err := parseWindowsCombined(combined)
 		if err != nil {
 			return err
 		}
@@ -165,6 +164,26 @@ func parseWindowsMetrics(cpuOut, memJSON, diskOut, upOut string) (ServerMetric, 
 	m.DiskTotal = dt
 	m.DiskUsed = dt - ds
 	m.Uptime = strings.TrimSpace(upOut)
+	return m, nil
+}
+
+// parseWindowsCombined 解析合并命令输出 `cpu|memTotal|memFree|diskTotal|diskFree`（| 分隔，单位 KB/字节）。
+// memTotal/memFree 单位 KB（Win32_OperatingSystem），disk 单位字节（Get-Volume），统一存 KB→ metric 用 KB。
+func parseWindowsCombined(out string) (ServerMetric, error) {
+	var m ServerMetric
+	parts := strings.Split(strings.TrimSpace(out), "|")
+	if len(parts) < 5 {
+		return m, fmt.Errorf("parseWindowsCombined: expect 5 fields, got %d in %q", len(parts), out)
+	}
+	m.CPUPercent = extractFloat(parts[0], `(\d+\.?\d*)`)
+	memTotal := extractInt(parts[1], `(\d+)`) // KB
+	memFree := extractInt(parts[2], `(\d+)`)  // KB
+	m.MemTotal = memTotal
+	m.MemUsed = memTotal - memFree
+	diskTotal := extractInt(parts[3], `(\d+)`) // 字节
+	diskFree := extractInt(parts[4], `(\d+)`)   // 字节
+	m.DiskTotal = diskTotal / 1024              // → KB
+	m.DiskUsed = (diskTotal - diskFree) / 1024
 	return m, nil
 }
 

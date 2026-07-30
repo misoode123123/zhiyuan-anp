@@ -75,3 +75,28 @@ func TestFormatUptime_Short(t *testing.T) {
 		t.Fatalf("uptime=%q", got)
 	}
 }
+
+func TestParseWindowsCombined(t *testing.T) {
+	// cpu|memTotal(KB)|memFree(KB)|diskTotal(B)|diskFree(B)
+	out := "12.5\n|16000000|8000000|536870912000|268435456000\n"
+	m, err := parseWindowsCombined(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.CPUPercent != 12.5 {
+		t.Fatalf("cpu=%v", m.CPUPercent)
+	}
+	if m.MemTotal != 16000000 || m.MemUsed != 8000000 {
+		t.Fatalf("mem total=%d used=%d", m.MemTotal, m.MemUsed)
+	}
+	// diskTotal=536870912000 B = 524288000 KB; used = (536870912000-268435456000)/1024 = 262144000 KB
+	if m.DiskTotal != 524288000 || m.DiskUsed != 262144000 {
+		t.Fatalf("disk total=%d used=%d", m.DiskTotal, m.DiskUsed)
+	}
+}
+
+func TestParseWindowsCombined_BadInput(t *testing.T) {
+	if _, err := parseWindowsCombined("garbage"); err == nil {
+		t.Fatal("应报错")
+	}
+}
