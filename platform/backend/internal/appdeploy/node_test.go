@@ -164,6 +164,41 @@ func TestUpdateNode_Handler(t *testing.T) {
 		t.Fatalf("winrm_port not persisted: %d", got.WinRMPort)
 	}
 }
+
+// TestUpdateNode_PreserveEmptyPassword 前端编辑保存时回传掩码空密码，不应覆盖 DB 真实密码。
+// 回归：ListNodes/UpdateNode 返回把 winrm_password 掩码成空，前端原样回传，
+// 旧版 Update 无条件写空串 → 真密码被清空 → 后续 WinRM 采集鉴权失败。
+func TestUpdateNode_PreserveEmptyPassword(t *testing.T) {
+	db := setupNodeTestDB(t)
+	store := NewStore(db)
+	h := NewHandler(store, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.Register(r.Group("/api/v1"))
+
+	n := &DeployNode{Name: "w-srv", Host: "10.0.0.7", ConnectType: "winrm", OSType: "windows",
+		WinRMUser: "admin", WinRMPassword: "topsecret", WinRMPort: 5985}
+	if err := h.nodeStore.Create(context.Background(), n); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟前端：掩码后回传空密码
+	body, _ := json.Marshal(map[string]interface{}{
+		"name": "w-srv-2", "host": "10.0.0.77", "connect_type": "winrm",
+		"winrm_user": "admin", "winrm_password": "", "winrm_port": 5985,
+		"os_type": "windows", "env": "prod",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/deploy-nodes/"+n.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	got, _ := h.nodeStore.Get(context.Background(), n.ID)
+	if got.WinRMPassword != "topsecret" {
+		t.Fatalf("空密码回传覆盖了真实凭证: got %q want %q", got.WinRMPassword, "topsecret")
+	}
+}
 func TestProvisionNode_RejectDockerTCP(t *testing.T) {
 	db := setupNodeTestDB(t)
 	store := NewStore(db)

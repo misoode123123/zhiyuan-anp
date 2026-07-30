@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { THEME_STORAGE_KEY } from "./theme-constants";
 
 export type Theme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "anp.theme";
+export { THEME_STORAGE_KEY };
 
 // resolveTheme 纯函数：stored 优先，否则跟随系统。inline script 与 ThemeProvider 共用。
 export function resolveTheme(stored: string | null, systemDark: boolean): Theme {

@@ -151,7 +151,14 @@ func (e *WinRMExecutor) endpoint() *winrm.Endpoint {
 // Run 用 masterzen/winrm 的 RunWithContext 执行命令。
 // API: RunWithContext(ctx, command, stdout, stderr) (exitCode int, err error)。
 func (e *WinRMExecutor) Run(ctx context.Context, cmd string) (string, string, int, error) {
-	c, err := winrm.NewClientWithParameters(e.endpoint(), e.node.WinRMUser, e.node.WinRMPassword, winrm.DefaultParameters)
+	// 关键：必须用 NTLM transport，不能用 DefaultParameters 的默认 transport。
+	// 默认 clientRequest.Post 用 HTTP Basic 鉴权（req.SetBasicAuth），而 Windows WinRM
+	// 默认禁止 HTTP 上的 Basic（仅 HTTPS/或禁用）→ 服务器返 401，且 401 响应体是 text/html
+	// 错误页（非 application/soap+xml）→ body() 报 "invalid content type" → 错误信息
+	// "http response error: 401 - invalid content type"。改用 ClientNTLM（NTLMv2，等同 curl --ntlm）。
+	params := *winrm.DefaultParameters // copy，避免改包级全局
+	params.TransportDecorator = func() winrm.Transporter { return &winrm.ClientNTLM{} }
+	c, err := winrm.NewClientWithParameters(e.endpoint(), e.node.WinRMUser, e.node.WinRMPassword, &params)
 	if err != nil {
 		return "", "", -1, err
 	}

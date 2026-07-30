@@ -2031,6 +2031,19 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 		return
 	}
 	n.ID = nid
+	// 凭证保留：ListNodes/UpdateNode 返回时把 winrm_password/ssh_key 掩码成空串，
+	// 前端编辑保存会回传空串。若直接 Update 会把真实凭证覆盖成空，导致后续采集/部署
+	// 鉴权失败（WinRM 空密码网络登录被 Windows 拒、SSH 无 key）。收到空串时保留 DB 旧值。
+	if n.WinRMPassword == "" || n.SSHKey == "" {
+		if existing, err := h.nodeStore.Get(c.Request.Context(), nid); err == nil && existing != nil {
+			if n.WinRMPassword == "" {
+				n.WinRMPassword = existing.WinRMPassword
+			}
+			if n.SSHKey == "" {
+				n.SSHKey = existing.SSHKey
+			}
+		}
+	}
 	if err := h.nodeStore.Update(c.Request.Context(), &n); err != nil {
 		httpx.Err(c, 500, 50014, err.Error())
 		return

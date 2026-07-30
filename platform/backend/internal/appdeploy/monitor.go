@@ -40,7 +40,14 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 		// WinRM 默认远端 shell 是 cmd.exe，须 powershell -NoProfile -Command 包装。
 		// 合并成 1 条命令（1 次 WinRM 往返 + 1 次 PowerShell 启动），避免 3 条串行超 nginx 60s。
 		// 输出格式：cpu|memTotal|memFree|diskTotal|diskFree
-		combined, _, _, _ := exec.Run(ctx, `powershell -NoProfile -Command "$c=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue;$m=Get-CimInstance Win32_OperatingSystem;$d=Get-Volume -DriveLetter C;Write-Output ($c.ToString()+'|'+$m.TotalVisibleMemorySize+'|'+$m.FreePhysicalMemory+'|'+$d.Size+'|'+$d.SizeRemaining)"`)
+		cmd := `powershell -NoProfile -Command "$c=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue;$m=Get-CimInstance Win32_OperatingSystem;$d=Get-Volume -DriveLetter C;Write-Output ($c.ToString()+'|'+$m.TotalVisibleMemorySize+'|'+$m.FreePhysicalMemory+'|'+$d.Size+'|'+$d.SizeRemaining)"`
+		combined, _, _, runErr := exec.Run(ctx, cmd)
+		// 关键：不要丢弃 runErr。WinRM 连不上（dial 超时/防火墙/鉴权失败）时 stdout 为空，
+		// 旧版用 _ 丢掉 err 后 parseWindowsCombined("") 报「空输出」，掩盖真因（网络/鉴权）。
+		// 透传 runErr，节点 degraded 日志直接显示「dial tcp :5985: i/o timeout」。
+		if runErr != nil {
+			return fmt.Errorf("winrm 采集 %s: %w", n.ID, runErr)
+		}
 		parsed, err := parseWindowsCombined(combined)
 		if err != nil {
 			return err
