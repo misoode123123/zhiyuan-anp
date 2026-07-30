@@ -1,0 +1,191 @@
+package appdeploy
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+
+	"github.com/masterzen/winrm"
+	"golang.org/x/crypto/ssh"
+)
+
+// RemoteExecutor 远程命令执行 + 文件传输抽象。SSH/WinRM 各实现一套。
+type RemoteExecutor interface {
+	Run(ctx context.Context, cmd string) (stdout, stderr string, exitCode int, err error)
+	PutFile(ctx context.Context, localPath, remotePath string) error
+	TestConnection(ctx context.Context) error
+}
+
+// NewRemoteExecutor 按 node.ConnectType 返回执行器。docker_tcp 不支持（走 docker -H）。
+func NewRemoteExecutor(n *DeployNode) (RemoteExecutor, error) {
+	switch n.ConnectType {
+	case "ssh":
+		return NewSSHExecutor(n)
+	case "winrm":
+		return NewWinRMExecutor(n)
+	}
+	return nil, fmt.Errorf("unsupported connect_type: %s（docker_tcp 节点不走 RemoteExecutor）", n.ConnectType)
+}
+
+// SSHExecutor golang.org/x/crypto/ssh 实现。
+type SSHExecutor struct {
+	node *DeployNode
+}
+
+func NewSSHExecutor(n *DeployNode) (*SSHExecutor, error) { return &SSHExecutor{node: n}, nil }
+
+// dial 建立带 context 的 SSH 连接。先 net.DialContext 拿到 TCP 连接，
+// 再 ssh.NewClientConn 完成 SSH 握手。
+func (e *SSHExecutor) dial(ctx context.Context) (*ssh.Client, error) {
+	keyPath := e.node.SSHKey
+	if keyPath == "" {
+		keyPath = filepath.Join(homeDir(), ".ssh", "miscode")
+	}
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read ssh key %s: %w", keyPath, err)
+	}
+	signer, err := ssh.ParsePrivateKey(keyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse ssh key: %w", err)
+	}
+	cfg := &ssh.ClientConfig{
+		User:            firstNonEmpty(e.node.SSHUser, "root"),
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	addr := fmt.Sprintf("%s:%d", e.node.Host, sshPort(e.node))
+	d := &net.Dialer{}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial tcp %s: %w", addr, err)
+	}
+	// 注意：v0.53.0 的 ssh.NewClientConn 不收 ctx；上下文取消靠 DialContext
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
+	}
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+func (e *SSHExecutor) Run(ctx context.Context, cmd string) (string, string, int, error) {
+	client, err := e.dial(ctx)
+	if err != nil {
+		return "", "", -1, err
+	}
+	defer client.Close()
+	sess, err := client.NewSession()
+	if err != nil {
+		return "", "", -1, err
+	}
+	defer sess.Close()
+	var stdout, stderr bytes.Buffer
+	sess.Stdout = &stdout
+	sess.Stderr = &stderr
+	err = sess.Run(cmd)
+	exitCode := 0
+	if err != nil {
+		if ee, ok := err.(*ssh.ExitError); ok {
+			exitCode = ee.ExitStatus()
+		} else {
+			return stdout.String(), stderr.String(), -1, err
+		}
+	}
+	return stdout.String(), stderr.String(), exitCode, nil
+}
+
+// PutFile 用 base64 + cat 管道上传小文件（简单可靠，无需 SFTP 依赖）。
+func (e *SSHExecutor) PutFile(ctx context.Context, localPath, remotePath string) error {
+	client, err := e.dial(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return err
+	}
+	b64 := base64.StdEncoding.EncodeToString(data)
+	sess, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+	return sess.Run(fmt.Sprintf("echo %s | base64 -d > %s", b64, remotePath))
+}
+
+func (e *SSHExecutor) TestConnection(ctx context.Context) error {
+	_, _, _, err := e.Run(ctx, "echo ok")
+	return err
+}
+
+// WinRMExecutor github.com/masterzen/winrm 实现。
+type WinRMExecutor struct {
+	node *DeployNode
+}
+
+func NewWinRMExecutor(n *DeployNode) (*WinRMExecutor, error) {
+	return &WinRMExecutor{node: n}, nil
+}
+
+func (e *WinRMExecutor) endpoint() *winrm.Endpoint {
+	return &winrm.Endpoint{Host: e.node.Host, Port: 5985, HTTPS: false, Insecure: true}
+}
+
+// Run 用 masterzen/winrm 的 RunWithContext 执行命令。
+// API: RunWithContext(ctx, command, stdout, stderr) (exitCode int, err error)。
+func (e *WinRMExecutor) Run(ctx context.Context, cmd string) (string, string, int, error) {
+	c, err := winrm.NewClientWithParameters(e.endpoint(), e.node.WinRMUser, e.node.WinRMPassword, winrm.DefaultParameters)
+	if err != nil {
+		return "", "", -1, err
+	}
+	var stdout, stderr bytes.Buffer
+	exitCode, runErr := c.RunWithContext(ctx, cmd, &stdout, &stderr)
+	return stdout.String(), stderr.String(), exitCode, runErr
+}
+
+// PutFile WinRM 上传：小文件 base64 + PowerShell 解码写盘。
+func (e *WinRMExecutor) PutFile(ctx context.Context, localPath, remotePath string) error {
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return err
+	}
+	b64 := base64.StdEncoding.EncodeToString(data)
+	ps := fmt.Sprintf(`$b=[Convert]::FromBase64String("%s"); [IO.File]::WriteAllBytes("%s",$b)`, b64, remotePath)
+	_, _, _, err = e.Run(ctx, ps)
+	return err
+}
+
+func (e *WinRMExecutor) TestConnection(ctx context.Context) error {
+	_, _, _, err := e.Run(ctx, "echo ok")
+	return err
+}
+
+// 辅助
+func sshPort(n *DeployNode) int {
+	if n.SSHPort > 0 {
+		return n.SSHPort
+	}
+	return 22
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// homeDir 返回当前用户家目录（跨平台）。
+func homeDir() string {
+	if h, _ := os.UserHomeDir(); h != "" {
+		return h
+	}
+	// 兜底：Windows %USERPROFILE% / Unix $HOME
+	return os.Getenv("HOME")
+}
