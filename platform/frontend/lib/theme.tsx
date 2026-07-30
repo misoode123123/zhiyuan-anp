@@ -61,12 +61,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggle = useCallback(() => {
-    setTheme((prev) => {
-      const next: Theme = prev === "dark" ? "light" : "dark";
-      applyTheme(next);
-      return next;
-    });
-  }, []);
+    // 不在 setTheme updater 里调副作用（React 反模式，StrictMode 双调用致 localStorage 没存）。
+    // 先算 next → applyTheme（设 html class + 存 localStorage）→ setTheme。
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    setTheme(next);
+  }, [theme]);
 
   return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
 }
