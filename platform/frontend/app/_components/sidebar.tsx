@@ -30,7 +30,7 @@ export function Sidebar() {
         <Link
           key={item.href}
           href={item.href}
-          className="rounded-md px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 transition-colors"
+          className="rounded-md px-3 py-2 text-sm text-text hover:bg-surface-2 transition-colors"
         >
           <span className="mr-2">{item.icon}</span>
           {item.label}

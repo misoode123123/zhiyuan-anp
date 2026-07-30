@@ -44,6 +44,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (stored) return; // 用户已手动选，不跟随系统
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => {
+      // 重读 localStorage：用户在 mount 后手动切换过会写入 stored，此时停止跟随系统。
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      if (stored) return;
       const t: Theme = e.matches ? "dark" : "light";
       document.documentElement.classList.toggle("dark", t === "dark");
       setTheme(t);
