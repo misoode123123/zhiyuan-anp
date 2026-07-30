@@ -111,11 +111,11 @@ export function Sidebar({
   };
 
   return (
-    <aside className="relative flex h-full w-[280px] shrink-0 border-r border-[#d0d0d0] bg-[#f3f3f3]">
+    <aside className="relative flex h-full w-[280px] shrink-0 border-r border-border bg-surface-2">
       <ActivityBar active={view} onSelect={selectView} badges={badges} />
       <div className="flex min-w-0 flex-1 flex-col">
         {err ? (
-          <div className="p-3 text-[11px] text-[#cf222e]">{err}</div>
+          <div className="p-3 text-[11px] text-danger">{err}</div>
         ) : view === "requirements" ? (
           <RequirementsView
             detail={detail}

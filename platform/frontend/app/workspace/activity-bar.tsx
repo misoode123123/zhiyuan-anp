@@ -21,7 +21,7 @@ export function ActivityBar({
   badges: Record<ViewKey, number>;
 }) {
   return (
-    <div className="flex w-[46px] shrink-0 flex-col items-center gap-1.5 border-r border-[#e5e5e5] bg-white py-2">
+    <div className="flex w-[46px] shrink-0 flex-col items-center gap-1.5 border-r border-border bg-surface py-2">
       {VIEWS.map((v) => {
         const n = badges[v.key] || 0;
         return (
@@ -31,13 +31,13 @@ export function ActivityBar({
             title={v.label}
             className={`relative flex h-[34px] w-[34px] items-center justify-center rounded-md text-[17px] transition-colors ${
               active === v.key
-                ? "border-l-2 border-l-[#007acc] text-[#171717]"
-                : "border-l-2 border-l-transparent text-[#9ca3af] hover:bg-[#f3f3f3] hover:text-[#525252]"
+                ? "border-l-2 border-l-accent text-text"
+                : "border-l-2 border-l-transparent text-text-muted hover:bg-surface-2 hover:text-text"
             }`}
           >
             <span>{v.icon}</span>
             {n > 0 && (
-              <span className="absolute right-0.5 top-0 rounded-full bg-[#cf222e] px-1 text-[9px] font-bold leading-[13px] text-white">
+              <span className="absolute right-0.5 top-0 rounded-full bg-danger px-1 text-[9px] font-bold leading-[13px] text-accent-fg">
                 {n > 99 ? "99+" : n}
               </span>
             )}

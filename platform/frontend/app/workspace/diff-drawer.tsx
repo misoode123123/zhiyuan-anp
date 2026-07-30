@@ -19,25 +19,25 @@ export function DiffDrawer({
 }) {
   const lines: DiffLine[] = parseDiff(diff);
   const bg: Record<DiffLine["type"], string> = {
-    add: "bg-[#dafbe1] text-[#1a7f37]",
-    del: "bg-[#ffebe9] text-[#cf222e]",
-    ctx: "text-[#57606a]",
-    hunk: "bg-[#ddf4ff] text-[#0969da]",
-    meta: "text-[#8b949e]",
+    add: "bg-success/10 text-success",
+    del: "bg-danger/10 text-danger",
+    ctx: "text-text-muted",
+    hunk: "bg-accent/10 text-accent",
+    meta: "text-text-muted",
   };
   return (
-    <div className="absolute inset-y-0 left-[280px] z-20 flex w-[480px] max-w-[60vw] flex-col border-r border-[#d0d0d0] bg-white shadow-lg">
-      <div className="flex items-center justify-between border-b border-[#e6e6e6] px-3 py-2 text-xs">
-        <span className="truncate font-mono text-[#57606a]">{path}</span>
-        <button onClick={onClose} className="text-[#9a9a9a] hover:text-[#57606a]" title="关闭">
+    <div className="absolute inset-y-0 left-[280px] z-20 flex w-[480px] max-w-[60vw] flex-col border-r border-border bg-surface shadow-lg">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
+        <span className="truncate font-mono text-text-muted">{path}</span>
+        <button onClick={onClose} className="text-text-muted hover:text-text" title="关闭">
           ✕
         </button>
       </div>
       <div className="flex-1 overflow-auto font-mono text-[11.5px] leading-[1.6]">
         {loading ? (
-          <div className="p-3 text-[#9a9a9a]">加载 diff…</div>
+          <div className="p-3 text-text-muted">加载 diff…</div>
         ) : lines.length === 0 ? (
-          <div className="p-3 text-[#9a9a9a]">无差异</div>
+          <div className="p-3 text-text-muted">无差异</div>
         ) : (
           lines.map((ln, i) => (
             <div key={i} className={`whitespace-pre px-3 ${bg[ln.type]}`}>
@@ -47,7 +47,7 @@ export function DiffDrawer({
         )}
       </div>
       {truncated && (
-        <div className="border-t border-[#e6e6e6] px-3 py-1 text-[11px] text-[#8b949e]">
+        <div className="border-t border-border px-3 py-1 text-[11px] text-text-muted">
           diff 超长，已截断前 2000 行
         </div>
       )}

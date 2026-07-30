@@ -23,20 +23,20 @@ export function RequirementsView({
 
   const priClass = (p?: string) =>
     !p || p === "P2"
-      ? "bg-[#eaeaea] text-[#636c76]"
+      ? "bg-surface-2 text-text-muted"
       : p === "P0"
-        ? "bg-[#ffe0e0] text-[#cf222e]"
-        : "bg-[#ddf4ff] text-[#0969da]";
+        ? "bg-danger/10 text-danger"
+        : "bg-accent/10 text-accent";
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-[#e6e6e6] px-3 py-2 text-[11px] uppercase tracking-wide text-[#636363]">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] uppercase tracking-wide text-text-muted">
         <span>需求</span>
-        <span className="text-[#9a9a9a]">{reqs.length} 项 · 按等级</span>
+        <span className="text-text-muted">{reqs.length} 项 · 按等级</span>
       </div>
       <div className="flex-1 overflow-auto py-0.5">
         {reqs.length === 0 ? (
-          <div className="p-3 text-[#9a9a9a]">暂无需求</div>
+          <div className="p-3 text-text-muted">暂无需求</div>
         ) : (
           reqs.map((q) => {
             const sel = selectedReq === q.id;
@@ -45,7 +45,7 @@ export function RequirementsView({
               <div key={q.id}>
                 <div
                   className={`flex items-center gap-2 px-3 py-1.5 leading-relaxed ${
-                    sel ? "bg-[#d6ebff]" : "hover:bg-[#e8e8e8]"
+                    sel ? "bg-accent/10" : "hover:bg-surface-2"
                   }`}
                 >
                   <span
@@ -63,16 +63,14 @@ export function RequirementsView({
                     onClick={() => setOpenId(open ? null : q.id)}
                     className="flex min-w-0 flex-1 text-left"
                   >
-                    <span
-                      className={`truncate ${sel ? "font-semibold text-[#007acc]" : "text-[#3c3c3c]"}`}
-                    >
+                    <span className={`truncate ${sel ? "font-semibold text-accent" : "text-text"}`}>
                       {q.title || "(无标题)"}
                     </span>
                   </button>
                   {sel ? null : (
                     <button
                       onClick={() => onStartReq(q.id)}
-                      className="shrink-0 rounded border border-[#d0d0d0] bg-white px-1.5 text-[10px] text-[#57606a] hover:bg-[#f0f0f0]"
+                      className="shrink-0 rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:bg-surface-2"
                       title={q.assignee ? "继续开发" : "认领并开发"}
                     >
                       {q.assignee ? "继续" : "认领"}
@@ -105,17 +103,15 @@ function ReqDetail({
     ac = q.acceptance_criteria ? [q.acceptance_criteria] : [];
   }
   return (
-    <div className="ml-3 border-l-2 border-[#007acc] bg-white px-0 py-2">
+    <div className="ml-3 border-l-2 border-accent bg-surface px-0 py-2">
       <div className="px-3">
-        <span className="text-[11px] text-[#8b949e]">状态</span>{" "}
-        <span className="text-[11px] text-[#57606a]">{statusLabel(q.status)}</span>
+        <span className="text-[11px] text-text-muted">状态</span>{" "}
+        <span className="text-[11px] text-text">{statusLabel(q.status)}</span>
       </div>
-      {q.user_story && (
-        <div className="px-3 pt-1 text-[11px] text-[#57606a]">📝 {q.user_story}</div>
-      )}
+      {q.user_story && <div className="px-3 pt-1 text-[11px] text-text">📝 {q.user_story}</div>}
       {ac.length > 0 && (
-        <div className="px-3 pt-1 text-[11px] text-[#57606a]">
-          <div className="text-[#8b949e]">✅ 验收标准</div>
+        <div className="px-3 pt-1 text-[11px] text-text">
+          <div className="text-text-muted">✅ 验收标准</div>
           {ac.map((c, i) => (
             <div key={i}>· {c}</div>
           ))}
@@ -125,60 +121,58 @@ function ReqDetail({
         <button
           onClick={() => reqActions.dispatch()}
           disabled={reqState.dispatching}
-          className="rounded bg-[#2da44e] px-2 py-0.5 text-[11px] text-white disabled:opacity-50"
+          className="rounded bg-success px-2 py-0.5 text-[11px] text-accent-fg disabled:opacity-50"
         >
           {reqState.dispatching ? "编码中…" : "🤖 AI 编码"}
         </button>
         <button
           onClick={reqActions.runAutoTest}
           disabled={reqState.testing}
-          className="rounded border border-[#d0d0d0] bg-white px-2 py-0.5 text-[11px] text-[#1a7f37] disabled:opacity-50"
+          className="rounded border border-border bg-surface px-2 py-0.5 text-[11px] text-success disabled:opacity-50"
         >
           {reqState.testing ? "测试中…" : "🧪 自动测试"}
         </button>
         <button
           onClick={reqActions.breakdown}
           disabled={reqState.breaking}
-          className="rounded border border-[#d0d0d0] bg-white px-2 py-0.5 text-[11px] text-[#6f42c1] disabled:opacity-50"
+          className="rounded border border-border bg-surface px-2 py-0.5 text-[11px] text-accent disabled:opacity-50"
         >
           {reqState.breaking ? "拆解中…" : "📋 拆子任务"}
         </button>
         <button
           onClick={reqActions.submit}
           disabled={reqState.submitting}
-          className="rounded bg-[#bf8700] px-2 py-0.5 text-[11px] text-white disabled:opacity-50"
+          className="rounded bg-warn px-2 py-0.5 text-[11px] text-accent-fg disabled:opacity-50"
         >
           {reqState.submitting ? "核对中…" : "🔒 提交核对"}
         </button>
         <button
           onClick={reqActions.merge}
           disabled={reqState.merging}
-          className="rounded bg-[#1a7f37] px-2 py-0.5 text-[11px] text-white disabled:opacity-50"
+          className="rounded bg-success px-2 py-0.5 text-[11px] text-accent-fg disabled:opacity-50"
         >
           {reqState.merging ? "合并中…" : "🔀 合并主线"}
         </button>
       </div>
       {reqState.taskMsg && (
-        <div className="whitespace-pre-wrap px-3 pt-1 text-[11px] text-[#0969da]">
+        <div className="whitespace-pre-wrap px-3 pt-1 text-[11px] text-accent">
           {reqState.taskMsg}
         </div>
       )}
       {reqState.submitMsg && (
-        <div className="whitespace-pre-wrap px-3 pt-1 text-[11px] text-[#bf8700]">
+        <div className="whitespace-pre-wrap px-3 pt-1 text-[11px] text-warn">
           {reqState.submitMsg}
         </div>
       )}
       {reqState.testMsg && (
-        <div className="px-3 pt-1 text-[11px] text-[#1a7f37]">{reqState.testMsg}</div>
+        <div className="px-3 pt-1 text-[11px] text-success">{reqState.testMsg}</div>
       )}
       {reqState.testResults && reqState.testResults.length > 0 && (
         <div className="px-3 pt-1 text-[11px]">
           {reqState.testResults.map((tc, i) => (
             <div
               key={i}
-              className={
-                tc.actual_status === tc.expected_status ? "text-[#1a7f37]" : "text-[#cf222e]"
-              }
+              className={tc.actual_status === tc.expected_status ? "text-success" : "text-danger"}
             >
               {tc.actual_status === tc.expected_status ? "✅" : "❌"} {tc.method} {tc.path} →{" "}
               {tc.actual_status || "(未跑)"}
@@ -195,15 +189,13 @@ function ReqDetail({
                 checked={t.done}
                 onChange={() => reqActions.toggleSubtask(i)}
               />
-              <span
-                className={`flex-1 ${t.done ? "text-[#9a9a9a] line-through" : "text-[#57606a]"}`}
-              >
+              <span className={`flex-1 ${t.done ? "text-text-muted line-through" : "text-text"}`}>
                 {t.text}
               </span>
               {!t.done && (
                 <button
                   onClick={() => reqActions.dispatch(i)}
-                  className="text-[#0969da]"
+                  className="text-accent"
                   title="让 AI 做这一步"
                 >
                   ▶

@@ -45,19 +45,19 @@ export function ProjectDocs({ psID, appID }: { psID: string; appID: string }) {
     setLoading(false);
   }
 
-  if (docs.length === 0) return <div className="text-neutral-400">暂无文档(README/.md)</div>;
+  if (docs.length === 0) return <div className="text-text-muted">暂无文档(README/.md)</div>;
   return (
     <div>
       {docs.map((d) => (
         <div key={d.path}>
           <button onClick={() => toggle(d.path)} className="flex w-full gap-1 py-0.5 text-left">
             <span>{open === d.path ? "▾" : "▸"}</span>
-            <span className="truncate text-neutral-700" title={d.path}>
+            <span className="truncate text-text" title={d.path}>
               📄 {d.path}
             </span>
           </button>
           {open === d.path && (
-            <pre className="mb-1 ml-3 max-h-64 overflow-auto whitespace-pre-wrap border-l border-neutral-300 bg-white p-1 text-[11px] text-neutral-700">
+            <pre className="mb-1 ml-3 max-h-64 overflow-auto whitespace-pre-wrap border-l border-border bg-surface p-1 text-[11px] text-text">
               {loading ? "加载中…" : content}
             </pre>
           )}

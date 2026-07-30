@@ -8,24 +8,24 @@ export function ReleasesView({ detail }: { detail: WorkspaceDetail | null }) {
   const rels = detail?.releases ?? [];
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-[#e6e6e6] px-3 py-2 text-[11px] uppercase tracking-wide text-[#636363]">
+      <div className="border-b border-border px-3 py-2 text-[11px] uppercase tracking-wide text-text-muted">
         发布
       </div>
       <div className="flex-1 overflow-auto py-0.5">
         {rels.length === 0 ? (
-          <div className="p-3 text-[#9a9a9a]">暂无发布</div>
+          <div className="p-3 text-text-muted">暂无发布</div>
         ) : (
           rels.map((r) => (
             <div
               key={r.id}
-              className="flex items-center gap-2 px-3 py-1.5 leading-relaxed hover:bg-[#e8e8e8]"
+              className="flex items-center gap-2 px-3 py-1.5 leading-relaxed hover:bg-surface-2"
             >
               <span
                 className="w-[3px] shrink-0 rounded"
                 style={{ height: 15, background: statusColor(r.status) }}
               />
-              <span className="font-mono text-[12px] text-[#57606a]">v{r.version}</span>
-              <span className="text-[11px] text-[#8b949e]">{statusLabel(r.status)}</span>
+              <span className="font-mono text-[12px] text-text-muted">v{r.version}</span>
+              <span className="text-[11px] text-text-muted">{statusLabel(r.status)}</span>
             </div>
           ))
         )}
