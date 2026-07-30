@@ -74,6 +74,19 @@ const STATUS_COLOR: Record<string, string> = {
   importing: "bg-warn/10 text-warn", // 导入进行中态（复用 status 列）
 };
 
+// 节点过滤辅助（Task 11）：按应用类型 + 部署环境过滤可选节点。
+// - node_local 始终可选（.28 本地，env=test/os_type=linux，双环境通用）。
+// - web/service(docker 形态) 排除 os_type=windows 节点——Windows 节点无 Docker 守护进程，不可容器部署。
+// - env 过滤：test 部署只匹配 env=test 节点，prod 只匹配 env=prod；node_local 豁免。
+const isDockerKind = (kind: string) => kind === "web" || kind === "service" || !kind;
+
+// 判断节点是否可部署到目标环境（node_local 豁免；否则 env 必须匹配）。
+function nodeMatchesEnv(n: { id: string; env?: string } | undefined, targetEnv: string): boolean {
+  if (!n) return true; // 未选节点（空）由后端用默认，不拦
+  if (n.id === "node_local") return true;
+  return n.env === targetEnv;
+}
+
 // DevWizard 开发向导：编码→测试→上线 进度条 + 项目上下文 + 引导文案。
 // 让开发者一眼看到当前在哪步、下一步做什么（解决"流程不明确"）。
 function DevWizard({ app }: { app: App }) {
@@ -201,7 +214,15 @@ export default function ApplicationsPage() {
   const [psID, setPsID] = useState("");
   const [apps, setApps] = useState<App[]>([]);
   const [nodes, setNodes] = useState<
-    { id: string; name: string; host: string; status: string; app_count?: number }[]
+    {
+      id: string;
+      name: string;
+      host: string;
+      status: string;
+      app_count?: number;
+      env?: string;
+      os_type?: string;
+    }[]
   >([]);
   const [selectedNode, setSelectedNode] = useState(""); // 部署目标节点
   const [form, setForm] = useState({
@@ -492,6 +513,12 @@ export default function ApplicationsPage() {
 
   // 上线 prod（带节点 + 变更闸门检查）
   async function promoteWithNode(id: string, nodeID: string) {
+    // 节点环境校验：prod 部署需 env=prod 节点（node_local 豁免，始终可用）。
+    const sel = nodes.find((n) => n.id === nodeID);
+    if (!nodeMatchesEnv(sel, "prod")) {
+      alert(`上线 prod 需选择 env=prod 的节点（当前为 env=${sel?.env ?? "?"}），或用本地节点。`);
+      return;
+    }
     const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
     if (chgs.length > 0) {
       const summaries = chgs
@@ -527,6 +554,20 @@ export default function ApplicationsPage() {
     if (action === "deploy") {
       if (env) body.env = env;
       if (nodeID) body.node_id = nodeID;
+      // 节点环境校验：部署 env=test 只能用 env=test 节点；env=prod 只能用 env=prod 节点。
+      // node_local 豁免（始终可用）。os_type=windows 对 web/service 已在选择器过滤，此处按本应用 kind 兜底再拦一次。
+      const sel = nodes.find((n) => n.id === nodeID);
+      const app = apps.find((a) => a.id === id);
+      if (env && !nodeMatchesEnv(sel, env)) {
+        alert(
+          `部署 ${env} 环境需选择 env=${env} 的节点（当前为 env=${sel?.env ?? "?"}），或用本地节点。`
+        );
+        return;
+      }
+      if (sel && app && isDockerKind(app.app_kind) && sel.os_type === "windows") {
+        alert("Windows 节点不可部署 web/service（docker）应用，请选 Linux 节点。");
+        return;
+      }
     } else {
       // stop/start：显式带 env（默认 prod；后端按 env 鉴权，dev 无 prod 权限会被 403）
       body.env = env || "prod";
@@ -675,16 +716,24 @@ export default function ApplicationsPage() {
               value={selectedNode}
               onChange={(e) => setSelectedNode(e.target.value)}
               className="rounded-md border border-border px-2 py-1 text-sm"
-              title="新增应用的默认部署节点"
+              title={
+                isDockerKind(appKind)
+                  ? "新增应用的默认部署节点（web/service 不显示 Windows 节点）"
+                  : "新增应用的默认部署节点"
+              }
             >
               <option value="">
                 本地（{nodes.find((n) => n.id === "node_local")?.host || ".28"}）
               </option>
               {nodes
                 .filter((n) => n.id !== "node_local")
+                // web/service(docker) 排除 os_type=windows：Windows 节点不可容器部署。
+                .filter((n) => !(isDockerKind(appKind) && n.os_type === "windows"))
                 .map((n) => (
                   <option key={n.id} value={n.id}>
-                    {n.name} ({n.host}){n.app_count != null ? ` · ${n.app_count}应用` : ""}
+                    {n.name} ({n.host}) · env={n.env || "?"}
+                    {n.os_type && n.os_type !== "linux" ? ` · ${n.os_type}` : ""}
+                    {n.app_count != null ? ` · ${n.app_count}应用` : ""}
                   </option>
                 ))}
             </select>
