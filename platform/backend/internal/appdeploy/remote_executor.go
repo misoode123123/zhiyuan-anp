@@ -121,7 +121,7 @@ func (e *SSHExecutor) Run(ctx context.Context, cmd string) (string, string, int,
 	var stdout, stderr bytes.Buffer
 	sess.Stdout = &stdout
 	sess.Stderr = &stderr
-	err = sess.Run(cmd)
+	err = sess.Run(e.runShell(cmd))
 	exitCode := 0
 	if err != nil {
 		if ee, ok := err.(*ssh.ExitError); ok {
@@ -154,12 +154,30 @@ func (e *SSHExecutor) PutFile(ctx context.Context, localPath, remotePath string)
 	defer sess.Close()
 	// M3 修复：remotePath 单引号包裹，防 deploy.yaml 不可信时的 shell 注入。
 	// 单引号内再内联转义出现的单引号（' → '\''）。
-	return sess.Run(fmt.Sprintf("echo %s | base64 -d > '%s'", b64, sshQuote(remotePath)))
+	return sess.Run(e.putShell(remotePath, b64))
 }
 
 func (e *SSHExecutor) TestConnection(ctx context.Context) error {
 	_, _, _, err := e.Run(ctx, "echo ok")
 	return err
+}
+
+// runShell 按 node.OS 决定 Run 的最终命令：windows 包成 powershell -EncodedCommand，
+// linux 原样。纯逻辑（无 IO），便于单测。
+func (e *SSHExecutor) runShell(cmd string) string {
+	if e.node != nil && e.node.OSType == "windows" {
+		return wrapPowerShellScript(cmd)
+	}
+	return cmd
+}
+
+// putShell 按 node.OS 决定 PutFile 的最终命令：windows 用 PowerShell 写盘，
+// linux 逐字保留既有 base64 -d 串（不改 linux 行为，避免回归）。纯逻辑（无 IO）。
+func (e *SSHExecutor) putShell(remotePath, b64 string) string {
+	if e.node != nil && e.node.OSType == "windows" {
+		return psWriteFileCommand(remotePath, b64)
+	}
+	return fmt.Sprintf("echo %s | base64 -d > '%s'", b64, sshQuote(remotePath))
 }
 
 // WinRMExecutor github.com/masterzen/winrm 实现。

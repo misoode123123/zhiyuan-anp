@@ -3,6 +3,7 @@ package appdeploy
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -62,6 +63,38 @@ func TestPsWriteFileCommand(t *testing.T) {
 	inner2 := decodeEncodedCommand(t, got2)
 	if !strings.Contains(inner2, `'C:\a''b\x'`) {
 		t.Errorf("单引号未转义: %q", inner2)
+	}
+}
+
+func TestSSHExecutorRunShell(t *testing.T) {
+	win := &SSHExecutor{node: &DeployNode{OSType: "windows"}}
+	lin := &SSHExecutor{node: &DeployNode{OSType: "linux"}}
+
+	// windows: 包成 EncodedCommand，解回等于原 cmd
+	got := win.runShell("Get-Process")
+	if decodeEncodedCommand(t, got) != "Get-Process" {
+		t.Errorf("windows runShell 未正确包裹: %q", got)
+	}
+	// linux: 原样
+	if lin.runShell("ls -la") != "ls -la" {
+		t.Errorf("linux runShell 应原样: %q", lin.runShell("ls -la"))
+	}
+}
+
+func TestSSHExecutorPutShell(t *testing.T) {
+	b64 := "AAAA" // 任意合法 b64
+	win := &SSHExecutor{node: &DeployNode{OSType: "windows"}}
+	lin := &SSHExecutor{node: &DeployNode{OSType: "linux"}}
+
+	// windows: 解出 WriteAllBytes
+	got := win.putShell(`C:\x\f.bin`, b64)
+	if !strings.Contains(decodeEncodedCommand(t, got), "[IO.File]::WriteAllBytes(") {
+		t.Errorf("windows putShell 未生成 WriteAllBytes: %q", got)
+	}
+	// linux: 既有 base64 -d 串（逐字）
+	wantLin := fmt.Sprintf("echo %s | base64 -d > '%s'", b64, sshQuote(`C:\x\f.bin`))
+	if lin.putShell(`C:\x\f.bin`, b64) != wantLin {
+		t.Errorf("linux putShell 应逐字保留:\n got: %q\nwant: %q", lin.putShell(`C:\x\f.bin`, b64), wantLin)
 	}
 }
 
