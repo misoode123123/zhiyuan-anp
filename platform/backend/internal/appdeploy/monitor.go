@@ -29,9 +29,12 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 	if n.ID == "node_local" {
 		return m.localCollectNode(ctx, n)
 	}
-	exec, err := NewRemoteExecutor(n)
+	exec, err := NewOSExecutor(n) // 与 connect_type 解耦:有 OS 凭证才采
 	if err != nil {
 		return err
+	}
+	if exec == nil {
+		return nil // 无 OS 凭证(docker_tcp 未配 SSH 等),跳过采集,不标 degraded
 	}
 	var metric ServerMetric
 	metric.NodeID = n.ID
@@ -72,6 +75,12 @@ func (m *ServerMonitor) collectNode(ctx context.Context, n *DeployNode) error {
 	if m.nodeAppCount != nil {
 		metric.AppCount, _ = m.nodeAppCount(ctx, n.ID)
 	}
+	// docker_tcp 节点采容器数(docker ps -q 行数);非 docker 节点 ContainerCount 保持 0。
+	if n.ConnectType == "docker_tcp" && n.DockerURL != "" {
+		if out, e := runDockerOn(ctx, n.DockerURL, "ps", "-q"); e == nil {
+			metric.ContainerCount = len(strings.Fields(strings.TrimSpace(out)))
+		}
+	}
 	return m.metricStore.Insert(ctx, &metric)
 }
 
@@ -84,7 +93,7 @@ func (m *ServerMonitor) CollectOnce(ctx context.Context, nodeID string) error {
 	return m.collectNode(ctx, n)
 }
 
-// Start 后台定期采集所有非 docker_tcp 节点。阻塞调用方 goroutine，直到 ctx 取消。
+// Start 后台定期采集所有节点(无 OS 凭证的节点在 collectNode 内跳过)。阻塞调用方 goroutine,直到 ctx 取消。
 func (m *ServerMonitor) Start(ctx context.Context) {
 	ticker := time.NewTicker(m.interval)
 	go func() {
@@ -95,10 +104,6 @@ func (m *ServerMonitor) Start(ctx context.Context) {
 			case <-ticker.C:
 				nodes, _ := m.nodeStore.List(ctx)
 				for _, n := range nodes {
-					// node_local 走本地采集（读宿主 /host/proc）；其他 docker_tcp 节点（如远程 node_30）仍跳过。
-					if n.ConnectType == "docker_tcp" && n.ID != "node_local" {
-						continue
-					}
 					if err := m.collectNode(ctx, &n); err != nil {
 						// I5 修复（spec §6.5）：采集失败标 degraded，前端看到节点异常。
 						// 注意：成功采集后不覆盖 ready/provision 等状态（避免误把已 ready 节点刷回 online）。
