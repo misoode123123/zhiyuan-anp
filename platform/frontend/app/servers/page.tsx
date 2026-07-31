@@ -409,6 +409,7 @@ function NodeForm({
     ssh_port: initial?.ssh_port ?? 22,
     ssh_user: initial?.ssh_user ?? "root",
     ssh_key: "",
+    ssh_password: "",
     winrm_user: initial?.winrm_user ?? "",
     winrm_password: "",
     winrm_port: initial?.winrm_port ?? 5985,
@@ -553,6 +554,16 @@ function NodeForm({
                 className={inputCls}
                 value={form.ssh_user}
                 onChange={(e) => set("ssh_user", e.target.value)}
+              />
+            </div>
+            <div>
+              <div className={labelCls}>SSH 密码</div>
+              <input
+                className={inputCls}
+                type="password"
+                value={form.ssh_password}
+                onChange={(e) => set("ssh_password", e.target.value)}
+                placeholder={isEdit ? "编辑时留空不修改密码" : ""}
               />
             </div>
             <div className="md:col-span-2">
