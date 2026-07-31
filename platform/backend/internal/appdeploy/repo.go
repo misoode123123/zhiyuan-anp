@@ -490,6 +490,13 @@ func ImportFromZip(ctx context.Context, name string, r io.ReaderAt, size int64) 
 			return "", fmt.Errorf("zip 解压体积超限(bomb)")
 		}
 	}
+	// 剥单一包装目录：导入 zip 常带顶层 `项目名/` 包装，不剥会让源码嵌在子目录 →
+	// buildpack 只看仓库根 → 检测不到 go.mod 等标记 → 误判 static 生成 nginx Dockerfile
+	// （客服机器人导入即此症：go.mod 在 `yxt_eino_v2 - 客服机器人/` 子目录里）。
+	if err := flattenSingleWrapper(target); err != nil {
+		_ = os.RemoveAll(target)
+		return "", fmt.Errorf("展平包装目录失败: %w", err)
+	}
 	// 无 .git → 建仓 + 初始提交（不写模板，保留导入内容原样）
 	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
 		stripNestedGit(target) // 上传项目常带子目录 .git（gitlink），清掉让全部内容进主仓
@@ -546,6 +553,40 @@ func stripNestedGit(repoDir string) {
 		}
 		return nil
 	})
+}
+
+// flattenSingleWrapper 若 target 下恰好只有一个顶层子目录（导入 zip 常见的"包装文件夹"，
+// 如 `yxt_eino_v2 - 客服机器人/`），把该子目录的全部内容上提到 target 根并移除空壳。
+// 不剥这层会让源码嵌在子目录 → buildpack/构建只看仓库根 → 检测不到 go.mod 等标记 →
+// 误判 static 生成 nginx Dockerfile → 构建出空 nginx 容器（客服机器人导入即此症）。
+// 仅当"恰好一个顶层条目且是目录"时展平；多个条目或顶层有散落文件则原样不动（避免破坏合法结构）。
+// .git 不计入条目数（zip 可能把 .git 放在包装目录内，展平后正好落到根，被后续 .git 检测识别）。
+func flattenSingleWrapper(target string) error {
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return err
+	}
+	var top []os.DirEntry
+	for _, e := range entries {
+		if e.Name() == ".git" {
+			continue
+		}
+		top = append(top, e)
+	}
+	if len(top) != 1 || !top[0].IsDir() {
+		return nil // 非单一包装目录，不处理
+	}
+	wrapper := filepath.Join(target, top[0].Name())
+	inner, err := os.ReadDir(wrapper)
+	if err != nil {
+		return err
+	}
+	for _, e := range inner {
+		if err := os.Rename(filepath.Join(wrapper, e.Name()), filepath.Join(target, e.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Remove(wrapper) // 内容已全部上提，wrapper 已空
 }
 
 // AllowedDirRoots 服务器目录导入白名单根（可配置）。
