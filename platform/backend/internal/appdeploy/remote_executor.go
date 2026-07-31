@@ -271,3 +271,19 @@ func sshQuote(s string) string {
 func psQuote(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
+
+// joinRemotePath 按目标 OS 拼接远程路径：windows 用反斜杠、linux 用正斜杠。
+// to 已带尾分隔符（\ 或 /）则直接接 base，不双补。构建机是 Linux，filepath.Join
+// 会用 / 拼 Windows 路径出错，故这里手动按目标 OS 分隔符拼。
+func joinRemotePath(to, base, osType string) string {
+	if osType == "windows" {
+		if strings.HasSuffix(to, `\`) || strings.HasSuffix(to, `/`) {
+			return to + base
+		}
+		return to + `\` + base
+	}
+	if strings.HasSuffix(to, `/`) {
+		return to + base
+	}
+	return to + `/` + base
+}
