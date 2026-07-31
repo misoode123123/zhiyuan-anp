@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/masterzen/winrm"
 	"golang.org/x/crypto/ssh"
@@ -286,4 +288,17 @@ func joinRemotePath(to, base, osType string) string {
 		return to + base
 	}
 	return to + `/` + base
+}
+
+// wrapPowerShellScript 把任意 PowerShell 脚本包成
+// `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand <b64>`，
+// b64 = base64(UTF-16LE(script))。-EncodedCommand 是跨 cmd/powershell 默认 shell
+// 都稳的执行方式（绕开引号/换行地狱）；-ExecutionPolicy Bypass 防 Restricted 策略拦上传的 .ps1。
+func wrapPowerShellScript(script string) string {
+	u16 := utf16.Encode([]rune(script))
+	buf := make([]byte, len(u16)*2)
+	for i, v := range u16 {
+		binary.LittleEndian.PutUint16(buf[i*2:], v)
+	}
+	return "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + base64.StdEncoding.EncodeToString(buf)
 }
