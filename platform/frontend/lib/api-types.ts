@@ -6769,6 +6769,7 @@ export interface ServerMetric {
     load_avg?: number;
     uptime?: string;
     app_count: number;
+    container_count?: number;
 }
 
 /**
@@ -6778,4 +6779,5 @@ export interface ServerMetric {
 export interface DeployNodeListItem extends DeployNode {
     app_count: number;
     latest_metric?: ServerMetric;
+    has_os_creds: boolean;
 }

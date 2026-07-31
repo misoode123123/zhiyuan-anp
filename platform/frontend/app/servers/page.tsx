@@ -233,9 +233,10 @@ export default function ServersPage() {
                     </div>
                     <div className="text-xs text-text-muted">
                       {n.host}
-                      {n.connect_type && n.connect_type !== "docker_tcp" && (
+                      {n.connect_type && (
                         <span className="ml-1">
-                          · {n.connect_type}:{n.ssh_port || "-"}
+                          · {n.connect_type}
+                          {n.connect_type !== "docker_tcp" && `:${n.ssh_port || "-"}`}
                         </span>
                       )}
                     </div>
@@ -267,12 +268,19 @@ export default function ServersPage() {
                   />
                 </div>
               ) : (
-                <div className="text-xs text-text-muted">暂无指标，点「采集」获取</div>
+                <div className="text-xs text-text-muted">
+                  {n.connect_type === "docker_tcp" && !n.has_os_creds
+                    ? "docker_tcp 节点未配置 SSH 凭证，仅走 Docker 部署（填 SSH 凭证后可采 OS 指标）"
+                    : "暂无指标，点「采集」获取"}
+                </div>
               )}
 
               {/* 元信息 */}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                 <span>应用数：{n.app_count}</span>
+                {n.connect_type === "docker_tcp" && (
+                  <span>容器数：{n.latest_metric?.container_count ?? 0}</span>
+                )}
                 {n.last_seen && <span>最近采集：{new Date(n.last_seen).toLocaleString()}</span>}
                 {n.max_apps > 0 && <span>上限：{n.max_apps}</span>}
               </div>
@@ -290,12 +298,8 @@ export default function ServersPage() {
                 )}
                 <button
                   onClick={() => collect(n)}
-                  disabled={!!busy[n.id] || n.connect_type === "docker_tcp"}
-                  title={
-                    n.connect_type === "docker_tcp"
-                      ? "docker_tcp 节点不远程采集（本地节点用宿主监控）"
-                      : "手动采集一次"
-                  }
+                  disabled={!!busy[n.id] || !n.has_os_creds}
+                  title={n.has_os_creds ? "手动采集一次" : "未配置 OS 凭证（SSH/WinRM），无法采集"}
                   className="rounded bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
                 >
                   {busy[n.id] === "采集" ? "..." : "采集"}
@@ -526,8 +530,13 @@ function NodeForm({
             />
           </div>
         )}
-        {ct === "ssh" && (
+        {(ct === "ssh" || ct === "docker_tcp") && (
           <>
+            {ct === "docker_tcp" && (
+              <div className="md:col-span-3 text-xs text-text-muted">
+                docker_tcp 节点：以下 SSH 凭证仅用于 OS 指标采集，部署仍走 Docker URL。
+              </div>
+            )}
             <div>
               <div className={labelCls}>SSH 用户</div>
               <input
