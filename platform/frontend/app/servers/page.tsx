@@ -269,7 +269,7 @@ export default function ServersPage() {
                 </div>
               ) : (
                 <div className="text-xs text-text-muted">
-                  {n.connect_type === "docker_tcp" && !n.has_os_creds
+                  {n.connect_type === "docker_tcp" && !n.has_os_creds && n.id !== "node_local"
                     ? "docker_tcp 节点未配置 SSH 凭证，仅走 Docker 部署（填 SSH 凭证后可采 OS 指标）"
                     : "暂无指标，点「采集」获取"}
                 </div>
@@ -298,8 +298,12 @@ export default function ServersPage() {
                 )}
                 <button
                   onClick={() => collect(n)}
-                  disabled={!!busy[n.id] || !n.has_os_creds}
-                  title={n.has_os_creds ? "手动采集一次" : "未配置 OS 凭证（SSH/WinRM），无法采集"}
+                  disabled={!!busy[n.id] || (!n.has_os_creds && n.id !== "node_local")}
+                  title={
+                    n.has_os_creds || n.id === "node_local"
+                      ? "手动采集一次"
+                      : "未配置 OS 凭证（SSH/WinRM），无法采集"
+                  }
                   className="rounded bg-surface-2 px-2 py-1 text-xs text-text disabled:opacity-50"
                 >
                   {busy[n.id] === "采集" ? "..." : "采集"}
