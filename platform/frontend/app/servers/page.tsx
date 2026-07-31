@@ -41,6 +41,12 @@ function fmtBytes(bytes: number) {
   return `${v.toFixed(v >= 100 ? 0 : 1)} ${u[i]}`;
 }
 
+// 后端 metric 的 mem/disk 存的是 KB（free -k / df -kP / Win32_OperatingSystem 均 KB），
+// 显示前 ×1024 转字节，否则 fmtBytes 把 KB 当字节、数值缩小 1024 倍（8GB 显示成 8MB）。
+function fmtKB(kb: number) {
+  return fmtBytes(kb * 1024);
+}
+
 function fmtPct(v: number) {
   return `${v.toFixed(1)}%`;
 }
@@ -257,14 +263,14 @@ export default function ServersPage() {
                   <MetricBar
                     label="内存"
                     pct={memPct}
-                    used={fmtBytes(m.mem_used)}
-                    total={fmtBytes(m.mem_total)}
+                    used={fmtKB(m.mem_used)}
+                    total={fmtKB(m.mem_total)}
                   />
                   <MetricBar
                     label="磁盘"
                     pct={diskPct}
-                    used={fmtBytes(m.disk_used)}
-                    total={fmtBytes(m.disk_total)}
+                    used={fmtKB(m.disk_used)}
+                    total={fmtKB(m.disk_total)}
                   />
                 </div>
               ) : (
