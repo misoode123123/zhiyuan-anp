@@ -39,3 +39,43 @@ func TestParseWindowsMetrics(t *testing.T) {
 		t.Fatalf("metric: %+v", m)
 	}
 }
+
+func TestNewOSExecutor(t *testing.T) {
+	cases := []struct {
+		name string
+		n    *DeployNode
+		want string // "ssh" | "winrm" | "skip"
+	}{
+		{"ssh 类型(默认 key)", &DeployNode{ID: "n1", ConnectType: "ssh", SSHUser: "root"}, "ssh"},
+		{"docker_tcp 有 ssh_password", &DeployNode{ID: "n2", ConnectType: "docker_tcp", SSHPassword: "pw"}, "ssh"},
+		{"docker_tcp 有 ssh_key", &DeployNode{ID: "n3", ConnectType: "docker_tcp", SSHKey: "/k"}, "ssh"},
+		{"winrm 类型", &DeployNode{ID: "n4", ConnectType: "winrm", WinRMPassword: "pw"}, "winrm"},
+		{"docker_tcp 无 OS 凭证", &DeployNode{ID: "n5", ConnectType: "docker_tcp"}, "skip"},
+		{"node_local", &DeployNode{ID: "node_local"}, "skip"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := NewOSExecutor(c.n)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if c.want == "skip" {
+				if got != nil {
+					t.Fatalf("want nil, got %T", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("want %s executor, got nil", c.want)
+			}
+			_, isSSH := got.(*SSHExecutor)
+			_, isWin := got.(*WinRMExecutor)
+			if c.want == "ssh" && !isSSH {
+				t.Fatalf("want *SSHExecutor, got %T", got)
+			}
+			if c.want == "winrm" && !isWin {
+				t.Fatalf("want *WinRMExecutor, got %T", got)
+			}
+		})
+	}
+}

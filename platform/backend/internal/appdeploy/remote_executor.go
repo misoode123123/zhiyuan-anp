@@ -32,6 +32,23 @@ func NewRemoteExecutor(n *DeployNode) (RemoteExecutor, error) {
 	return nil, fmt.Errorf("unsupported connect_type: %s（docker_tcp 节点不走 RemoteExecutor）", n.ConnectType)
 }
 
+// NewOSExecutor 按 OS 凭证返回监控用执行器(与 connect_type 解耦)。
+// ssh 凭证(ssh_password/ssh_key)或 ssh 类型节点 → SSHExecutor(ssh 类型无显式 key 用默认 miscode key);
+// winrm 凭证或 winrm 类型 → WinRMExecutor;
+// node_local / 无 OS 凭证的 docker_tcp → (nil, nil):前者走 localCollectNode,后者跳过采集。
+func NewOSExecutor(n *DeployNode) (RemoteExecutor, error) {
+	if n.ID == "node_local" {
+		return nil, nil
+	}
+	if n.SSHPassword != "" || n.SSHKey != "" || n.ConnectType == "ssh" {
+		return NewSSHExecutor(n)
+	}
+	if n.WinRMPassword != "" || n.ConnectType == "winrm" {
+		return NewWinRMExecutor(n)
+	}
+	return nil, nil
+}
+
 // SSHExecutor golang.org/x/crypto/ssh 实现。
 type SSHExecutor struct {
 	node *DeployNode
@@ -42,24 +59,31 @@ func NewSSHExecutor(n *DeployNode) (*SSHExecutor, error) { return &SSHExecutor{n
 // dial 建立带 context 的 SSH 连接。先 net.DialContext 拿到 TCP 连接，
 // 再 ssh.NewClientConn 完成 SSH 握手。
 func (e *SSHExecutor) dial(ctx context.Context) (*ssh.Client, error) {
-	keyPath := e.node.SSHKey
-	if keyPath == "" {
-		keyPath = filepath.Join(homeDir(), ".ssh", "miscode")
-	}
-	keyBytes, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("read ssh key %s: %w", keyPath, err)
-	}
-	signer, err := ssh.ParsePrivateKey(keyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse ssh key: %w", err)
-	}
 	cfg := &ssh.ClientConfig{
 		User: firstNonEmpty(e.node.SSHUser, "root"),
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		// TODO(security): 生产环境换用 ssh.FixedHostKey + 读取 ~/.ssh/known_hosts 校验，
 		// 防中间人攻击。本期为打通多机部署链路暂用 InsecureIgnoreHostKey（defer 真正修复）。
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	// 认证：优先密码（Windows OpenSSH、无 key 的 linux 都用密码）；无密码则回退 key。
+	// Windows 采场景：go-ntlmssp 与现代 Windows Server NTLM 不兼容（WinRM type3 被拒），
+	// 改走 OpenSSH 到 Windows + 密码认证。
+	if e.node.SSHPassword != "" {
+		cfg.Auth = []ssh.AuthMethod{ssh.Password(e.node.SSHPassword)}
+	} else {
+		keyPath := e.node.SSHKey
+		if keyPath == "" {
+			keyPath = filepath.Join(homeDir(), ".ssh", "miscode")
+		}
+		keyBytes, err := os.ReadFile(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read ssh key %s: %w", keyPath, err)
+		}
+		signer, err := ssh.ParsePrivateKey(keyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse ssh key: %w", err)
+		}
+		cfg.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
 	addr := fmt.Sprintf("%s:%d", e.node.Host, sshPort(e.node))
 	d := &net.Dialer{}
