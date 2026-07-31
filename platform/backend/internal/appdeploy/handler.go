@@ -2014,6 +2014,10 @@ func (h *Handler) CreateNode(c *gin.Context) {
 		httpx.Err(c, 500, 50014, err.Error())
 		return
 	}
+	// 与 ListNodes/UpdateNode 一致:创建响应不回传敏感凭证(ssh_password/ssh_key/winrm_password)
+	n.WinRMPassword = ""
+	n.SSHKey = ""
+	n.SSHPassword = ""
 	httpx.Created(c, n)
 }
 
