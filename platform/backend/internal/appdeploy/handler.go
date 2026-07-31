@@ -1994,8 +1994,7 @@ func (h *Handler) ListNodes(c *gin.Context) {
 		item.SSHKey = ""
 		item.SSHPassword = ""
 		// has_os_creds:有 ssh/winrm 凭证 或 ssh/winrm 类型(前端据此启用采集按钮;用掩码前的原始 n)
-		item.HasOSCreds = n.SSHPassword != "" || n.SSHKey != "" || n.WinRMPassword != "" ||
-			n.ConnectType == "ssh" || n.ConnectType == "winrm"
+		item.HasOSCreds = hasOSCreds(&n)
 		out = append(out, item)
 	}
 	httpx.OK(c, out)
@@ -2146,9 +2145,9 @@ func (h *Handler) CollectNode(c *gin.Context) {
 		httpx.Err(c, 404, 40401, "节点不存在")
 		return
 	}
-	// node_local 走本地采集（读宿主 /host/proc）；其他 docker_tcp 节点（如远程 node_30）不远程采集。
-	if n.ConnectType == "docker_tcp" && n.ID != "node_local" {
-		httpx.OK(c, gin.H{"id": nid, "status": "skipped", "message": "docker_tcp 节点不走远程采集（本地节点用宿主监控）"})
+	// node_local 走本地采集;其他节点按 OS 凭证决定(与 NewOSExecutor 一致),无凭证返回 skipped。
+	if n.ID != "node_local" && !hasOSCreds(n) {
+		httpx.OK(c, gin.H{"id": nid, "status": "skipped", "message": "未配置 OS 凭证（SSH/WinRM），无法采集"})
 		return
 	}
 	if err := h.monitor.CollectOnce(c.Request.Context(), nid); err != nil {

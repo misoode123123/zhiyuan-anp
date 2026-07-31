@@ -37,16 +37,21 @@ func NewRemoteExecutor(n *DeployNode) (RemoteExecutor, error) {
 // winrm 凭证或 winrm 类型 → WinRMExecutor;
 // node_local / 无 OS 凭证的 docker_tcp → (nil, nil):前者走 localCollectNode,后者跳过采集。
 func NewOSExecutor(n *DeployNode) (RemoteExecutor, error) {
-	if n.ID == "node_local" {
+	if n.ID == "node_local" || !hasOSCreds(n) {
 		return nil, nil
 	}
 	if n.SSHPassword != "" || n.SSHKey != "" || n.ConnectType == "ssh" {
 		return NewSSHExecutor(n)
 	}
-	if n.WinRMPassword != "" || n.ConnectType == "winrm" {
-		return NewWinRMExecutor(n)
-	}
-	return nil, nil
+	return NewWinRMExecutor(n)
+}
+
+// hasOSCreds 判断节点是否配了 OS 采集凭证(与 connect_type 解耦):有 ssh/winrm 凭证
+// 或 ssh/winrm 类型即视为有(ssh 类型无显式 key 用默认 miscode key)。NewOSExecutor、
+// ListNodes(has_os_creds)、CollectNode(无凭证跳过)共用,避免逻辑分散走样。
+func hasOSCreds(n *DeployNode) bool {
+	return n.SSHPassword != "" || n.SSHKey != "" || n.WinRMPassword != "" ||
+		n.ConnectType == "ssh" || n.ConnectType == "winrm"
 }
 
 // SSHExecutor golang.org/x/crypto/ssh 实现。
