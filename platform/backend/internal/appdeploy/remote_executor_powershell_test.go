@@ -38,6 +38,33 @@ func TestWrapPowerShellScript(t *testing.T) {
 	}
 }
 
+func TestPsWriteFileCommand(t *testing.T) {
+	data := []byte("hello\nworld")
+	b64 := base64.StdEncoding.EncodeToString(data)
+	got := psWriteFileCommand(`C:\anp\app\hello.ps1`, b64)
+	inner := decodeEncodedCommand(t, got)
+	// 路径被 psQuote 包成单引号串
+	wantPath := `'C:\anp\app\hello.ps1'`
+	if !strings.Contains(inner, wantPath) {
+		t.Errorf("inner %q 不含路径 %q", inner, wantPath)
+	}
+	// 内含原 b64（base64 字母表无单引号，安全内联）
+	if !strings.Contains(inner, b64) {
+		t.Errorf("inner %q 不含 b64", inner)
+	}
+	// 含 WriteAllBytes 调用
+	if !strings.Contains(inner, "[IO.File]::WriteAllBytes(") {
+		t.Errorf("inner %q 不含 WriteAllBytes", inner)
+	}
+
+	// 路径含单引号时被 psQuote 转义（' -> ''）
+	got2 := psWriteFileCommand(`C:\a'b\x`, b64)
+	inner2 := decodeEncodedCommand(t, got2)
+	if !strings.Contains(inner2, `'C:\a''b\x'`) {
+		t.Errorf("单引号未转义: %q", inner2)
+	}
+}
+
 func TestJoinRemotePath(t *testing.T) {
 	cases := []struct {
 		to, base, osType, want string

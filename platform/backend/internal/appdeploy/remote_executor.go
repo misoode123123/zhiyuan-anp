@@ -302,3 +302,11 @@ func wrapPowerShellScript(script string) string {
 	}
 	return "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + base64.StdEncoding.EncodeToString(buf)
 }
+
+// psWriteFileCommand 构造 Windows PutFile 命令：用 PowerShell 把 b64 解码写盘，
+// 整体经 wrapPowerShellScript 包成 EncodedCommand。remotePath 用 psQuote 转义防注入。
+// b64 字母表（[A-Za-z0-9+/=]）无单引号，内联进 PS 单引号串安全。
+func psWriteFileCommand(remotePath, b64 string) string {
+	ps := fmt.Sprintf("[IO.File]::WriteAllBytes('%s', [Convert]::FromBase64String('%s'))", psQuote(remotePath), b64)
+	return wrapPowerShellScript(ps)
+}
