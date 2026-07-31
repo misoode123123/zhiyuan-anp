@@ -13,10 +13,16 @@ export function resolveTheme(stored: string | null, systemDark: boolean): Theme 
   return systemDark ? "dark" : "light";
 }
 
-// applyTheme 把主题应用到 <html> + 持久化。仅浏览器端调。
+// setThemeClass 只同步 <html> 的 dark class，不写 localStorage。
+// mount 兜底用：即便防 FOUC 内联脚本被 CSP 拦截/产物过期未生效，hydration 后也能立即对齐 DOM，
+// 杜绝「刷新变亮色」。内联脚本正常时本调用幂等，无副作用。
+export function setThemeClass(theme: Theme) {
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
+// applyTheme 把主题应用到 <html> + 持久化。仅浏览器端调（用户主动切换时）。
 export function applyTheme(theme: Theme) {
-  const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
+  setThemeClass(theme);
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {}
@@ -38,23 +44,25 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(readInitialTheme);
 
-  // 系统实时跟随：用户未手动选（无 localStorage）时，系统切换实时跟。
+  // 挂载时确定主题并对齐 DOM + state（兜底，不单点依赖内联脚本），再按需跟随系统。
   useEffect(() => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const stored =
       typeof localStorage !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null;
-    if (stored) {
-      // 同步 state 到 stored：SSR 渲染时 readInitialTheme 无 document 返回 'light'，
-      // hydration 后图标需对齐实际主题（用户选了 dark 但 server 渲染了太阳图标）。
-      setTheme(stored === "dark" ? "dark" : "light");
-      return; // 用户已手动选，不跟随系统
-    }
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const initial = resolveTheme(stored, mql.matches);
+    // 兜底同步 DOM：内联脚本正常时幂等；失效（拦截/产物过期）时在此纠正。
+    // 旧实现 stored 分支只 setTheme 不碰 DOM → 内联脚本一旦失效就「刷新变亮色、图标仍月亮」。
+    setThemeClass(initial);
+    setTheme(initial);
+
+    // 用户已手动选（stored 合法）→ 不跟随系统。
+    if (stored === "light" || stored === "dark") return;
+
     const onChange = (e: MediaQueryListEvent) => {
       // 重读 localStorage：用户在 mount 后手动切换过会写入 stored，此时停止跟随系统。
-      const stored = localStorage.getItem(THEME_STORAGE_KEY);
-      if (stored) return;
-      const t: Theme = e.matches ? "dark" : "light";
-      document.documentElement.classList.toggle("dark", t === "dark");
+      if (localStorage.getItem(THEME_STORAGE_KEY)) return;
+      const t = resolveTheme(null, e.matches);
+      setThemeClass(t);
       setTheme(t);
     };
     mql.addEventListener("change", onChange);
