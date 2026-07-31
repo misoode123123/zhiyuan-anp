@@ -19,6 +19,7 @@ type ServerMetric struct {
 	LoadAvg    float64   `json:"load_avg,omitempty" db:"load_avg"`
 	Uptime     string    `json:"uptime,omitempty" db:"uptime"`
 	AppCount   int       `json:"app_count" db:"app_count"`
+	ContainerCount int `json:"container_count,omitempty" db:"container_count"`
 }
 
 // MetricStore 服务器指标持久化（appdeploy_server_metric 表）。
@@ -28,16 +29,16 @@ func NewMetricStore(db *sqlx.DB) *MetricStore { return &MetricStore{db: db} }
 
 func (s *MetricStore) Insert(ctx context.Context, m *ServerMetric) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO appdeploy_server_metric (node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		m.NodeID, m.CapturedAt, m.CPUPercent, m.MemTotal, m.MemUsed, m.DiskTotal, m.DiskUsed, m.LoadAvg, m.Uptime, m.AppCount)
+		`INSERT INTO appdeploy_server_metric (node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count, container_count)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		m.NodeID, m.CapturedAt, m.CPUPercent, m.MemTotal, m.MemUsed, m.DiskTotal, m.DiskUsed, m.LoadAvg, m.Uptime, m.AppCount, m.ContainerCount)
 	return err
 }
 
 func (s *MetricStore) Latest(ctx context.Context, nodeID string) (*ServerMetric, error) {
 	var m ServerMetric
 	err := s.db.GetContext(ctx, &m,
-		`SELECT node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count
+		`SELECT node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count, container_count
 		 FROM appdeploy_server_metric WHERE node_id=$1 ORDER BY captured_at DESC LIMIT 1`, nodeID)
 	return &m, err
 }
@@ -48,7 +49,7 @@ func (s *MetricStore) History(ctx context.Context, nodeID string, limit int) ([]
 		limit = 60
 	}
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count
+		`SELECT node_id, captured_at, cpu_percent, mem_total, mem_used, disk_total, disk_used, load_avg, uptime, app_count, container_count
 		 FROM appdeploy_server_metric WHERE node_id=$1 ORDER BY captured_at DESC LIMIT $2`, nodeID, limit)
 	return list, err
 }
