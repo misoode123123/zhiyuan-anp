@@ -22,7 +22,7 @@ func setupNodeTestDB(t *testing.T) *sqlx.DB {
 	_, err = db.Exec(`CREATE TABLE deploy_node (
 	id TEXT PRIMARY KEY, name TEXT, host TEXT, docker_url TEXT, ssh_user TEXT,
 	status TEXT, max_apps INTEGER, description TEXT, created_at DATETIME,
-	os_type TEXT, env TEXT, connect_type TEXT, ssh_port INTEGER, ssh_key TEXT,
+	os_type TEXT, env TEXT, connect_type TEXT, ssh_port INTEGER, ssh_key TEXT, ssh_password TEXT,
 	winrm_user TEXT, winrm_password TEXT, winrm_port INTEGER, last_seen DATETIME, provision_log TEXT)`)
 	if err != nil {
 		t.Fatal(err)
@@ -177,14 +177,16 @@ func TestUpdateNode_PreserveEmptyPassword(t *testing.T) {
 	h.Register(r.Group("/api/v1"))
 
 	n := &DeployNode{Name: "w-srv", Host: "10.0.0.7", ConnectType: "winrm", OSType: "windows",
-		WinRMUser: "admin", WinRMPassword: "topsecret", WinRMPort: 5985}
+		WinRMUser: "admin", WinRMPassword: "topsecret", WinRMPort: 5985,
+		SSHUser: "admin", SSHPassword: "sshsecret", SSHPort: 22}
 	if err := h.nodeStore.Create(context.Background(), n); err != nil {
 		t.Fatal(err)
 	}
-	// 模拟前端：掩码后回传空密码
+	// 模拟前端：掩码后回传空 winrm_password + 空 ssh_password
 	body, _ := json.Marshal(map[string]interface{}{
 		"name": "w-srv-2", "host": "10.0.0.77", "connect_type": "winrm",
 		"winrm_user": "admin", "winrm_password": "", "winrm_port": 5985,
+		"ssh_user": "admin", "ssh_password": "", "ssh_port": 22,
 		"os_type": "windows", "env": "prod",
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/deploy-nodes/"+n.ID, bytes.NewReader(body))
@@ -196,7 +198,10 @@ func TestUpdateNode_PreserveEmptyPassword(t *testing.T) {
 	}
 	got, _ := h.nodeStore.Get(context.Background(), n.ID)
 	if got.WinRMPassword != "topsecret" {
-		t.Fatalf("空密码回传覆盖了真实凭证: got %q want %q", got.WinRMPassword, "topsecret")
+		t.Fatalf("空 winrm_password 回传覆盖了真实凭证: got %q want %q", got.WinRMPassword, "topsecret")
+	}
+	if got.SSHPassword != "sshsecret" {
+		t.Fatalf("空 ssh_password 回传覆盖了真实凭证: got %q want %q", got.SSHPassword, "sshsecret")
 	}
 }
 func TestProvisionNode_RejectDockerTCP(t *testing.T) {

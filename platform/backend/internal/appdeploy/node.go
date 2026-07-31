@@ -24,6 +24,7 @@ type DeployNode struct {
 	ConnectType   string     `json:"connect_type" db:"connect_type"`
 	SSHPort       int        `json:"ssh_port" db:"ssh_port"`
 	SSHKey        string     `json:"ssh_key,omitempty" db:"ssh_key"`
+	SSHPassword   string     `json:"ssh_password,omitempty" db:"ssh_password"`
 	WinRMUser     string     `json:"winrm_user,omitempty" db:"winrm_user"`
 	WinRMPassword string     `json:"winrm_password,omitempty" db:"winrm_password"`
 	WinRMPort     int        `json:"winrm_port,omitempty" db:"winrm_port"`
@@ -43,7 +44,8 @@ func (s *NodeStore) List(ctx context.Context) ([]DeployNode, error) {
 	err := s.db.SelectContext(ctx, &list,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
 			os_type, env, connect_type, ssh_port,
-			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
+			COALESCE(ssh_key,'') AS ssh_key, COALESCE(ssh_password,'') AS ssh_password,
+			COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
 			winrm_port, last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node ORDER BY created_at`)
 	return list, err
@@ -54,7 +56,8 @@ func (s *NodeStore) Get(ctx context.Context, id string) (*DeployNode, error) {
 	err := s.db.GetContext(ctx, &n,
 		`SELECT id, name, host, docker_url, ssh_user, status, max_apps, description, created_at,
 			os_type, env, connect_type, ssh_port,
-			COALESCE(ssh_key,'') AS ssh_key, COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
+			COALESCE(ssh_key,'') AS ssh_key, COALESCE(ssh_password,'') AS ssh_password,
+			COALESCE(winrm_user,'') AS winrm_user, COALESCE(winrm_password,'') AS winrm_password,
 			winrm_port, last_seen, COALESCE(provision_log,'') AS provision_log
 		 FROM deploy_node WHERE id = $1`, id)
 	return &n, err
@@ -89,10 +92,10 @@ func (s *NodeStore) Create(ctx context.Context, n *DeployNode) error {
 	n.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO deploy_node (id, name, host, docker_url, ssh_user, status, max_apps, description,
-			os_type, env, connect_type, ssh_port, ssh_key, winrm_user, winrm_password, winrm_port, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+			os_type, env, connect_type, ssh_port, ssh_key, ssh_password, winrm_user, winrm_password, winrm_port, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
 		n.ID, n.Name, n.Host, n.DockerURL, n.SSHUser, n.Status, n.MaxApps, n.Description,
-		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey, n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.CreatedAt)
+		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey, n.SSHPassword, n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.CreatedAt)
 	return err
 }
 
@@ -114,11 +117,11 @@ func (s *NodeStore) Update(ctx context.Context, n *DeployNode) error {
 		`UPDATE deploy_node SET
 			name=$1, host=$2, docker_url=$3, ssh_user=$4, status=$5, max_apps=$6, description=$7,
 			os_type=$8, env=$9, connect_type=$10, ssh_port=$11, ssh_key=$12,
-			winrm_user=$13, winrm_password=$14, winrm_port=$15
-		 WHERE id=$16`,
+			ssh_password=$13, winrm_user=$14, winrm_password=$15, winrm_port=$16
+		 WHERE id=$17`,
 		n.Name, n.Host, n.DockerURL, n.SSHUser, n.Status, n.MaxApps, n.Description,
 		n.OSType, n.Env, n.ConnectType, n.SSHPort, n.SSHKey,
-		n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.ID)
+		n.SSHPassword, n.WinRMUser, n.WinRMPassword, n.WinRMPort, n.ID)
 	return err
 }
 

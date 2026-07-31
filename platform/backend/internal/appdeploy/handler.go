@@ -1991,6 +1991,7 @@ func (h *Handler) ListNodes(c *gin.Context) {
 		// 掩码凭证：列表不回传敏感字段
 		item.WinRMPassword = ""
 		item.SSHKey = ""
+		item.SSHPassword = ""
 		out = append(out, item)
 	}
 	httpx.OK(c, out)
@@ -2033,14 +2034,17 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 	n.ID = nid
 	// 凭证保留：ListNodes/UpdateNode 返回时把 winrm_password/ssh_key 掩码成空串，
 	// 前端编辑保存会回传空串。若直接 Update 会把真实凭证覆盖成空，导致后续采集/部署
-	// 鉴权失败（WinRM 空密码网络登录被 Windows 拒、SSH 无 key）。收到空串时保留 DB 旧值。
-	if n.WinRMPassword == "" || n.SSHKey == "" {
+	// 鉴权失败（WinRM 空密码网络登录被 Windows 拒、SSH 无 key 无密码）。收到空串时保留 DB 旧值。
+	if n.WinRMPassword == "" || n.SSHKey == "" || n.SSHPassword == "" {
 		if existing, err := h.nodeStore.Get(c.Request.Context(), nid); err == nil && existing != nil {
 			if n.WinRMPassword == "" {
 				n.WinRMPassword = existing.WinRMPassword
 			}
 			if n.SSHKey == "" {
 				n.SSHKey = existing.SSHKey
+			}
+			if n.SSHPassword == "" {
+				n.SSHPassword = existing.SSHPassword
 			}
 		}
 	}
@@ -2056,6 +2060,7 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 	// 与 ListNodes 一致：不回传敏感凭证
 	got.WinRMPassword = ""
 	got.SSHKey = ""
+	got.SSHPassword = ""
 	httpx.OK(c, got)
 }
 
