@@ -1978,6 +1978,7 @@ func (h *Handler) ListNodes(c *gin.Context) {
 		DeployNode
 		AppCount     int            `json:"app_count"`
 		LatestMetric *ServerMetric  `json:"latest_metric,omitempty"`
+		HasOSCreds   bool           `json:"has_os_creds"`
 	}
 	out := []nodeWithCount{}
 	for _, n := range list {
@@ -1992,6 +1993,9 @@ func (h *Handler) ListNodes(c *gin.Context) {
 		item.WinRMPassword = ""
 		item.SSHKey = ""
 		item.SSHPassword = ""
+		// has_os_creds:有 ssh/winrm 凭证 或 ssh/winrm 类型(前端据此启用采集按钮;用掩码前的原始 n)
+		item.HasOSCreds = n.SSHPassword != "" || n.SSHKey != "" || n.WinRMPassword != "" ||
+			n.ConnectType == "ssh" || n.ConnectType == "winrm"
 		out = append(out, item)
 	}
 	httpx.OK(c, out)

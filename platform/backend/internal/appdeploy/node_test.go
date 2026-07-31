@@ -265,3 +265,40 @@ func TestListNodes_MasksCredentials(t *testing.T) {
 		}
 	}
 }
+
+// TestListNodes_HasOSCreds 列表附 has_os_creds(不暴露凭证),前端据此启用采集按钮。
+func TestListNodes_HasOSCreds(t *testing.T) {
+	db := setupNodeTestDB(t)
+	store := NewStore(db)
+	h := NewHandler(store, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.Register(r.Group("/api/v1"))
+
+	mk := func(name, ct, sshpw, winpw string) {
+		n := &DeployNode{ID: name, Name: name, ConnectType: ct, Host: "10.0.0.1"}
+		n.SSHPassword, n.WinRMPassword = sshpw, winpw
+		if err := h.nodeStore.Create(context.Background(), n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("a-ssh", "ssh", "", "")            // ssh 类型 → has
+	mk("b-docker-pw", "docker_tcp", "x", "") // docker_tcp 有 ssh pw → has
+	mk("c-docker-none", "docker_tcp", "", "") // 无凭证 → 无
+	mk("d-winrm", "winrm", "", "x")       // winrm 凭证 → has
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/deploy-nodes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	got := map[string]bool{}
+	for _, n := range resp.Data {
+		got[n["name"].(string)] = n["has_os_creds"].(bool)
+	}
+	if !got["a-ssh"] || !got["b-docker-pw"] || got["c-docker-none"] || !got["d-winrm"] {
+		t.Fatalf("has_os_creds wrong: %+v", got)
+	}
+}
