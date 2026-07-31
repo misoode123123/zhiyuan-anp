@@ -33,7 +33,7 @@ func (d *NativeDeployer) Deploy(ctx context.Context, app *Application, node *Dep
 			return DeployResult{}, fmt.Errorf("glob %s: %w", pattern, err)
 		}
 		for _, f := range files {
-			remote := s.Transfer.To + filepath.Base(f)
+			remote := joinRemotePath(s.Transfer.To, filepath.Base(f), node.OSType)
 			if err := exec.PutFile(ctx, f, remote); err != nil {
 				return DeployResult{}, fmt.Errorf("put %s: %w", f, err)
 			}

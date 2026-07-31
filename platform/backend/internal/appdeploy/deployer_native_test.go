@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,3 +54,38 @@ func (r *recordingPutExecutor) PutFile(_ context.Context, local, remote string) 
 	return nil
 }
 func (r *recordingPutExecutor) TestConnection(_ context.Context) error { return nil }
+
+func TestNativeDeployer_Deploy_WindowsPathJoin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "hello.ps1"), []byte("write marker"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	desc := &DeployDesc{
+		Target: TargetDesc{OS: "windows", Dir: `C:\anp\app`},
+		Steps: []StepDesc{
+			// To 不带尾分隔符，验证 joinRemotePath 补 \
+			{Transfer: &TransferStep{From: dir + "/*", To: `C:\anp\app`}},
+		},
+	}
+	fake := &recordingPutExecutor{ran: new([]string)}
+	_, err := (&NativeDeployer{}).Deploy(
+		context.Background(),
+		&Application{ID: "app_1", RepoDir: dir},
+		&DeployNode{OSType: "windows"},
+		fake, desc,
+	)
+	if err != nil {
+		t.Fatalf("Deploy err: %v", err)
+	}
+	// 远程路径应为 C:\anp\app\hello.ps1（补了 \）
+	want := `->C:\anp\app\hello.ps1`
+	found := false
+	for _, p := range fake.puts {
+		if strings.HasSuffix(p, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("未拼出 Windows 远程路径 %q, puts=%v", want, fake.puts)
+	}
+}
