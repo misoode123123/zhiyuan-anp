@@ -43,6 +43,7 @@ import (
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/performance"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
+	"zhiyuan-anp/platform/backend/internal/mwsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/quota"
 	"zhiyuan-anp/platform/backend/internal/release"
@@ -179,6 +180,9 @@ func main() {
 	quotaStore := quota.NewStore(database)
 	quotaSvc := quota.NewService(quotaStore, pgsupply.NewQuotaAdapter(pgsupplyStore), pgAdmin)
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore, quotaSvc) // appDeployStore 满足 EnvWriter
+	// ---- 中间件依赖供给（mwsupply）：适配回写 .anp/deps.yaml → 部署注入 REDIS_ADDR/MILVUS_ADDR 等 ----
+	mwStore := mwsupply.NewStore(database)
+	mwReconciler := mwsupply.NewReconciler(mwStore, appDeployStore) // appDeployStore 满足 mwsupply.EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	// 每应用保留最近 N 份（BACKUP_RETAIN 默认 7，0=不清理）—— Dump 成功后自动 prune 该 app 旧备份。
 	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups", parseBackupRetain(os.Getenv("BACKUP_RETAIN"), 7))
@@ -263,6 +267,7 @@ func main() {
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
 	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, monitor, metricStore)
 	appDeployHandler.SetAdaptSubmitter(appAdaptSubmitter{devAgent}) // 导入后触发 opencode 适配（改应用代码 to ANP）
+	appDeployHandler.SetMwReconciler(mwReconciler)                  // 部署前注入中间件连接 env（REDIS_ADDR 等）
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)
