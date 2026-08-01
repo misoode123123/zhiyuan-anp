@@ -64,3 +64,54 @@ func (s *Store) ListBindingsByApp(ctx context.Context, appID string) ([]ServiceB
 		`SELECT `+bindCols+` FROM appdeploy_service_binding WHERE app_id=$1 ORDER BY service_kind`, appID)
 	return list, err
 }
+
+// LookupShared 取某 kind 的平台级 shared 实例（project_space_id IS NULL）。无则 nil,nil。
+func (s *Store) LookupShared(ctx context.Context, kind string) (*ServiceInstance, error) {
+	var inst ServiceInstance
+	err := s.db.GetContext(ctx, &inst,
+		`SELECT `+instCols+` FROM appdeploy_service_instance
+		 WHERE kind=$1 AND supply_mode='shared' AND status='active' AND project_space_id IS NULL
+		 LIMIT 1`, kind)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &inst, nil
+}
+
+// GetBinding 取某 app 某 kind 的绑定。无则 nil,nil。
+func (s *Store) GetBinding(ctx context.Context, appID, kind string) (*ServiceBinding, error) {
+	var b ServiceBinding
+	err := s.db.GetContext(ctx, &b,
+		`SELECT `+bindCols+` FROM appdeploy_service_binding WHERE app_id=$1 AND service_kind=$2`, appID, kind)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &b, nil
+}
+
+// AllocatedTokens 列某实例所有已分配 token（isolation_token IS NOT NULL）。
+// shared redis db 号分配的占用集来源。
+func (s *Store) AllocatedTokens(ctx context.Context, instID string) ([]string, error) {
+	var toks []string
+	err := s.db.SelectContext(ctx, &toks,
+		`SELECT isolation_token FROM appdeploy_service_binding
+		 WHERE service_instance_id=$1 AND isolation_token IS NOT NULL`, instID)
+	return toks, err
+}
+
+// ClaimSharedToken 原子登记 shared 绑定（strategy=shared,status=bound）。
+// 复用 UpsertBinding 的 ON CONFLICT(app_id,service_kind)。
+// 撞 (service_instance_id,isolation_token) 唯一索引 → DB 抛 23505，调用方 isUniqueViolation 捕获后换号重试。
+func (s *Store) ClaimSharedToken(ctx context.Context, appID, psID, kind, instID, token, envKey string) error {
+	return s.UpsertBinding(ctx, &ServiceBinding{
+		AppID: appID, ProjectSpaceID: psID, ServiceKind: kind,
+		Strategy: ModeShared, ServiceInstanceID: instID, IsolationToken: token,
+		EnvKey: envKey, Status: StatusBound,
+	})
+}

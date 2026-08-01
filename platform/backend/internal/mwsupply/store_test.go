@@ -96,3 +96,93 @@ func TestMigration_000029_sharedSeedAndIndex(t *testing.T) {
 		t.Fatal("部分唯一索引 uq_svbind_inst_token 应存在")
 	}
 }
+
+// TestStore_LookupShared_seed 平台级 shared redis 种子可查到。
+func TestStore_LookupShared_seed(t *testing.T) {
+	s, _ := newTestStore(t)
+	got, err := s.LookupShared(context.Background(), "redis")
+	if err != nil || got == nil {
+		t.Fatalf("应命中 shared redis 种子，err=%v got=%+v", err, got)
+	}
+	if got.ID != "svinst-redis-shared-28" || got.SupplyMode != "shared" || got.Port != 6381 {
+		t.Fatalf("shared 种子不符: %+v", got)
+	}
+	// 无 shared milvus → nil,nil
+	gotM, err := s.LookupShared(context.Background(), "milvus")
+	if err != nil || gotM != nil {
+		t.Fatalf("shared milvus 应 nil,nil，得 %+v err=%v", gotM, err)
+	}
+}
+
+// TestStore_AllocatedTokens 占用集正确。
+func TestStore_AllocatedTokens(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	appA := mkAppRow(t, db, "sh_a", "ps_1")
+	appB := mkAppRow(t, db, "sh_b", "ps_1")
+	_ = s.ClaimSharedToken(ctx, appA, "ps_1", "redis", "svinst-redis-shared-28", "1", "REDIS_ADDR")
+	_ = s.ClaimSharedToken(ctx, appB, "ps_1", "redis", "svinst-redis-shared-28", "3", "REDIS_ADDR")
+	toks, err := s.AllocatedTokens(ctx, "svinst-redis-shared-28")
+	if err != nil {
+		t.Fatalf("AllocatedTokens: %v", err)
+	}
+	if len(toks) != 2 || !contains(toks, "1") || !contains(toks, "3") {
+		t.Fatalf("占用集应 {1,3}，得 %v", toks)
+	}
+}
+
+// TestStore_ClaimSharedToken_uniqueViolation 不同 app 抢同 (inst,token) → 第二个 23505。
+func TestStore_ClaimSharedToken_uniqueViolation(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	appA := mkAppRow(t, db, "cu_a", "ps_1")
+	appB := mkAppRow(t, db, "cu_b", "ps_1")
+	if err := s.ClaimSharedToken(ctx, appA, "ps_1", "redis", "svinst-redis-shared-28", "5", "REDIS_ADDR"); err != nil {
+		t.Fatalf("首次 claim: %v", err)
+	}
+	err := s.ClaimSharedToken(ctx, appB, "ps_1", "redis", "svinst-redis-shared-28", "5", "REDIS_ADDR")
+	if !isUniqueViolation(err) {
+		t.Fatalf("撞号应 23505，得 %v", err)
+	}
+}
+
+// TestStore_GetBinding 取/无。
+func TestStore_GetBinding(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	app := mkAppRow(t, db, "gb_a", "ps_1")
+	if b, err := s.GetBinding(ctx, app, "redis"); err != nil || b != nil {
+		t.Fatalf("无 binding 应 nil,nil，得 %+v err=%v", b, err)
+	}
+	_ = s.ClaimSharedToken(ctx, app, "ps_1", "redis", "svinst-redis-shared-28", "2", "REDIS_ADDR")
+	b, err := s.GetBinding(ctx, app, "redis")
+	if err != nil || b == nil || b.IsolationToken != "2" || b.Status != StatusBound {
+		t.Fatalf("应取到 bound token=2，得 %+v err=%v", b, err)
+	}
+}
+
+// TestStore_shared_recycle 删 binding → token 回收（AllocatedTokens 不再含）。
+func TestStore_shared_recycle(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	app := mkAppRow(t, db, "rc_a", "ps_1")
+	_ = s.ClaimSharedToken(ctx, app, "ps_1", "redis", "svinst-redis-shared-28", "4", "REDIS_ADDR")
+	if toks, _ := s.AllocatedTokens(ctx, "svinst-redis-shared-28"); !contains(toks, "4") {
+		t.Fatalf("应含 4，得 %v", toks)
+	}
+	if _, err := db.Exec(`DELETE FROM appdeploy_service_binding WHERE app_id=$1`, app); err != nil {
+		t.Fatalf("delete binding: %v", err)
+	}
+	if toks, _ := s.AllocatedTokens(ctx, "svinst-redis-shared-28"); contains(toks, "4") {
+		t.Fatalf("删 binding 后 4 应回收，得 %v", toks)
+	}
+}
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
