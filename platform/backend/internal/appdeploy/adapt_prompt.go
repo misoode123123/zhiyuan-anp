@@ -8,6 +8,7 @@ func AdaptPrompt(appName string) string {
 		"配置改为优先读环境变量（禁硬编码 127.0.0.1/localhost 访问中间件）、" +
 		"确保仓库根有可构建的多阶段 Dockerfile 并 EXPOSE 监听端口、" +
 		"所需中间件不要写死地址（由 ANP 经环境变量注入连接信息）。" +
+		"若用到 redis/milvus 等中间件，按 AGENTS.md 规范在仓库根写 `.anp/deps.yaml` 声明依赖（services 列 kind），ANP 据此注入连接 env；" +
 		"若部署机缺某依赖服务，在变更说明里报明缺什么（kind/原因）。" +
 		"改完提交，提交说明里列出改了哪些文件、为什么。"
 }

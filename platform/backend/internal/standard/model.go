@@ -100,6 +100,7 @@ func BuildAgentsMarkdown(list []Standard, module string) string {
 	b.WriteString("- **配置优先读环境变量（env-over-config）**：应用配置须优先读环境变量；ANP 注入 `DATABASE_URL`(PG)、可注入 `REDIS_ADDR`/`MILVUS_ADDR`/`PG_*` 等。**禁止硬编码 `127.0.0.1`/`localhost` 访问中间件**（容器内不可达）。\n")
 	b.WriteString("- **构建**：仓库根须有 Dockerfile（推荐多阶段）；`EXPOSE` 应用监听端口；构建上下文 = 仓库根。\n")
 	b.WriteString("- **依赖**：中间件由 ANP 供给或绑定已有，连接信息经环境变量注入；应用读 env，不写死地址。\n")
+	b.WriteString("- **依赖声明（回写 `.anp/deps.yaml`）**：若应用用到 redis/milvus 等中间件，在仓库根写 `.anp/deps.yaml` 声明依赖，ANP 据此注入连接 env（`REDIS_ADDR`/`MILVUS_ADDR`）。格式：`services: [{kind: redis}, {kind: milvus}]`（kind 必填；strategy 可选，不写走默认 `bind_existing`）。无中间件依赖则不写此文件。\n")
 	b.WriteString("- **网络**：默认 bridge（隔离）；需 host 网络须审批，优先改配置走 env。\n")
 	b.WriteString("- **形态**：web（HTTP，有端口+URL）/ headless（bot/worker 等长驻外发，无 URL，健康=进程或外连）。\n")
 	b.WriteString("- **缺失服务**：若部署机缺某依赖，在变更里报明（kind/原因），由 ANP 经审批后受控安装（白名单内），连接回填注入 env。\n\n")
