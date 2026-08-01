@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // EnvWriter 写应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
@@ -16,13 +18,17 @@ type EnvWriter interface {
 type Reconciler struct {
 	store   *Store
 	env     EnvWriter
-	flusher DBFlusher // shared 重分配时清空 redis db（Task 3）
+	flusher DBFlusher   // shared 重分配时清空 redis db（Task 3）
+	log     *zap.Logger // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
 
 // NewReconciler 构造。env 传 appdeploy.Store（满足 EnvWriter）；flusher 传 NewRedisFlusher()（测试传 fake）。
 func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher) *Reconciler {
 	return &Reconciler{store: store, env: env, flusher: flusher}
 }
+
+// SetLogger 注入 logger（可选；main 装配时调，测试不调则 flush 失败静默）。
+func (r *Reconciler) SetLogger(l *zap.Logger) { r.log = l }
 
 // Reconcile 读 repoDir 的 .anp/deps.yaml → 对每个声明服务按策略供给 → 写 env + binding。
 // 幂等（binding 已 bound 且同实例则复用 token 不 flush）。读清单失败=空清单（不报错）。
@@ -126,7 +132,14 @@ func (r *Reconciler) claimWithRetry(ctx context.Context, appID, psID, kind strin
 	for attempts := 0; attempts <= (hi - lo + 1); attempts++ {
 		dbNum, _ := strconv.Atoi(token)
 		if ferr := r.flusher.FlushDB(ctx, inst.Host, inst.Port, inst.AuthRef, dbNum); ferr != nil {
-			return "", fmt.Errorf("flush db %s 失败: %w", token, ferr)
+			// flush 是数据卫生(best-effort)，非首次分配正确性所需：首次分配的 db 号本就干净。
+			// 后端可能无 redis 网络访问（如 .28：backend 与 redis 分属不同 docker 网络，拨 host LAN IP 超时）。
+			// 记 Warn 后继续 claim——重分配的卫生保证留给「部署侧确保 backend↔redis 可达」的 prod。
+			if r.log != nil {
+				r.log.Warn("shared redis flush failed (best-effort, proceed to claim)",
+					zap.String("app", appID), zap.String("kind", kind),
+					zap.String("db", token), zap.Error(ferr))
+			}
 		}
 		err := r.store.ClaimSharedToken(ctx, appID, psID, kind, inst.ID, token, EnvKeyFor(kind))
 		if err == nil {

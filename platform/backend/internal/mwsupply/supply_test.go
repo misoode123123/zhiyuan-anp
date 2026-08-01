@@ -183,8 +183,9 @@ func TestReconcile_shared_idempotent(t *testing.T) {
 	}
 }
 
-// TestReconcile_shared_flushFail flush 失败 → binding failed、未写 REDIS_DB。
-func TestReconcile_shared_flushFail(t *testing.T) {
+// TestReconcile_shared_flushFailBestEffort flush 失败(best-effort) → 仍 claim + 注入 env，binding bound。
+// 后端可能无 redis 网络访问（.28 即如此）；flush 是重分配卫生，非首次分配正确性所需 → 不阻塞。
+func TestReconcile_shared_flushFailBestEffort(t *testing.T) {
 	r, appStore, db, fl := newReconcilerTest(t)
 	fl.err = errStr("redis 不可达")
 	ctx := context.Background()
@@ -193,12 +194,12 @@ func TestReconcile_shared_flushFail(t *testing.T) {
 	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
 	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
-	if len(binds) != 1 || binds[0].Status != StatusFailed {
-		t.Fatalf("flush 失败应 binding failed，得 %+v", binds)
+	if len(binds) != 1 || binds[0].Status != StatusBound {
+		t.Fatalf("flush best-effort 失败应仍 bound，得 %+v", binds)
 	}
 	rdb, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB")
-	if rdb != "" {
-		t.Fatalf("flush 失败不应写 REDIS_DB，得 %q", rdb)
+	if rdb == "" {
+		t.Fatalf("flush best-effort 失败仍应写 REDIS_DB，得空")
 	}
 }
 
