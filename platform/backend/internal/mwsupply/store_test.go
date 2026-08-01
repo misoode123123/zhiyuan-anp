@@ -72,3 +72,27 @@ func TestStore_UpsertBinding_upsert(t *testing.T) {
 		t.Fatalf("应 1 条 bound→failed，得 %+v", list)
 	}
 }
+
+// TestMigration_000029_sharedSeedAndIndex 迁移后：shared redis 种子在 + 部分唯一索引在。
+func TestMigration_000029_sharedSeedAndIndex(t *testing.T) {
+	_, db := newTestStore(t)
+	// 种子行 + isolation.db_range 解析正确
+	var lo, hi int
+	err := db.QueryRow(`SELECT (isolation->'db_range'->>0)::int, (isolation->'db_range'->>1)::int
+		FROM appdeploy_service_instance
+		WHERE id='svinst-redis-shared-28' AND supply_mode='shared' AND project_space_id IS NULL`).Scan(&lo, &hi)
+	if err != nil {
+		t.Fatalf("shared redis 种子缺失: %v", err)
+	}
+	if lo != 1 || hi != 15 {
+		t.Fatalf("db_range 应 [1,15]，得 [%d,%d]", lo, hi)
+	}
+	// 部分唯一索引存在
+	var idxExists bool
+	if err := db.Get(&idxExists, `SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='uq_svbind_inst_token')`); err != nil {
+		t.Fatalf("查索引: %v", err)
+	}
+	if !idxExists {
+		t.Fatal("部分唯一索引 uq_svbind_inst_token 应存在")
+	}
+}
