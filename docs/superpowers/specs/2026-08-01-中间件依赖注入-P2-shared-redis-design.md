@@ -65,17 +65,17 @@ P1 迁移 000028 **已建好**但**从未被写**的 shared 相关字段：
 
 ## 3. 关键决策
 
-| 维度       | 选择                                                                                 | 理由                                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 隔离机制   | **redis db 号**（共享实例 + 每 app 独占一个 db）                                     | 离散、干净、redis 原生 16 库；应用 redis 客户端连时 `SELECT N` 即隔离，零代码配合                                                              |
-| db 号池    | **`db_range:[1,15]`**，保留 db 0                                                     | redis 默认 0-15 共 16 库；db 0 留给 bind_existing/系统，shared 用 1-15（15 槽）                                                                |
-| 配额       | **`db_range` 本身即配额**，**不动 `internal/quota` 模块**                            | shared 实例是平台级、token 天然实例作用域；池满=配额超限，自然拒绝。塞进项目级 `project_quota` 反而别扭，且免循环依赖                          |
-| 分配算法   | **最小空闲号**（`db_range` 内未被任何 `isolation_token IS NOT NULL` 占用的最小号）   | 紧凑占用、回收后立即可复用最小号                                                                                                               |
-| 并发控制   | **乐观选号 + 部分唯一索引兜底 + 有界重试**（非 `SELECT FOR UPDATE`）                 | flush 幂等（`FLUSHDB`），并发撞号由 `UNIQUE(service_instance_id,isolation_token)` 检测、重试即可；免长事务、免 `allocating` 中间态、免崩溃泄漏 |
-| 数据卫生   | **（重）分配时 `FLUSHDB`**（方案 A）                                                 | CASCADE 只回收「号」不清「残留数据」；重分配时 flush 保证新租户拿到干净 db，覆盖崩溃/手删所有场景                                              |
-| flush 实现 | **`redisflush.go`：`net.Dial` + 裸 RESP**（不引 go-redis/redigo）                    | 后端 go.mod **无任何 redis 客户端依赖**；`FLUSHDB` 是 3 条命令的裸 RESP，~40 行搞定，不值得为此引重依赖。经 `DBFlusher` 接口注入便于测试       |
-| 回收       | **删 app 靠 `ON DELETE CASCADE` 自动回收**，**Delete handler 零改**                  | token 占用集合=存活 binding 行；删 app → binding 行 CASCADE 删 → db 号自动回池；env 行同样 CASCADE 清。无需像 pgsupply.Cleanup 加显式钩子      |
-| env 注入   | **`REDIS_ADDR` + `REDIS_DB`（+ `REDIS_PASSWORD` 若鉴权）**，三行均 `source=platform` | 与 bind_existing 同 `REDIS_ADDR` key（应用读法不变），`REDIS_DB` 是同范式小扩展；匹配 AGENTS.md env-over-config                                |
+| 维度       | 选择                                                                                 | 理由                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 隔离机制   | **redis db 号**（共享实例 + 每 app 独占一个 db）                                     | 离散、干净、redis 原生 16 库；应用 redis 客户端连时 `SELECT N` 即隔离，零代码配合                                                                                                                                                                                                                                |
+| db 号池    | **`db_range:[1,15]`**，保留 db 0                                                     | redis 默认 0-15 共 16 库；db 0 留给 bind_existing/系统，shared 用 1-15（15 槽）                                                                                                                                                                                                                                  |
+| 配额       | **`db_range` 本身即配额**，**不动 `internal/quota` 模块**                            | shared 实例是平台级、token 天然实例作用域；池满=配额超限，自然拒绝。塞进项目级 `project_quota` 反而别扭，且免循环依赖                                                                                                                                                                                            |
+| 分配算法   | **最小空闲号**（`db_range` 内未被任何 `isolation_token IS NOT NULL` 占用的最小号）   | 紧凑占用、回收后立即可复用最小号                                                                                                                                                                                                                                                                                 |
+| 并发控制   | **乐观选号 + 部分唯一索引兜底 + 有界重试**（非 `SELECT FOR UPDATE`）                 | flush 幂等（`FLUSHDB`），并发撞号由 `UNIQUE(service_instance_id,isolation_token)` 检测、重试即可；免长事务、免 `allocating` 中间态、免崩溃泄漏                                                                                                                                                                   |
+| 数据卫生   | **（重）分配时 `FLUSHDB`（方案 A，best-effort：失败不阻塞）**                        | CASCADE 只回收「号」不清「残留数据」；重分配时 flush 保证新租户拿到干净 db。**best-effort**：后端可能无 redis 网络访问（.28 backend 与 redis 分属不同 docker 网络，拨 host LAN IP 超时），flush 失败记 Warn 后继续 claim、不阻塞（首次分配 db 本就干净）；重分配卫生留给「部署侧保证 backend↔redis 可达」的 prod |
+| flush 实现 | **`redisflush.go`：`net.Dial` + 裸 RESP**（不引 go-redis/redigo）                    | 后端 go.mod **无任何 redis 客户端依赖**；`FLUSHDB` 是 3 条命令的裸 RESP，~40 行搞定，不值得为此引重依赖。经 `DBFlusher` 接口注入便于测试                                                                                                                                                                         |
+| 回收       | **删 app 靠 `ON DELETE CASCADE` 自动回收**，**Delete handler 零改**                  | token 占用集合=存活 binding 行；删 app → binding 行 CASCADE 删 → db 号自动回池；env 行同样 CASCADE 清。无需像 pgsupply.Cleanup 加显式钩子                                                                                                                                                                        |
+| env 注入   | **`REDIS_ADDR` + `REDIS_DB`（+ `REDIS_PASSWORD` 若鉴权）**，三行均 `source=platform` | 与 bind_existing 同 `REDIS_ADDR` key（应用读法不变），`REDIS_DB` 是同范式小扩展；匹配 AGENTS.md env-over-config                                                                                                                                                                                                  |
 
 ---
 
@@ -128,7 +128,7 @@ DELETE FROM appdeploy_service_instance WHERE id = 'svinst-redis-shared-28';
 
 ## 5. Token 分配算法（核心）
 
-采用**乐观模型（Model B）**：先读占用集合选号 → flush → 原子 claim；唯一索引防撞号，有界重试解冲突。**无 `allocating` 中间态、无长事务、崩溃不泄漏**（claim 只在 flush 成功后写，直接落 `bound`）。
+采用**乐观模型（Model B）**：先读占用集合选号 → flush → 原子 claim；唯一索引防撞号，有界重试解冲突。**无 `allocating` 中间态、无长事务、崩溃不泄漏**（claim 在 flush(best-effort) 后写，直接落 `bound`；flush 失败不阻塞）。
 
 ### 5.1 supplyOne 的 shared 分支伪代码
 
@@ -150,9 +150,10 @@ supplyOne(dep{kind:redis, strategy:shared}):
       token, ok = pickLowestFree(lo, hi, allocated)
       if !ok:
           mkBind(failed, inst.ID, "shared redis db 号耗尽（池 %d-%d）", lo, hi); return
-      // 数据卫生：分配时清空（仅新分配时；复用不 flush，保数据）
+      // 数据卫生：分配时清空（仅新分配时；复用不 flush，保数据）。best-effort：失败记 Warn 后继续 claim
       if err = flusher.FlushDB(inst.host, inst.port, inst.auth_ref, atoi(token)); err != nil:
-          mkBind(failed, inst.ID, "flush db "+token+" 失败: "+err); return   // token 未 claim，仍空闲
+          log.Warn("flush failed (best-effort)", app, token, err)   // 不 return，继续 claim（见 §5.4）
+
       // 原子 claim（唯一索引兜底撞号）
       err = store.ClaimSharedToken(appID, psID, inst.ID, token, "REDIS_ADDR")
       if isUniqueViolation(err):
@@ -175,7 +176,8 @@ supplyOne(dep{kind:redis, strategy:shared}):
 ```
 （无 binding）──新分配──▶ bound          // claim 直接落 bound（flush 成功后才 claim）
 bound ──重部署──▶ bound（复用号，不 flush）  // 幂等
-（任意）──flush 失败/池满/撞号重试用尽──▶ failed（token 不 claim / 留空）
+（任意）──池满/撞号重试用尽──▶ failed（token 不 claim / 留空）
+注：flush 失败 = best-effort（记 Warn），仍继续 claim → bound，不进 failed（见 §5.4）
 failed ──重部署──▶ 重新走「新分配」        // 失败 binding 的 token 恒为空，重试可复用同号
 ```
 
@@ -189,6 +191,19 @@ pickLowestFree(lo, hi, allocatedSet):
       if str(n) not in allocatedSet: return str(n), true
   return "", false   // 池满
 ```
+
+### 5.4 flush 为 best-effort（.28 e2e 驱动修订）
+
+**原设计**（§5.1/§9 初版）：flush 失败 → `binding=failed`，不分配 token。**修订**：flush 失败 → 记 Warn（经 `Reconciler.SetLogger` 注入 zap）后**继续 claim → bound**，不阻塞。
+
+**修订理由**（.28 e2e 实测暴露）：flusher 在 `deploy_backend_1`（`deploy_default` docker 网络）内执行，拨 redis 的 `10.10.0.28:6381`（host LAN IP）**i/o 超时**——redis 在 `yxt-infra_default` 网络，bridge 无 hairpin NAT，backend 无法以单一 host 同时被 flusher 与 app 容器访问。即「后端无 redis 网络访问」是真实部署常态；严格 flush 会让整个 shared 不可用。
+
+flush 本质是**重分配数据卫生**（清前任租户残留），**非首次分配正确性所需**（首次分配的 db 号本就干净）。故降级 best-effort：
+
+- 后端可达 redis 的 prod 部署：flush 正常工作，重分配卫生有保证。
+- 后端不可达（如 .28）：flush 跳过（记 Warn），首次分配正常；重分配卫生是已知 gap，由「部署侧保证 backend↔redis 可达」补齐。
+
+> 单测 `TestReconcile_shared_flushFailBestEffort` 覆盖：flusher 返错 → binding 仍 `bound` + `REDIS_DB` 仍写入。
 
 ---
 
@@ -241,7 +256,7 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 
 **故 `handler.go` Delete（`handler.go:1853`）零改动**——P1 缺口「删 app 回收钩子」被 CASCADE 自然消解，不需要像 pgsupply.Cleanup 那样加显式钩子。
 
-下一个 app 新分配时，`pickLowestFree` 会复用刚回收的最小号，且 §7 的 flush 保证它拿到干净 db。
+下一个 app 新分配时，`pickLowestFree` 会复用刚回收的最小号；§7 的 flush（best-effort，见 §5.4）在 backend↔redis 可达时保证它拿到干净 db。
 
 > 与 pgsupply 对照：pgsupply 必须 `Cleanup`（要 `DROP DATABASE`/`DROP ROLE`，DB 对象不随行 CASCADE）；redis db 号是「逻辑号」，随 binding 行 CASCADE 即回收，flush 在分配侧补数据卫生即可。
 
@@ -249,14 +264,14 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 
 ## 9. 并发与失败处理
 
-| 场景                        | 处理                                                                                                                                                                        |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 两 app 并发分配同号         | 都 `pickLowestFree` 得同号 T → 都 flush(T)（幂等无害）→ claim 时唯一索引 `uq_svbind_inst_token` 让其中一个 `23505` → 失败方刷新占用集、挑下一空闲号重试（有界 ≤ 池大小 15） |
-| 池满（15 个 app 占满 1-15） | `pickLowestFree` 返回 `false` → `mkBind(failed, "db 号耗尽")`，不写 env                                                                                                     |
-| flush 失败（redis 不可达）  | 不 claim → `mkBind(failed, "flush 失败")`，token 留空仍空闲；下次部署重试                                                                                                   |
-| claim 失败（非唯一冲突）    | `mkBind(failed, err)`                                                                                                                                                       |
-| 同 app 重部署               | `existing.status==bound && token!=""` → 复用号、**不 flush**（保数据）、重写 env（幂等）                                                                                    |
-| 应用删 → 号回收             | CASCADE 自动；下次新分配复用 + flush                                                                                                                                        |
+| 场景                                            | 处理                                                                                                                                                                                         |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 两 app 并发分配同号                             | 都 `pickLowestFree` 得同号 T → 都 flush(T)（幂等无害）→ claim 时唯一索引 `uq_svbind_inst_token` 让其中一个 `23505` → 失败方刷新占用集、挑下一空闲号重试（有界 ≤ 池大小 15）                  |
+| 池满（15 个 app 占满 1-15）                     | `pickLowestFree` 返回 `false` → `mkBind(failed, "db 号耗尽")`，不写 env                                                                                                                      |
+| flush 失败（redis 不可达 / backend 无网络访问） | **best-effort**：记 Warn，继续 claim → `bound`，不阻塞（见 §5.4）。首次分配 db 本就干净；重分配卫生依赖部署侧 backend↔redis 可达。.28 实测 backend 拨 host LAN IP 超时→跳过 flush 仍正常分配 |
+| claim 失败（非唯一冲突）                        | `mkBind(failed, err)`                                                                                                                                                                        |
+| 同 app 重部署                                   | `existing.status==bound && token!=""` → 复用号、**不 flush**（保数据）、重写 env（幂等）                                                                                                     |
+| 应用删 → 号回收                                 | CASCADE 自动；下次新分配复用 + flush                                                                                                                                                         |
 
 ---
 
@@ -300,7 +315,7 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 
 7. shared 分支：`.anp/deps.yaml` 含 `strategy:shared` → binding=bound + `REDIS_ADDR`/`REDIS_DB` 两行 env（fake flusher 被调一次）
 8. 复用：同 app 二次 `Reconcile` → token 不变、flusher **不**被调、env 重写
-9. flush 失败：fake flusher 返错 → binding=failed、token 未 claim、env 未写
+9. flush 失败（best-effort）：fake flusher 返错 → 记 Warn、仍 claim → binding=bound、`REDIS_DB` 仍写入（见 §5.4）
 10. 池满：占满后新增 → binding=failed + `last_error` 含「耗尽」
 11. 无 shared 实例（LookupShared nil）→ binding=failed
 
@@ -312,26 +327,26 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 
 > 本机不跑功能测试，`.28` 是测试库。commit → push origin main → scp + `.28` 重建。
 
-1. 造两个最小 Go 应用，`.anp/deps.yaml` 预写 `services:[{kind:redis, strategy:shared}]`（golang:1.25-alpine 本地镜像，仿 P1 e2e）
+1. 造两个最小 python 应用（`.anp/deps.yaml` 预写 `services:[{kind:redis, strategy:shared}]`；**.28 无 golang 镜像缓存，用 python:3-alpine**，仿 P1 e2e 范式）
 2. 各自 CREATE（带 repo_dir，不触发 adapt）→ deploy test
 3. 容器内验证：app1 `REDIS_DB=1`、app2 `REDIS_DB=2`（**隔离号不同**），`REDIS_ADDR` 同
 4. `appdeploy_env` 各有 `REDIS_ADDR`+`REDIS_DB` 两行 `source=platform`；`appdeploy_service_binding` 各一行 `isolation_token=1/2, status=bound`
-5. **回收**：删 app1 → 其 binding/env CASCADE 删 → 新建 app3 deploy → `REDIS_DB=1`（复用最小号）且 db 1 数据已 flush（app3 写 key 读不到 app1 残留）
+5. **回收**：删 app1 → 其 binding/env CASCADE 删 → 新建 app3 deploy → `REDIS_DB=1`（复用最小号）。flush 为 best-effort（见 §5.4），重分配卫生依赖部署侧 backend↔redis 可达
 6. 平台保护：手改 `REDIS_DB` 返 409（复用 P1 的 source=platform 保护）
 
 ---
 
 ## 12. 风险与取舍
 
-| 风险                                      | 对策                                                                         |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| shared 多租户隔离（重分配残留数据）       | 分配时 `FLUSHDB`（方案 A）——本期已纳入                                       |
-| 并发撞号                                  | 乐观选号 + 部分唯一索引 `uq_svbind_inst_token` + 有界重试                    |
-| db 号池小（15）                           | 池满即 `failed`（配额自然表达）；dedicated/扩 `db_range` 是后续降本/扩容手段 |
-| `auth_ref` 明文（I1 债）                  | 沿用 P1 模式；阶段 3 接 vault/KMS（同 pgsupply）                             |
-| flush 不可达（redis 故障）                | `failed` 不阻塞部署（best-effort，同 P1）；下次部署重试                      |
-| `.28` redis 无密码裸跑                    | 本期按现状（`auth_ref=NULL`，flusher 跳 AUTH）；生产强化时补                 |
-| 乐观模型「先 flush 后 claim」的额外 flush | `FLUSHDB` 幂等，并发多 flush 一次无害                                        |
+| 风险                                            | 对策                                                                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| shared 多租户隔离（重分配残留数据）             | 分配时 `FLUSHDB`（方案 A，**best-effort**，见 §5.4）——后端可达 redis 时生效；不可达时跳过（首次分配本就干净） |
+| 并发撞号                                        | 乐观选号 + 部分唯一索引 `uq_svbind_inst_token` + 有界重试                                                     |
+| db 号池小（15）                                 | 池满即 `failed`（配额自然表达）；dedicated/扩 `db_range` 是后续降本/扩容手段                                  |
+| `auth_ref` 明文（I1 债）                        | 沿用 P1 模式；阶段 3 接 vault/KMS（同 pgsupply）                                                              |
+| flush 不可达（redis 故障 / backend 无网络访问） | best-effort：记 Warn 继续 claim → `bound`，不阻塞（见 §5.4）                                                  |
+| `.28` redis 无密码裸跑                          | 本期按现状（`auth_ref=NULL`，flusher 跳 AUTH）；生产强化时补                                                  |
+| 乐观模型「先 flush 后 claim」的额外 flush       | `FLUSHDB` 幂等，并发多 flush 一次无害                                                                         |
 
 ---
 
@@ -351,7 +366,7 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 1. **种子**：迁移后 `appdeploy_service_instance` 含 `svinst-redis-shared-28`（`supply_mode=shared`, `isolation={"db_range":[1,15]}`）；唯一索引 `uq_svbind_inst_token` 存在
 2. **分配隔离**：两个 shared app 部署后容器内 `REDIS_DB` 不同（1/2），互不可见
 3. **env 注入**：`appdeploy_env` 每app 有 `REDIS_ADDR`+`REDIS_DB` 两行 `source=platform`
-4. **回收复用**：删 app 后其 db 号可被新 app 复用，且复用时数据已 flush
+4. **回收复用**：删 app 后其 db 号可被新 app 复用（CASCADE）。复用时 flush 为 best-effort（见 §5.4）
 5. **幂等**：同 app 重部署 token 不变、不 flush、保数据
 6. **配额**：池满（>15）新 app `binding=failed`，`last_error` 含「耗尽」
 7. **零回归**：P1 的 bind_existing 链路、`DATABASE_URL` 注入、部署主流程不受影响；Delete 仍正常（CASCADE 回收）
@@ -359,4 +374,18 @@ RESP 写：`*N\r\n$len\r\nCMD\r\n...`；读：按首字节判 `+`（simple strin
 
 ---
 
-_本设计把 P1 的 mwsupply 范式从 bind_existing 推进到 shared（redis db 号隔离）：复用 000028 已有列，新增「最小空闲号分配 + 重分配 flush + CASCADE 自动回收」三件套，配额即 db_range、不动 quota 模块，Delete handler 零改。milvus shared / dedicated 留 P3。审核通过后开 plan → TDD 实现 → `.28` e2e。_
+_本设计把 P1 的 mwsupply 范式从 bind_existing 推进到 shared（redis db 号隔离）：复用 000028 已有列，新增「最小空闲号分配 + 重分配 flush（best-effort）+ CASCADE 自动回收」三件套，配额即 db_range、不动 quota 模块，Delete handler 零改。milvus shared / dedicated 留 P3。_
+
+---
+
+## 15. e2e 验证结论（.28，2026-08-01，commit f7e70a0）
+
+P2 shared redis 已 `.28` live 验证通过：
+
+- **隔离**：两个 shared app（python:3-alpine，`.anp/deps.yaml` strategy:shared）deploy 后容器内分别 `REDIS_DB=1` / `REDIS_DB=2`，`REDIS_ADDR=10.10.0.28:6381` 同
+- **env 注入**：`appdeploy_env` 各 `REDIS_ADDR`+`REDIS_DB` 两行 `source=platform`；`appdeploy_service_binding` `strategy=shared, isolation_token=1/2, status=bound`
+- **回收**：删 appA → 占用集 `{1,2}`→`{2}`（CASCADE 回收 token 1）→ 新 appC 复用 `REDIS_DB=1`
+- **best-effort flush**（§5.4）：.28 backend 拨 redis 超时 → flush 记 Warn 跳过 → binding 仍 `bound` + env 正常注入（首次分配 db 本就干净）
+- **平台保护**（复用 P1）：`source=platform` 行 409 保护不变
+
+e2e 脚本：`/root/e2e-p2-v2.sh`（隔离）+ `/root/e2e-recycle.sh`（回收），fixture 在宿主 `/opt/anp/data/p2shared{1,2}`。
