@@ -121,6 +121,17 @@ func TestRedisFlush_ServerError(t *testing.T) {
 			return
 		}
 		defer c.Close()
+		br := bufio.NewReader(c)
+		// 先读掉客户端发的第一条命令（SELECT），清空接收缓冲，再回 -ERR：
+		// 否则 Windows 下关闭带未读数据的 socket 发 RST，会抢占 -ERR 让客户端读到 reset。
+		hdr, _ := br.ReadString('\n') // *N\r\n
+		if strings.HasPrefix(hdr, "*") {
+			n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(hdr, "*")))
+			for i := 0; i < n; i++ {
+				_, _ = br.ReadString('\n') // $len\r\n
+				_, _ = br.ReadString('\n') // data\r\n
+			}
+		}
 		_, _ = io.WriteString(c, "-ERR boom\r\n")
 	}()
 	err = dialFlush(t, ln.Addr().String(), "", 1)
