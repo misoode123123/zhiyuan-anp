@@ -1,0 +1,74 @@
+package mwsupply
+
+import (
+	"context"
+	"testing"
+
+	"github.com/jmoiron/sqlx"
+	"zhiyuan-anp/platform/backend/internal/appdeploy"
+	"zhiyuan-anp/platform/backend/internal/testutil"
+)
+
+// newTestStore 连 anp_test PG（迁移建表含 000028 + .28 种子）+ 清绑定/env/应用表隔离。
+// 不清 appdeploy_service_instance：.28 种子（迁移插入）需保留供 LookupBindExisting。
+func newTestStore(t *testing.T) (*Store, *sqlx.DB) {
+	t.Helper()
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
+	return NewStore(db), db
+}
+
+// mkAppRow 建一条应用记录（绑定的 FK 父行）。
+func mkAppRow(t *testing.T, db *sqlx.DB, name, ps string) string {
+	t.Helper()
+	a := &appdeploy.Application{ProjectSpaceID: ps, Name: name, RepoDir: "/data/repos/" + name, InternalPort: 8080}
+	if err := appdeploy.NewStore(db).Create(context.Background(), a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	return a.ID
+}
+
+// TestStore_LookupBindExisting_seed 迁移种子 svinst-redis-28 可被查到（平台级 NULL 实例）。
+func TestStore_LookupBindExisting_seed(t *testing.T) {
+	s, _ := newTestStore(t)
+	got, err := s.LookupBindExisting(context.Background(), "ps_1", "redis")
+	if err != nil || got == nil {
+		t.Fatalf("应命中 .28 redis 种子，err=%v got=%+v", err, got)
+	}
+	if got.Host != "10.10.0.28" || got.Port != 6381 || got.ID != "svinst-redis-28" {
+		t.Fatalf("redis 种子不符: %+v", got)
+	}
+	// milvus 种子也在
+	gotM, _ := s.LookupBindExisting(context.Background(), "ps_1", "milvus")
+	if gotM == nil || gotM.Port != 19530 {
+		t.Fatalf("milvus 种子应命中，得 %+v", gotM)
+	}
+	// 未注册 kind 返回 nil,nil（不报错）
+	gotX, err := s.LookupBindExisting(context.Background(), "ps_1", "mongodb")
+	if err != nil || gotX != nil {
+		t.Fatalf("未注册 kind 应 nil,nil，得 %+v err=%v", gotX, err)
+	}
+}
+
+// TestStore_UpsertBinding_upsert 绑定按 app+kind 幂等 upsert（ON CONFLICT 更新）。
+func TestStore_UpsertBinding_upsert(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	appID := mkAppRow(t, db, "app_b1", "ps_1")
+
+	b := &ServiceBinding{AppID: appID, ProjectSpaceID: "ps_1", ServiceKind: "redis",
+		Strategy: ModeBindExisting, ServiceInstanceID: "svinst-redis-28", EnvKey: "REDIS_ADDR", Status: StatusBound}
+	if err := s.UpsertBinding(ctx, b); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// 二次 upsert（同 app+kind）走 ON CONFLICT：状态 failed + last_error 更新
+	b.Status = StatusFailed
+	b.LastError = "x"
+	if err := s.UpsertBinding(ctx, b); err != nil {
+		t.Fatalf("upsert2: %v", err)
+	}
+	list, _ := s.ListBindingsByApp(ctx, appID)
+	if len(list) != 1 || list[0].Status != StatusFailed || list[0].LastError != "x" {
+		t.Fatalf("应 1 条 bound→failed，得 %+v", list)
+	}
+}
