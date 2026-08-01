@@ -1,6 +1,11 @@
 package appdeploy
 
-import "testing"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"testing"
+)
 
 func TestAllocFreePort(t *testing.T) {
 	used := map[int]struct{}{9100: {}, 9101: {}, 9105: {}}
@@ -147,5 +152,55 @@ func TestAllocFreePort_PortExhaustion(t *testing.T) {
 func TestAllocFreePort_MinGtMax(t *testing.T) {
 	if p := AllocFreePort(map[int]struct{}{}, 10, 5); p != 0 {
 		t.Fatalf("min>max 应返回 0，得到 %d", p)
+	}
+}
+
+// TestDockerSlug 应用名 → docker 合法 tag/容器名片段。
+// 中文等非 ASCII 字符须被替换；纯中文（替换后为空）退回名 sha256 前缀且稳定。
+func TestDockerSlug(t *testing.T) {
+	cases := map[string]string{
+		"snake":        "snake",      // 纯 ASCII 原样保留
+		"hello-go":     "hello-go",   // 连字符名不变
+		"cli-e2e-test": "cli-e2e-test",
+		"ncc_deploy":   "ncc-deploy", // 下划线 → -
+		"A.B":          "a-b",        // 大写/点 → 小写/-
+		"  spa cing ":  "spa-cing",   // 空白 → -，折叠并去首尾
+		"café":         "caf",        // 带变音符，仅 ASCII 字母保留（é 非法 → -，折叠去尾）
+	}
+	for in, want := range cases {
+		if got := dockerSlug(in); got != want {
+			t.Errorf("dockerSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// 纯中文：slug 必须合法 + 稳定（同入参每次相同，RemoveByPrefix 才能匹配历史容器）
+	cn := dockerSlug("客服机器人")
+	if !slugValidRe.MatchString(cn) {
+		t.Fatalf("中文 slug 非法（须匹配 %s）: %q", slugValidRe, cn)
+	}
+	if dockerSlug("客服机器人") != cn {
+		t.Fatalf("slug 不稳定: 首次 %q 再次 %q", cn, dockerSlug("客服机器人"))
+	}
+	// 两个不同纯中文名 → 不同 slug，避免容器名撞车
+	if dockerSlug("客服机器人") == dockerSlug("运维机器人") {
+		t.Fatal("两个不同中文应用名不应生成相同 slug")
+	}
+}
+
+// TestDockerSlug_ImageTagValidForChineseName 回归「客服机器人」构建失败：
+// 修复前 ins.Image = appdeploy/客服机器人-test:v4 → docker invalid reference format（exit 125）；
+// 修复后用 dockerSlug，tag 的路径段须合法。
+func TestDockerSlug_ImageTagValidForChineseName(t *testing.T) {
+	ins := &AppInstance{Env: "test", Version: 4}
+	image := fmt.Sprintf("appdeploy/%s-%s:v%d", dockerSlug("客服机器人"), ins.Env, ins.Version)
+	// 路径段 = image 去掉 "appdeploy/" 前缀和 ":v4" 后缀
+	repo := strings.TrimSuffix(strings.TrimPrefix(image, "appdeploy/"), ":v4")
+	if !slugValidRe.MatchString(repo) {
+		t.Fatalf("中文应用镜像路径段非法: image=%q repo=%q", image, repo)
+	}
+	// 容器名同理
+	container := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug("客服机器人"), ins.Env, ins.Version)
+	// 容器名允许 [a-zA-Z0-9_.-]，这里全是小写 ASCII + -，用宽松校验
+	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`).MatchString(container) {
+		t.Fatalf("中文应用容器名非法: %q", container)
 	}
 }

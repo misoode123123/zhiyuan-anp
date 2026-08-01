@@ -1535,7 +1535,7 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		}
 	}
 	// 清理该 app+env 所有历史容器（DB 记录的 + 孤儿残留），彻底释放端口避免漂移/Conflict
-	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+a.Name+"-"+env+"-"); err != nil {
+	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+dockerSlug(a.Name)+"-"+env+"-"); err != nil {
 		zap.L().Warn("清理历史容器失败（不阻塞部署）",
 			zap.String("app", a.Name), zap.String("env", env), zap.Error(err))
 	}
@@ -1828,7 +1828,7 @@ func (h *Handler) Delete(c *gin.Context) {
 			_, _ = h.deployer.Remove(c.Request.Context(), a.ContainerName)
 		}
 		// 删除该应用的所有镜像(避免堆积)
-		_, _ = h.deployer.RemoveImages(c.Request.Context(), a.Name)
+		_, _ = h.deployer.RemoveImages(c.Request.Context(), dockerSlug(a.Name))
 		// 清理非 web 构建产物（I-6）：FK CASCADE 只删 DB 记录，data/artifacts/ 实体成孤儿。
 		// 先按 app 列出产物 → 逐个删存储实体 → 再删 DB 记录（DB 记录也可由 CASCADE 兜底，
 		// 但显式删避免依赖外键且便于 storage 与 store 一致）。放 Store.Delete 之前避免 race。

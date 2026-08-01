@@ -3,6 +3,8 @@ package appdeploy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -100,12 +102,44 @@ func ensurePortEnv(env []string, port int) []string {
 	return append(env, fmt.Sprintf("PORT=%d", port))
 }
 
+// dashRe 匹配连续的 -，用于折叠 dockerSlug 的分隔符。
+var dashRe = regexp.MustCompile(`-+`)
+
+// slugValidRe docker 镜像路径段/容器名片段的合法性：[a-z0-9] 起止，中间允许 -。
+// （docker reference 路径段正则 [a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)* 的子集，保守只用 - 分隔。）
+var slugValidRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// dockerSlug 把应用名转成 docker 合法的镜像 tag / 容器名片段（小写字母数字，- 分隔）。
+// docker reference 只允许 ASCII（路径段须 [a-z0-9] 起止）；应用名含中文等非 ASCII 字符时直接
+// 拼进 `appdeploy/<name>-<env>:v<n>` 会报 invalid reference format（如「客服机器人」→
+// appdeploy/客服机器人-test:v4 → docker build exit 125）。这里把非法 rune 替换为 -；纯非法
+// （如全中文，替换后为空）时退回名字 sha256 前缀——稳定可复现，同一应用每次得到相同 slug，
+// RemoveByPrefix / RemoveImages 仍能匹配历史容器/镜像，不残留孤儿。
+// 与 codews.sanitizeID 同思路（小写、保 [a-z0-9]、其余转 -），但兜底用名哈希而非固定串，
+// 避免两个纯中文应用撞名导致容器名冲突。
+func dockerSlug(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	s := strings.Trim(dashRe.ReplaceAllString(b.String(), "-"), "-")
+	if s != "" {
+		return s
+	}
+	sum := sha256.Sum256([]byte(name))
+	return "app-" + hex.EncodeToString(sum[:6])
+}
+
 // Build 构建镜像（docker build -t <image> <buildDir>），版本号按环境实例自增。
 // buildDir 取码目录：test 环境从开发者 worktree 构建时是 dev-<user> 目录，否则为主仓 a.RepoDir。
 // dockerHost 非空时在远程节点构建（tcp://10.10.0.30:2375）。
 func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, dockerHost, buildDir string) (log string, err error) {
 	ins.Version++
-	ins.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", a.Name, ins.Env, ins.Version)
+	ins.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	out, e := runDockerOn(ctx, dockerHost, "build", "-t", ins.Image, buildDir)
 	return out, e
 }
@@ -124,7 +158,7 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 	if port == 0 {
 		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
-	name := fmt.Sprintf("appdeploy-%s-%s-v%d", a.Name, ins.Env, ins.Version)
+	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	env = ensurePortEnv(env, a.InternalPort)
 	args := []string{"run", "-d", "--name", name}
 	for _, e := range env {
