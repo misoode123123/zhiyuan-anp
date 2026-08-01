@@ -799,6 +799,11 @@ func (h *Handler) UpsertEnv(c *gin.Context) {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
 	}
+	// 平台托管 env（source=platform，如 DATABASE_URL/REDIS_ADDR）禁止用户面板改：部署 reconcile 保障其值。
+	if src, _ := h.store.GetEnvSource(c.Request.Context(), c.Param("aid"), in.Key); src == "platform" {
+		httpx.Err(c, 409, 40960, "平台托管的环境变量不可修改（由部署供给）")
+		return
+	}
 	if err := h.store.UpsertEnv(c.Request.Context(), c.Param("aid"), in.Key, in.Value, in.IsSecret, "user"); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
@@ -819,6 +824,11 @@ func (h *Handler) UpsertEnv(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid}/env/{key} [delete]
 func (h *Handler) DeleteEnv(c *gin.Context) {
+	// 平台托管 env 禁止用户面板删（同 UpsertEnv 保护）。
+	if src, _ := h.store.GetEnvSource(c.Request.Context(), c.Param("aid"), c.Param("key")); src == "platform" {
+		httpx.Err(c, 409, 40960, "平台托管的环境变量不可删除（由部署供给）")
+		return
+	}
 	if err := h.store.DeleteEnv(c.Request.Context(), c.Param("aid"), c.Param("key")); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return

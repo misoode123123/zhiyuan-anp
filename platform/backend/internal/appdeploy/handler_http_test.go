@@ -406,6 +406,35 @@ func TestHandler_UpsertEnv_ok(t *testing.T) {
 	}
 }
 
+// TestHandler_UpsertEnv_platformProtected 平台注入的 key 用户改不了（409）。
+func TestHandler_UpsertEnv_platformProtected(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	_ = h.store.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "10.10.0.28:6381", false, "platform")
+
+	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/env",
+		map[string]interface{}{"key": "REDIS_ADDR", "value": "hacked", "is_secret": false})
+	if code != 409 {
+		t.Fatalf("改平台 env 应 409，得到 %d", code)
+	}
+}
+
+// TestHandler_DeleteEnv_platformProtected 平台注入的 key 用户删不了（409）。
+func TestHandler_DeleteEnv_platformProtected(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	_ = h.store.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "10.10.0.28:6381", false, "platform")
+
+	code, _ := doReq(t, r, http.MethodDelete, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/env/REDIS_ADDR", nil)
+	if code != 409 {
+		t.Fatalf("删平台 env 应 409，得到 %d", code)
+	}
+}
+
 // TestHandler_DeleteEnv_ok 删除环境变量。
 func TestHandler_DeleteEnv_ok(t *testing.T) {
 	h, _ := newHTTPHandler(t)

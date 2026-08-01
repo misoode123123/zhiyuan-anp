@@ -272,3 +272,13 @@ func (s *Store) GetEnvValue(ctx context.Context, appID, key string) (string, err
 		appID, key)
 	return v, err
 }
+
+// GetEnvSource 取应用某 env key 的 source（不存在返回 'user'，不报错）。
+// 供 HTTP 面板判断是否平台托管（platform 不可手改/删，部署 reconcile 保障）。
+func (s *Store) GetEnvSource(ctx context.Context, appID, key string) (string, error) {
+	var src string
+	err := s.db.GetContext(ctx, &src,
+		`SELECT COALESCE((SELECT source FROM appdeploy_env WHERE app_id=$1 AND key=$2),'user')`,
+		appID, key)
+	return src, err
+}
