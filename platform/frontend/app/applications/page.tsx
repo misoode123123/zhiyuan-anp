@@ -19,7 +19,7 @@ type Instance = {
   image: string;
   updated_at: string;
 };
-type EnvVar = { id: string; key: string; value: string; is_secret: boolean };
+type EnvVar = { id: string; key: string; value: string; is_secret: boolean; source?: string };
 type AppStats = {
   health?: string;
   cpu?: string;
@@ -1467,7 +1467,8 @@ export default function ApplicationsPage() {
               {envFor === a.id && (
                 <div className="mt-2 rounded bg-bg p-2 text-xs">
                   <div className="mb-1 text-text-muted">
-                    运行时环境变量（部署时 -e 注入容器；🔒=密钥已隐藏明文）
+                    运行时环境变量（部署时 -e
+                    注入容器；🔒=密钥已隐藏明文；平台托管=由部署供给，不可改）
                   </div>
                   <div className="space-y-1">
                     {appEnvs.map((e) => (
@@ -1477,12 +1478,18 @@ export default function ApplicationsPage() {
                         <span className={e.is_secret ? "text-warn" : "text-text-muted"}>
                           {e.is_secret ? "🔒 已隐藏" : e.value || "(空)"}
                         </span>
-                        <button
-                          onClick={() => removeEnv(a.id, e.key)}
-                          className="ml-auto rounded bg-danger/10 px-1.5 py-0.5 text-danger"
-                        >
-                          删
-                        </button>
+                        {e.source === "platform" ? (
+                          <span className="ml-auto rounded bg-accent/15 px-1.5 py-0.5 text-accent">
+                            平台托管
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => removeEnv(a.id, e.key)}
+                            className="ml-auto rounded bg-danger/10 px-1.5 py-0.5 text-danger"
+                          >
+                            删
+                          </button>
+                        )}
                       </div>
                     ))}
                     {appEnvs.length === 0 && <div className="text-text-muted">暂无</div>}
