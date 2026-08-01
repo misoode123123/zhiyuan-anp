@@ -226,3 +226,50 @@ func detectNetwork(root string) NetworkAnalysis {
 	}
 	return n
 }
+
+var (
+	httpFwRe   = regexp.MustCompile(`(?i)\b(gin|echo|fiber|chi|mux|net/http|express|fastapi|flask|django|spring)\b`)
+	wecomBotRe = regexp.MustCompile(`(?i)\b(wecom|企业微信|bot|worker|cron|daemon)\b`)
+)
+
+// guessAppKind 据 HTTP 框架 / bot 关键词猜测形态（web/headless，其余留空由人确认）。
+func guessAppKind(root string, a *DeployAnalysis) string {
+	probe := strings.Join(scanConfigFiles(root), "\n")
+	if a.Build.Dockerfile {
+		if b, err := os.ReadFile(filepath.Join(root, "Dockerfile")); err == nil {
+			probe += "\n" + string(b)
+		}
+	}
+	http := httpFwRe.MatchString(probe)
+	bot := wecomBotRe.MatchString(probe)
+	switch {
+	case bot && !http:
+		return "headless"
+	case http:
+		return "web"
+	}
+	return ""
+}
+
+// computeMismatches 比对分析与 ANP 默认模型（单 bridge 容器 + 仅 PG）的差异，给适配建议。
+func computeMismatches(a *DeployAnalysis) (mismatches, hints []string) {
+	if a.Network.HostModeRequired {
+		mismatches = append(mismatches, "需 host 网络但 ANP 默认 bridge")
+		hints = append(hints, "改 config 走 env 连部署机可达地址，或按应用开 host 网络(需审批)")
+	}
+	var nonPg []string
+	for _, d := range a.Deps {
+		if d.Kind != "postgres" && d.Kind != "es" {
+			nonPg = append(nonPg, d.Kind)
+		}
+	}
+	if len(nonPg) > 0 {
+		mismatches = append(mismatches, "依赖 "+strings.Join(nonPg, "/")+" 但 ANP 默认仅供给 PG")
+		hints = append(hints, "供给/绑定缺失的中间件，并把连接信息注入应用 env")
+	}
+	if a.Language == "go" && !a.Build.Dockerfile {
+		mismatches = append(mismatches, "无 Dockerfile，buildpack 可能误判 static")
+		hints = append(hints, "补 Go 多阶段 Dockerfile，或让编码适配生成")
+	}
+	return mismatches, hints
+}

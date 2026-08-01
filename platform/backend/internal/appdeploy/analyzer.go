@@ -58,5 +58,7 @@ func Analyze(repoDir string) (*DeployAnalysis, error) {
 	a.Ports = detectPorts(root)
 	a.Deps = detectDeps(root)
 	a.Network = detectNetwork(root)
+	a.AppKindGuess = guessAppKind(root, a)
+	a.Mismatches, a.AdaptHints = computeMismatches(a)
 	return a, nil
 }
