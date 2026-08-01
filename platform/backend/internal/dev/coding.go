@@ -179,8 +179,12 @@ func (a *CodingAgent) opencodeRun(ctx context.Context, repoDir, prompt, model st
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("opencode run 失败: %w", err)
+	runErr := cmd.Run()
+	// 剥离 opencode TUI 的 ANSI 转义码（SGR/光标/OSC），否则原样存进
+	// code_task.output / change_request.output 会出 \x1b[0m 类乱码（审批 UI 不可读）。
+	result := stripANSI(out.String())
+	if runErr != nil {
+		return result, fmt.Errorf("opencode run 失败: %w", runErr)
 	}
-	return out.String(), nil
+	return result, nil
 }
