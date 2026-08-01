@@ -406,6 +406,23 @@ func TestHandler_UpsertEnv_ok(t *testing.T) {
 	}
 }
 
+// TestHandler_SetMwReconciler 注入 MWReconciler（main.go 装配用，接口由 mwsupply.Reconciler 满足）。
+func TestHandler_SetMwReconciler(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	if h.mwReconciler != nil {
+		t.Fatal("初始应为 nil")
+	}
+	r := &fakeMWReconciler{}
+	h.SetMwReconciler(r)
+	if h.mwReconciler != r {
+		t.Fatal("SetMwReconciler 未注入")
+	}
+}
+
+type fakeMWReconciler struct{}
+
+func (f *fakeMWReconciler) Reconcile(_ context.Context, _, _, _ string) error { return nil }
+
 // TestHandler_UpsertEnv_platformProtected 平台注入的 key 用户改不了（409）。
 func TestHandler_UpsertEnv_platformProtected(t *testing.T) {
 	h, _ := newHTTPHandler(t)
