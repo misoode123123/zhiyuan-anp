@@ -38,3 +38,41 @@ func TestAnalyze_LanguageBuildPorts(t *testing.T) {
 		t.Errorf("Ports.Expose=%v want [8080]", got)
 	}
 }
+
+func TestAnalyze_DepsAndNetwork(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "go.mod", "module x\n")
+	writeFile(t, dir, "config.yaml", "redis:\n  addr: \"127.0.0.1:6379\"\n")
+	writeFile(t, dir, "docker-compose.yml", "services:\n  bot:\n    image: bot\n  redis:\n    image: redis\nnetworks:\n  default:\nnetwork_mode: host\n")
+	a, err := Analyze(dir)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	foundRedis := false
+	for _, d := range a.Deps {
+		if d.Kind == "redis" {
+			foundRedis = true
+			if d.Addr != "127.0.0.1:6379" {
+				t.Errorf("redis addr=%q want 127.0.0.1:6379", d.Addr)
+			}
+		}
+	}
+	if !foundRedis {
+		t.Errorf("Deps 缺 redis: %+v", a.Deps)
+	}
+	if !a.Network.HostModeRequired {
+		t.Errorf("Network.HostModeRequired=false want true")
+	}
+	if !containsStr(a.Build.ComposeServices, "redis") {
+		t.Errorf("ComposeServices 缺 redis: %+v", a.Build.ComposeServices)
+	}
+}
+
+func containsStr(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}

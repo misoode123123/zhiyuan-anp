@@ -56,5 +56,7 @@ func Analyze(repoDir string) (*DeployAnalysis, error) {
 	a.Language, a.Framework = detectLanguage(root)
 	a.Build = detectBuild(root)
 	a.Ports = detectPorts(root)
+	a.Deps = detectDeps(root)
+	a.Network = detectNetwork(root)
 	return a, nil
 }
