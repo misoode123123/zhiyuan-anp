@@ -93,6 +93,16 @@ func BuildAgentsMarkdown(list []Standard, module string) string {
 	}
 	modTitle += "）"
 	section(modTitle, moduleItems)
+
+	// ANP 部署适配规范（固定段，导入/部署适配用；opencode 据此把应用适配成可部署）。
+	b.WriteString("## ANP 部署适配规范（导入/部署适配用）\n\n")
+	b.WriteString("导入或部署应用到 ANP 时按本规范适配代码（ANP 注入连接信息、容器化运行）：\n\n")
+	b.WriteString("- **配置优先读环境变量（env-over-config）**：应用配置须优先读环境变量；ANP 注入 `DATABASE_URL`(PG)、可注入 `REDIS_ADDR`/`MILVUS_ADDR`/`PG_*` 等。**禁止硬编码 `127.0.0.1`/`localhost` 访问中间件**（容器内不可达）。\n")
+	b.WriteString("- **构建**：仓库根须有 Dockerfile（推荐多阶段）；`EXPOSE` 应用监听端口；构建上下文 = 仓库根。\n")
+	b.WriteString("- **依赖**：中间件由 ANP 供给或绑定已有，连接信息经环境变量注入；应用读 env，不写死地址。\n")
+	b.WriteString("- **网络**：默认 bridge（隔离）；需 host 网络须审批，优先改配置走 env。\n")
+	b.WriteString("- **形态**：web（HTTP，有端口+URL）/ headless（bot/worker 等长驻外发，无 URL，健康=进程或外连）。\n")
+	b.WriteString("- **缺失服务**：若部署机缺某依赖，在变更里报明（kind/原因），由 ANP 经审批后受控安装（白名单内），连接回填注入 env。\n\n")
 	return b.String()
 }
 

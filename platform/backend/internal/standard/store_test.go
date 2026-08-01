@@ -146,6 +146,15 @@ func TestAggregate_EmptyModuleOmitsModuleScope(t *testing.T) {
 	}
 }
 
+func TestBuildAgentsMarkdown_HasAdaptSpec(t *testing.T) {
+	md := BuildAgentsMarkdown(nil, "")
+	for _, want := range []string{"ANP 部署适配规范", "env-over-config", "禁止硬编码", "DATABASE_URL"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("AGENTS.md 缺 %q", want)
+		}
+	}
+}
+
 func TestBuildAgentsMarkdown_Sections(t *testing.T) {
 	list := []Standard{
 		{Scope: ScopePlatform, Name: "P1", Content: "p-body"},
