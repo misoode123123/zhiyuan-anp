@@ -262,6 +262,7 @@ func main() {
 
 	// ---- 路由装配：各模块自包含 Register（main 不再 new 各 handler，8 人改模块不碰 main）----
 	appDeployHandler := appdeploy.Register(v1, appDeployStore, cfg.AppDeployHost, changeStore, store, reqRepo, pgProvisioner, appgwStore, standardStore, quotaSvc, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, monitor, metricStore)
+	appDeployHandler.SetAdaptSubmitter(appAdaptSubmitter{devAgent}) // 导入后触发 opencode 适配（改应用代码 to ANP）
 	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)

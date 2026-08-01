@@ -59,7 +59,17 @@ type Handler struct {
 	artifactStore   *ArtifactStore     // 产物记录读写（appdeploy_artifact）
 	artifactStorage ArtifactStorage    // 产物实体存储（本地降级 / MinIO）
 	scaffoldsBase   string             // 脚手架种子根目录（建非 web 应用时克隆到 RepoDir；空=不克隆）
+	adaptSubmitter AdaptSubmitter      // 导入后 AI 编码适配触发器（main.go 经 SetAdaptSubmitter 注入）；nil=不自动适配
 }
+
+// AdaptSubmitter 触发 AI 编码适配（导入后让 opencode 把应用适配成可部署）。
+// dev.CodingAgent 经 main.go 的 adapter 实现之；nil=未启用（导入不自动适配，仍可手动用编码工作台）。
+type AdaptSubmitter interface {
+	SubmitAdapt(ctx context.Context, psID, appID, repoDir, prompt string) error
+}
+
+// SetAdaptSubmitter 注入适配触发器（main.go 在 Register 后调，避免改 NewHandler 签名）。
+func (h *Handler) SetAdaptSubmitter(a AdaptSubmitter) { h.adaptSubmitter = a }
 
 // checkFunc 需求-代码核对的函数签名(便于测试 mock)。
 // passed=false&err=nil → 核对未通过(409); err!=nil → AI 失败(503); passed=true → 通过。
@@ -1177,6 +1187,13 @@ func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, server
 			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
 		}
 	}
+	// 导入后触发 opencode 适配（改应用代码 to ANP；best-effort，失败不阻塞导入）。
+	if h.adaptSubmitter != nil {
+		if h.standards != nil {
+			_ = h.standards.RefreshAgentsMD(ctx, repoDir, psID, "")
+		}
+		_ = h.adaptSubmitter.SubmitAdapt(ctx, psID, appID, repoDir, AdaptPrompt(name))
+	}
 }
 
 // ImportUpload 本机 zip 上传导入。multipart: file=zip + 表单 name/internal_port。
@@ -1283,6 +1300,13 @@ func (h *Handler) runImportZip(appID, psID, name string, data []byte, size int64
 		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
 			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
 		}
+	}
+	// 导入后触发 opencode 适配（改应用代码 to ANP；best-effort，失败不阻塞导入）。
+	if h.adaptSubmitter != nil {
+		if h.standards != nil {
+			_ = h.standards.RefreshAgentsMD(ctx, repoDir, psID, "")
+		}
+		_ = h.adaptSubmitter.SubmitAdapt(ctx, psID, appID, repoDir, AdaptPrompt(name))
 	}
 }
 
