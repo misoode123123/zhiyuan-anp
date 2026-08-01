@@ -15,7 +15,7 @@ type QuotaChecker interface {
 
 // EnvWriter 写应用环境变量（由 appdeploy.Store 实现，避免 pgsupply→appdeploy 循环依赖）。
 type EnvWriter interface {
-	UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool) error
+	UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool, source string) error
 }
 
 // InstanceLookup 取/建项目 PG 实例（InstanceManager 实现）。
@@ -84,7 +84,7 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 	}
 
 	dsn := DSN(ins.Host, ins.Port, role, pwd, dbName)
-	if err := p.env.UpsertEnv(ctx, appID, "DATABASE_URL", dsn, true); err != nil {
+	if err := p.env.UpsertEnv(ctx, appID, "DATABASE_URL", dsn, true, "platform"); err != nil {
 		_ = p.admin.DropDatabase(ctx, ins.AdminURLRef, dbName)
 		_ = p.admin.DropRole(ctx, ins.AdminURLRef, role)
 		p.markFailed(ctx, ad, err)

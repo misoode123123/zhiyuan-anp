@@ -10,15 +10,17 @@ type fakeEnvWriter struct {
 	writes []struct {
 		appID, key, value string
 		secret            bool
+		source            string
 	}
 	err error
 }
 
-func (f *fakeEnvWriter) UpsertEnv(_ context.Context, appID, key, value string, secret bool) error {
+func (f *fakeEnvWriter) UpsertEnv(_ context.Context, appID, key, value string, secret bool, source string) error {
 	f.writes = append(f.writes, struct {
 		appID, key, value string
 		secret            bool
-	}{appID, key, value, secret})
+		source            string
+	}{appID, key, value, secret, source})
 	return f.err
 }
 

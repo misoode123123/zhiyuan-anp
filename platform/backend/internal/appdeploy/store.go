@@ -148,7 +148,7 @@ func (s *Store) ListInstancesByApp(ctx context.Context, appID string) ([]AppInst
 }
 
 // envCols 环境变量显式列。
-const envCols = `id, app_id, key, COALESCE(value,'') AS value, is_secret, created_at`
+const envCols = `id, app_id, key, COALESCE(value,'') AS value, is_secret, COALESCE(source,'user') AS source, created_at`
 
 // ListEnv 列出应用的环境变量（部署注入用；接口层对 is_secret 的 value 做 mask）。
 func (s *Store) ListEnv(ctx context.Context, appID string) ([]EnvVar, error) {
@@ -159,12 +159,16 @@ func (s *Store) ListEnv(ctx context.Context, appID string) ([]EnvVar, error) {
 
 // UpsertEnv 新增或更新环境变量（按 app_id+key 唯一）。
 // is_secret 直接传 bool（PG BOOLEAN 列不接受 int；sqlite 驱动自动 bool↔INTEGER）。
-func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool) error {
+// source: "user"(用户面板) / "platform"(平台注入，部署 reconcile 保障，前端只读)。
+func (s *Store) UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool, source string) error {
+	if source == "" {
+		source = "user"
+	}
 	id := "env_" + uuid.NewString()[:20]
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret) VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT(app_id, key) DO UPDATE SET value=excluded.value, is_secret=excluded.is_secret`,
-		id, appID, key, value, isSecret)
+		`INSERT INTO appdeploy_env (id, app_id, key, value, is_secret, source) VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT(app_id, key) DO UPDATE SET value=excluded.value, is_secret=excluded.is_secret, source=excluded.source`,
+		id, appID, key, value, isSecret, source)
 	return err
 }
 

@@ -799,7 +799,7 @@ func (h *Handler) UpsertEnv(c *gin.Context) {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
 	}
-	if err := h.store.UpsertEnv(c.Request.Context(), c.Param("aid"), in.Key, in.Value, in.IsSecret); err != nil {
+	if err := h.store.UpsertEnv(c.Request.Context(), c.Param("aid"), in.Key, in.Value, in.IsSecret, "user"); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())
 		return
 	}

@@ -77,12 +77,14 @@ const (
 func IsValidEnv(env string) bool { return env == EnvTest || env == EnvProd }
 
 // EnvVar 应用运行时环境变量（部署时 docker run -e 注入；is_secret 时接口 mask 显示，不泄露）。
+// Source: user(用户面板填) / platform(平台 pgsupply/mwsupply 注入，部署 reconcile 保障，前端只读)。
 type EnvVar struct {
 	ID        string    `json:"id" db:"id"`
 	AppID     string    `json:"app_id" db:"app_id"`
 	Key       string    `json:"key" db:"key"`
 	Value     string    `json:"value" db:"value"`
 	IsSecret  bool      `json:"is_secret" db:"is_secret"`
+	Source    string    `json:"source" db:"source"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 

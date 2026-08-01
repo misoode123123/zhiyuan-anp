@@ -355,8 +355,8 @@ func TestHandler_ListEnv_secretMasked(t *testing.T) {
 	r := newRouterWith(h)
 	ctx := context.Background()
 	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
-	_ = h.store.UpsertEnv(ctx, a.ID, "PUBLIC_KEY", "visible", false)
-	_ = h.store.UpsertEnv(ctx, a.ID, "SECRET_TOKEN", "top-secret-value", true)
+	_ = h.store.UpsertEnv(ctx, a.ID, "PUBLIC_KEY", "visible", false, "user")
+	_ = h.store.UpsertEnv(ctx, a.ID, "SECRET_TOKEN", "top-secret-value", true, "user")
 
 	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/env", nil)
 	if code != 200 {
@@ -412,7 +412,7 @@ func TestHandler_DeleteEnv_ok(t *testing.T) {
 	r := newRouterWith(h)
 	ctx := context.Background()
 	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
-	_ = h.store.UpsertEnv(ctx, a.ID, "K", "v", false)
+	_ = h.store.UpsertEnv(ctx, a.ID, "K", "v", false, "user")
 	code, _ := doReq(t, r, http.MethodDelete, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/env/K", nil)
 	if code != 200 {
 		t.Fatalf("状态码 %d", code)

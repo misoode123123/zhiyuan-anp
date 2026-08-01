@@ -369,11 +369,11 @@ func TestStore_UpsertEnv(t *testing.T) {
 	a := mkApp("ps_1", "snake")
 	_ = s.Create(ctx, a)
 
-	if err := s.UpsertEnv(ctx, a.ID, "API_KEY", "secret1", true); err != nil {
+	if err := s.UpsertEnv(ctx, a.ID, "API_KEY", "secret1", true, "user"); err != nil {
 		t.Fatalf("upsert insert: %v", err)
 	}
 	// 同 key 二次 upsert → 更新 value 和 is_secret
-	if err := s.UpsertEnv(ctx, a.ID, "API_KEY", "secret2", false); err != nil {
+	if err := s.UpsertEnv(ctx, a.ID, "API_KEY", "secret2", false, "user"); err != nil {
 		t.Fatalf("upsert update: %v", err)
 	}
 	list, _ := s.ListEnv(ctx, a.ID)
@@ -388,15 +388,45 @@ func TestStore_UpsertEnv(t *testing.T) {
 	}
 }
 
+// TestStore_UpsertEnv_source 验证 source 列持久化（platform/user 区分）。
+func TestStore_UpsertEnv_source(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := mkApp("ps_1", "envsrc")
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "10.10.0.28:6381", false, "platform"); err != nil {
+		t.Fatalf("upsert platform: %v", err)
+	}
+	if err := s.UpsertEnv(ctx, a.ID, "MY_KEY", "v", false, "user"); err != nil {
+		t.Fatalf("upsert user: %v", err)
+	}
+	vars, err := s.ListEnv(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := map[string]string{}
+	for _, v := range vars {
+		got[v.Key] = v.Source
+	}
+	if got["REDIS_ADDR"] != "platform" {
+		t.Fatalf("REDIS_ADDR source 应 platform，得 %q", got["REDIS_ADDR"])
+	}
+	if got["MY_KEY"] != "user" {
+		t.Fatalf("MY_KEY source 应 user，得 %q", got["MY_KEY"])
+	}
+}
+
 // TestStore_ListEnvOrderByKey 多变量按 key 字母序返回。
 func TestStore_ListEnvOrderByKey(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	a := mkApp("ps_1", "snake")
 	_ = s.Create(ctx, a)
-	_ = s.UpsertEnv(ctx, a.ID, "Z_LAST", "z", false)
-	_ = s.UpsertEnv(ctx, a.ID, "A_FIRST", "a", false)
-	_ = s.UpsertEnv(ctx, a.ID, "M_MID", "m", false)
+	_ = s.UpsertEnv(ctx, a.ID, "Z_LAST", "z", false, "user")
+	_ = s.UpsertEnv(ctx, a.ID, "A_FIRST", "a", false, "user")
+	_ = s.UpsertEnv(ctx, a.ID, "M_MID", "m", false, "user")
 
 	list, _ := s.ListEnv(ctx, a.ID)
 	if len(list) != 3 {
@@ -416,8 +446,8 @@ func TestStore_DeleteEnv(t *testing.T) {
 	ctx := context.Background()
 	a := mkApp("ps_1", "snake")
 	_ = s.Create(ctx, a)
-	_ = s.UpsertEnv(ctx, a.ID, "K1", "v1", false)
-	_ = s.UpsertEnv(ctx, a.ID, "K2", "v2", false)
+	_ = s.UpsertEnv(ctx, a.ID, "K1", "v1", false, "user")
+	_ = s.UpsertEnv(ctx, a.ID, "K2", "v2", false, "user")
 
 	if err := s.DeleteEnv(ctx, a.ID, "K1"); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -438,8 +468,8 @@ func TestStore_EnvPairs(t *testing.T) {
 	ctx := context.Background()
 	a := mkApp("ps_1", "snake")
 	_ = s.Create(ctx, a)
-	_ = s.UpsertEnv(ctx, a.ID, "PORT", "8080", false)
-	_ = s.UpsertEnv(ctx, a.ID, "TOKEN", "secret_xyz", true)
+	_ = s.UpsertEnv(ctx, a.ID, "PORT", "8080", false, "user")
+	_ = s.UpsertEnv(ctx, a.ID, "TOKEN", "secret_xyz", true, "user")
 
 	pairs, err := s.EnvPairs(ctx, a.ID)
 	if err != nil {
