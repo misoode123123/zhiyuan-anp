@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
@@ -29,17 +30,28 @@ func (f *fakeFlusher) Ping(ctx context.Context, host string, port int, password 
 	return f.pingErr
 }
 
-// fakeDocker 记 RunRedisContainer/RmForce 调用；usedPorts 控制端口池；runErr 模拟起容器失败。
+// fakeDocker 记 RunRedisContainer/RmForce/RunMilvusStack/MilvusReady/RmMilvusStack 调用；
+// usedPorts 控制端口池；runErr/stackErr/readyErr 模拟失败。
 type fakeDocker struct {
-	usedPorts map[int]struct{}
-	runCalls  []fakeDockerRun
-	runErr    error
-	rmCalls   []string
+	usedPorts    map[int]struct{}
+	runCalls     []fakeDockerRun
+	runErr       error
+	rmCalls      []string
+	stackCalls   []fakeMilvusStack // milvus：RunMilvusStack 调用
+	stackErr     error
+	rmStackCalls []string // milvus：RmMilvusStack 调用（base）
+	readyErr     error   // milvus：MilvusReady 返错（默认 nil=就绪）
+	readyCalls   int
 }
 
 type fakeDockerRun struct {
 	name, password string
 	port           int
+}
+
+type fakeMilvusStack struct {
+	base string
+	port int
 }
 
 func (f *fakeDocker) UsedPorts(_ context.Context) map[int]struct{} { return f.usedPorts }
@@ -49,6 +61,18 @@ func (f *fakeDocker) RunRedisContainer(_ context.Context, name, password string,
 }
 func (f *fakeDocker) RmForce(_ context.Context, name string) error {
 	f.rmCalls = append(f.rmCalls, name)
+	return nil
+}
+func (f *fakeDocker) RunMilvusStack(_ context.Context, base string, port int) error {
+	f.stackCalls = append(f.stackCalls, fakeMilvusStack{base, port})
+	return f.stackErr
+}
+func (f *fakeDocker) MilvusReady(_ context.Context, base string, _ time.Duration) error {
+	f.readyCalls++
+	return f.readyErr
+}
+func (f *fakeDocker) RmMilvusStack(_ context.Context, base string) error {
+	f.rmStackCalls = append(f.rmStackCalls, base)
 	return nil
 }
 
