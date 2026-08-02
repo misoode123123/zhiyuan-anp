@@ -18,13 +18,19 @@ type EnvWriter interface {
 type Reconciler struct {
 	store   *Store
 	env     EnvWriter
-	flusher DBFlusher   // shared 重分配时清空 redis db（Task 3）
-	log     *zap.Logger // 可选；flush best-effort 失败记 Warn（nil 安全）
+	flusher DBFlusher     // shared 重分配时清空 redis db（Task 3）
+	ready   ReadyChecker  // dedicated 起容器后轮询 AUTH+PING 至就绪（P3）
+	docker  MWDockerRunner // dedicated 容器管理（run/rm）（P3）
+	host    string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
+	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
 
-// NewReconciler 构造。env 传 appdeploy.Store（满足 EnvWriter）；flusher 传 NewRedisFlusher()（测试传 fake）。
-func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher) *Reconciler {
-	return &Reconciler{store: store, env: env, flusher: flusher}
+// NewReconciler 构造。
+//   env 传 appdeploy.Store（满足 EnvWriter）；
+//   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
+//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
+func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string) *Reconciler {
+	return &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
 }
 
 // SetLogger 注入 logger（可选；main 装配时调，测试不调则 flush 失败静默）。
@@ -67,8 +73,12 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 		r.supplyShared(ctx, appID, psID, dep, mkBind)
 		return
 	}
+	if strategy == ModeDedicated {
+		r.supplyDedicated(ctx, appID, psID, dep, mkBind)
+		return
+	}
 	if strategy != ModeBindExisting {
-		mkBind(StatusFailed, "", "", "策略 "+strategy+" 暂未实现（仅 bind_existing/shared）")
+		mkBind(StatusFailed, "", "", "策略 "+strategy+" 暂未实现（仅 bind_existing/shared/dedicated）")
 		return
 	}
 
@@ -166,4 +176,65 @@ func (r *Reconciler) writeSharedEnv(ctx context.Context, appID string, inst *Ser
 	if inst.AuthRef != "" {
 		_ = r.env.UpsertEnv(ctx, appID, kindUp+"_PASSWORD", inst.AuthRef, true, "platform")
 	}
+}
+
+// supplyDedicated dedicated redis 供给：复用判定（幂等不重启/不换端口/保数据）/ 新供给（端口→起容器→就绪→登记→env）。
+func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, dep DepService,
+	mkBind func(status, instID, token, lastErr string)) {
+	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据，重写 env。
+	if b, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && b != nil &&
+		b.Status == StatusBound && b.ServiceInstanceID != "" {
+		if inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID); ie == nil && inst != nil && inst.Status == "active" {
+			r.writeDedicatedEnv(ctx, appID, inst)
+			mkBind(StatusBound, inst.ID, "", "")
+			return
+		}
+	}
+	// 新供给
+	port := allocPort(r.docker.UsedPorts(ctx), mwPortMin, mwPortMax)
+	if port == 0 {
+		mkBind(StatusFailed, "", "", fmt.Sprintf("redis 端口池 %d-%d 已满", mwPortMin, mwPortMax))
+		return
+	}
+	short := genShortID()
+	name := dedicatedContainerName(short)
+	pwd := genPassword()
+	if err := r.docker.RunRedisContainer(ctx, name, pwd, port); err != nil {
+		mkBind(StatusFailed, "", "", "起 redis 容器: "+err.Error())
+		return
+	}
+	// 就绪检测（轮询 AUTH+PING，超时 readyTimeout）；失败清半成品容器。
+	readyCtx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	if err := r.ready.Ping(readyCtx, r.host, port, pwd); err != nil {
+		_ = r.docker.RmForce(ctx, name)
+		mkBind(StatusFailed, "", "", "redis 未就绪: "+err.Error())
+		return
+	}
+	inst := &ServiceInstance{
+		ID:             "svinst-redis-ded-" + short,
+		ProjectSpaceID: nil, // dedicated 实例不挂项目，靠 binding 关联 app
+		Kind:           dep.Kind,
+		Name:           name,
+		SupplyMode:     ModeDedicated,
+		Host:           r.host,
+		Port:           port,
+		AuthRef:        pwd,
+		ContainerName:  name,
+		Status:         "active",
+	}
+	if err := r.store.CreateInstance(ctx, inst); err != nil {
+		_ = r.docker.RmForce(ctx, name) // 登记失败回收容器
+		mkBind(StatusFailed, "", "", "登记实例: "+err.Error())
+		return
+	}
+	r.writeDedicatedEnv(ctx, appID, inst)
+	mkBind(StatusBound, inst.ID, "", "")
+}
+
+// writeDedicatedEnv 写 REDIS_ADDR + REDIS_PASSWORD，均 source=platform（不写 REDIS_DB，dedicated 用默认 db 0）。
+func (r *Reconciler) writeDedicatedEnv(ctx context.Context, appID string, inst *ServiceInstance) {
+	_ = r.env.UpsertEnv(ctx, appID, EnvKeyFor(inst.Kind), ConnStr(inst), false, "platform") // REDIS_ADDR=host:port
+	pwdKey := strings.ToUpper(inst.Kind) + "_PASSWORD"                                      // REDIS_PASSWORD
+	_ = r.env.UpsertEnv(ctx, appID, pwdKey, inst.AuthRef, true, "platform")                 // secret
 }

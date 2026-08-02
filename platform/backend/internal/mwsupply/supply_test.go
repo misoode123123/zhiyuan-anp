@@ -12,9 +12,11 @@ import (
 )
 
 // fakeFlusher 记录 FlushDB 调用；err 非 nil 时返错（测 flush 失败路径）。
+// 同时实现 ReadyChecker（Ping 返 pingErr，默认 nil=就绪）——NewReconciler 的 flusher+ready 双用。
 type fakeFlusher struct {
-	calls int
-	err   error
+	calls   int
+	err     error
+	pingErr error // dedicated 就绪检测返错（默认 nil=就绪）
 }
 
 func (f *fakeFlusher) FlushDB(ctx context.Context, host string, port int, password string, db int) error {
@@ -22,15 +24,45 @@ func (f *fakeFlusher) FlushDB(ctx context.Context, host string, port int, passwo
 	return f.err
 }
 
-// newReconcilerTest 起 Reconciler（env 用真实 appdeploy.Store；flusher 用 fake）+ 清表 + 保 .28 种子（含 shared）。
-func newReconcilerTest(t *testing.T) (*Reconciler, *appdeploy.Store, *sqlx.DB, *fakeFlusher) {
+// Ping 满足 ReadyChecker（dedicated 就绪检测）。默认 pingErr=nil → 立即就绪。
+func (f *fakeFlusher) Ping(ctx context.Context, host string, port int, password string) error {
+	return f.pingErr
+}
+
+// fakeDocker 记 RunRedisContainer/RmForce 调用；usedPorts 控制端口池；runErr 模拟起容器失败。
+type fakeDocker struct {
+	usedPorts map[int]struct{}
+	runCalls  []fakeDockerRun
+	runErr    error
+	rmCalls   []string
+}
+
+type fakeDockerRun struct {
+	name, password string
+	port           int
+}
+
+func (f *fakeDocker) UsedPorts(_ context.Context) map[int]struct{} { return f.usedPorts }
+func (f *fakeDocker) RunRedisContainer(_ context.Context, name, password string, port int) error {
+	f.runCalls = append(f.runCalls, fakeDockerRun{name, password, port})
+	return f.runErr
+}
+func (f *fakeDocker) RmForce(_ context.Context, name string) error {
+	f.rmCalls = append(f.rmCalls, name)
+	return nil
+}
+
+// newReconcilerTest 起 Reconciler（env 用真实 appdeploy.Store；flusher+ready 用同一 fakeFlusher；
+// docker 用 fakeDocker）+ 清表 + 保 .28 种子（含 shared）。host=testdeploy（REDIS_ADDR 测试值）。
+func newReconcilerTest(t *testing.T) (*Reconciler, *appdeploy.Store, *sqlx.DB, *fakeFlusher, *fakeDocker) {
 	t.Helper()
 	db := testutil.TestDB(t)
 	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
 	ensureSeed(t, db)
 	appStore := appdeploy.NewStore(db)
-	f := &fakeFlusher{}
-	return NewReconciler(NewStore(db), appStore, f), appStore, db, f
+	f := &fakeFlusher{}                                       // 同时作 DBFlusher + ReadyChecker
+	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
+	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy"), appStore, db, f, dk
 }
 
 // ensureSeed 确保 .28 redis/milvus bind_existing 种子 + shared redis 种子在（Truncate 不动 service_instance；幂等再插）。
@@ -57,7 +89,7 @@ func writeManifest(t *testing.T, body string) string {
 // —— 既有 bind_existing 用例（newReconcilerTest 返回值变 4 元，末位 _ 接收 flusher）——
 
 func TestReconcile_bindExisting(t *testing.T) {
-	r, appStore, db, _ := newReconcilerTest(t)
+	r, appStore, db, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp", RepoDir: "/data/repos/rcapp", InternalPort: 8080}
 	if err := appStore.Create(ctx, a); err != nil {
@@ -82,7 +114,7 @@ func TestReconcile_bindExisting(t *testing.T) {
 }
 
 func TestReconcile_idempotent(t *testing.T) {
-	r, appStore, _, _ := newReconcilerTest(t)
+	r, appStore, _, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp2", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
@@ -94,7 +126,7 @@ func TestReconcile_idempotent(t *testing.T) {
 }
 
 func TestReconcile_missingInstanceKind(t *testing.T) {
-	r, appStore, db, _ := newReconcilerTest(t)
+	r, appStore, db, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp3", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
@@ -109,7 +141,7 @@ func TestReconcile_missingInstanceKind(t *testing.T) {
 }
 
 func TestReconcile_noManifest(t *testing.T) {
-	r, appStore, db, _ := newReconcilerTest(t)
+	r, appStore, db, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp4", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
@@ -126,7 +158,7 @@ func TestReconcile_noManifest(t *testing.T) {
 
 // TestReconcile_sharedRedis 两个 shared app 分到不同 db 号；双 env + flush 各 1 次。
 func TestReconcile_sharedRedis(t *testing.T) {
-	r, appStore, db, fl := newReconcilerTest(t)
+	r, appStore, db, fl, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
 
@@ -165,7 +197,7 @@ func TestReconcile_sharedRedis(t *testing.T) {
 
 // TestReconcile_shared_idempotent 同 app 重部署：号不变、不再 flush、env 仍在。
 func TestReconcile_shared_idempotent(t *testing.T) {
-	r, appStore, _, fl := newReconcilerTest(t)
+	r, appStore, _, fl, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shidem", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
@@ -186,7 +218,7 @@ func TestReconcile_shared_idempotent(t *testing.T) {
 // TestReconcile_shared_flushFailBestEffort flush 失败(best-effort) → 仍 claim + 注入 env，binding bound。
 // 后端可能无 redis 网络访问（.28 即如此）；flush 是重分配卫生，非首次分配正确性所需 → 不阻塞。
 func TestReconcile_shared_flushFailBestEffort(t *testing.T) {
-	r, appStore, db, fl := newReconcilerTest(t)
+	r, appStore, db, fl, _ := newReconcilerTest(t)
 	fl.err = errStr("redis 不可达")
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shfail", RepoDir: "/x", InternalPort: 8080}
@@ -205,7 +237,7 @@ func TestReconcile_shared_flushFailBestEffort(t *testing.T) {
 
 // TestReconcile_shared_poolExhaust 占满 1-15 后第 16 个 → failed。
 func TestReconcile_shared_poolExhaust(t *testing.T) {
-	r, appStore, db, _ := newReconcilerTest(t)
+	r, appStore, db, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
 	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
 	for i := 0; i < 15; i++ {
@@ -221,6 +253,131 @@ func TestReconcile_shared_poolExhaust(t *testing.T) {
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a16.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed {
 		t.Fatalf("第 16 个应 failed（池满），得 %+v", binds)
+	}
+}
+
+// —— dedicated 用例 ——
+
+// TestReconcile_dedicatedRedis 新供给：起容器 + 就绪 + 登记 + 双 env。
+func TestReconcile_dedicatedRedis(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "ded1", RepoDir: "/x", InternalPort: 8080}
+	if err := appStore.Create(ctx, a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	// 起了一次容器，端口 9600（空池最小号）
+	if len(dk.runCalls) != 1 || dk.runCalls[0].port != mwPortMin {
+		t.Fatalf("应起 1 容器 port=%d，得 %+v", mwPortMin, dk.runCalls)
+	}
+	// env：REDIS_ADDR=testdeploy:9600 + REDIS_PASSWORD 非空（secret/platform）
+	ra, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
+	if ra != "testdeploy:9600" {
+		t.Fatalf("REDIS_ADDR 应 testdeploy:9600，得 %q", ra)
+	}
+	rp, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_PASSWORD")
+	if rp == "" {
+		t.Fatal("REDIS_PASSWORD 应非空")
+	}
+	rsrc, _ := appStore.GetEnvSource(ctx, a.ID, "REDIS_PASSWORD")
+	if rsrc != "platform" {
+		t.Fatalf("REDIS_PASSWORD source 应 platform，得 %q", rsrc)
+	}
+	// 不注入 REDIS_DB
+	if rdb, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB"); rdb != "" {
+		t.Fatalf("dedicated 不应注入 REDIS_DB，得 %q", rdb)
+	}
+	// binding bound + 实例行带 container_name
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusBound || binds[0].Strategy != ModeDedicated {
+		t.Fatalf("binding 应 dedicated/bound，得 %+v", binds)
+	}
+	inst, _ := NewStore(db).GetInstance(ctx, binds[0].ServiceInstanceID)
+	if inst == nil || inst.ContainerName == "" || inst.Port != mwPortMin {
+		t.Fatalf("实例行应带 container_name + port=%d，得 %+v", mwPortMin, inst)
+	}
+}
+
+// TestReconcile_dedicated_idempotent 同 app 重部署：不重启容器、port 不变、env 仍在。
+func TestReconcile_dedicated_idempotent(t *testing.T) {
+	r, appStore, _, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedidem", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	ra1, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
+	dk.runCalls = nil // 重置
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	ra2, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
+	if ra1 != ra2 {
+		t.Fatalf("重部署 REDIS_ADDR 应不变，%q → %q", ra1, ra2)
+	}
+	if len(dk.runCalls) != 0 {
+		t.Fatalf("重部署复用不应再起容器，得 %d 次", len(dk.runCalls))
+	}
+}
+
+// TestReconcile_dedicated_poolExhaust 端口池满 → failed、不起容器、不写 env。
+func TestReconcile_dedicated_poolExhaust(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	// 占满 9600-9699
+	full := map[int]struct{}{}
+	for p := mwPortMin; p <= mwPortMax; p++ {
+		full[p] = struct{}{}
+	}
+	dk.usedPorts = full
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedex", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed {
+		t.Fatalf("池满应 failed，得 %+v", binds)
+	}
+	if len(dk.runCalls) != 0 {
+		t.Fatalf("池满不应起容器，得 %d", len(dk.runCalls))
+	}
+	if ra, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR"); ra != "" {
+		t.Fatalf("池满不应写 REDIS_ADDR，得 %q", ra)
+	}
+}
+
+// TestReconcile_dedicated_runFail 起容器失败 → failed、不登记实例。
+func TestReconcile_dedicated_runFail(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	dk.runErr = errStr("docker run 失败")
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedfail", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
+		t.Fatalf("起容器失败应 failed + 无实例，得 %+v", binds)
+	}
+}
+
+// TestReconcile_dedicated_readyFail 就绪失败 → failed、清半成品容器（RmForce 被调）。
+func TestReconcile_dedicated_readyFail(t *testing.T) {
+	r, appStore, db, fl, dk := newReconcilerTest(t)
+	fl.pingErr = errStr("redis 不可达")
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedready", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed {
+		t.Fatalf("就绪失败应 failed，得 %+v", binds)
+	}
+	if len(dk.rmCalls) == 0 {
+		t.Fatal("就绪失败应 RmForce 清半成品容器")
 	}
 }
 
