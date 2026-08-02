@@ -86,5 +86,22 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppDetail, err
 	d.Commits, _ = Log(ctx, a.RepoDir, 10)
 	// 各环境部署实例（test/prod）
 	d.Instances, _ = s.ListInstancesByApp(ctx, appID)
+	// 保证空切片非 nil：Go nil 切片序列化为 JSON null，前端 detail.requirements.length 会崩
+	// （新建/空应用的详情打不开）。统一归一为空数组。
+	if d.Requirements == nil {
+		d.Requirements = []AppReqItem{}
+	}
+	if d.Changes == nil {
+		d.Changes = []AppChangeItem{}
+	}
+	if d.Releases == nil {
+		d.Releases = []AppRelItem{}
+	}
+	if d.Commits == nil {
+		d.Commits = []CommitInfo{}
+	}
+	if d.Instances == nil {
+		d.Instances = []AppInstance{}
+	}
 	return d, nil
 }
