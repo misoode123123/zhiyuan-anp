@@ -72,10 +72,11 @@ type AdaptSubmitter interface {
 // SetAdaptSubmitter 注入适配触发器（main.go 在 Register 后调，避免改 NewHandler 签名）。
 func (h *Handler) SetAdaptSubmitter(a AdaptSubmitter) { h.adaptSubmitter = a }
 
-// MWReconciler 中间件依赖供给（部署前读 repo 的 .anp/deps.yaml → 注入 REDIS_ADDR 等连接 env）。
-// 由 mwsupply.Reconciler 实现（经 main.go SetMwReconciler 注入，避免 appdeploy→mwsupply 依赖）。
+// MWReconciler 中间件依赖供给（部署前读 repo 的 .anp/deps.yaml → 注入 REDIS_ADDR 等连接 env；
+// 删 app 时回收 dedicated 中间件容器）。由 mwsupply.Reconciler 实现（经 main.go SetMwReconciler 注入，避免 appdeploy→mwsupply 依赖）。
 type MWReconciler interface {
 	Reconcile(ctx context.Context, appID, psID, repoDir string) error
+	Cleanup(ctx context.Context, appID string) error // P3：docker rm dedicated 容器（best-effort）
 }
 
 // SetMwReconciler 注入中间件供给器（main.go 在 Register 后调）。
@@ -1861,6 +1862,10 @@ func (h *Handler) Delete(c *gin.Context) {
 		// 先删应用库（DropDatabase/Role；库记录在 Store.Delete 级联删 appdeploy_database 前先清）
 		if h.provisioner != nil {
 			_ = h.provisioner.Cleanup(c.Request.Context(), a.ID)
+		}
+		// 回收 dedicated 中间件容器（best-effort，不阻塞删 app；shared/bind_existing 靠 CASCADE）
+		if h.mwReconciler != nil {
+			_ = h.mwReconciler.Cleanup(c.Request.Context(), a.ID)
 		}
 		// 显式清 appgw 路由（不依赖 FK CASCADE；routeWriter nil = 未启用 appgw）
 		if h.routeWriter != nil {
