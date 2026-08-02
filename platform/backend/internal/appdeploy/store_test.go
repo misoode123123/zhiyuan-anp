@@ -731,3 +731,46 @@ func TestStore_UpdateImportDone(t *testing.T) {
 		t.Fatalf("last_error 应清空，得到 %q", got.LastError)
 	}
 }
+
+// TestStore_Delete_cascadesEnvAndInstance 删 app 后 appdeploy_env / appdeploy_instance 行
+// 应被 FK ON DELETE CASCADE 清掉（修 000001 init schema 漏加 FK 的缺口）。
+// 验证路径：testutil.TestDB 跑全部迁移 → 000031 加的 FK 生效 → Delete 触发级联清空。
+func TestStore_Delete_cascadesEnvAndInstance(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	a := mkApp("ps_1", "snake")
+	if err := s.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 注入 env 行（模拟 pgsupply 的 DATABASE_URL + mwsupply 的 REDIS_ADDR）
+	if err := s.UpsertEnv(ctx, a.ID, "DATABASE_URL", "postgres://u:p@h/db", true, "platform"); err != nil {
+		t.Fatalf("upsert env DATABASE_URL: %v", err)
+	}
+	if err := s.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "redis://h:6379", false, "platform"); err != nil {
+		t.Fatalf("upsert env REDIS_ADDR: %v", err)
+	}
+	// 建 instance 行（模拟部署生成 prod 实例记录）
+	if _, err := s.GetOrCreateInstance(ctx, a.ID, "prod"); err != nil {
+		t.Fatalf("getorcreate instance: %v", err)
+	}
+
+	// 删 app → 期待 FK CASCADE 清 env + instance
+	if err := s.Delete(ctx, "ps_1", a.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	envs, err := s.ListEnv(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("list env after delete: %v", err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("env 应被 CASCADE 清空，仍剩 %d 行: %+v", len(envs), envs)
+	}
+	inss, err := s.ListInstancesByApp(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("list instance after delete: %v", err)
+	}
+	if len(inss) != 0 {
+		t.Fatalf("instance 应被 CASCADE 清空，仍剩 %d 行: %+v", len(inss), inss)
+	}
+}
