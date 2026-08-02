@@ -381,6 +381,54 @@ func TestReconcile_dedicated_readyFail(t *testing.T) {
 	}
 }
 
+// TestReconcile_cleanup_dedicated 删 dedicated app → docker rm 容器 + 删 instance 行。
+func TestReconcile_cleanup_dedicated(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedclean", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	instID := binds[0].ServiceInstanceID
+	inst, _ := NewStore(db).GetInstance(ctx, instID)
+	cname := inst.ContainerName
+	dk.rmCalls = nil
+
+	if err := r.Cleanup(ctx, a.ID); err != nil {
+		t.Fatalf("Cleanup 不应报错: %v", err)
+	}
+	// docker rm 了 dedicated 容器
+	if len(dk.rmCalls) != 1 || dk.rmCalls[0] != cname {
+		t.Fatalf("应 RmForce %q，得 %v", cname, dk.rmCalls)
+	}
+	// instance 行已删
+	if got, _ := NewStore(db).GetInstance(ctx, instID); got != nil {
+		t.Fatalf("Cleanup 后实例行应删，得 %+v", got)
+	}
+}
+
+// TestReconcile_cleanup_skipsSharedAndBindExisting Cleanup 只动 dedicated，不碰 shared/bind_existing（靠 CASCADE）。
+func TestReconcile_cleanup_skipsSharedAndBindExisting(t *testing.T) {
+	r, _, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	// shared app
+	as := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shclean", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, as)
+	_ = r.Reconcile(ctx, as.ID, "ps_1", writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n"))
+	// bind_existing app
+	ab := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "beclean", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, ab)
+	_ = r.Reconcile(ctx, ab.ID, "ps_1", writeManifest(t, "services:\n  - kind: redis\n"))
+	dk.rmCalls = nil
+
+	_ = r.Cleanup(ctx, as.ID)
+	_ = r.Cleanup(ctx, ab.ID)
+	if len(dk.rmCalls) != 0 {
+		t.Fatalf("shared/bind_existing 不应触发 RmForce，得 %v", dk.rmCalls)
+	}
+}
+
 // errStr 造个简单 error。
 type errStr string
 

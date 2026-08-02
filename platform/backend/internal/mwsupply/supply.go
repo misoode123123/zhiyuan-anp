@@ -238,3 +238,34 @@ func (r *Reconciler) writeDedicatedEnv(ctx context.Context, appID string, inst *
 	pwdKey := strings.ToUpper(inst.Kind) + "_PASSWORD"                                      // REDIS_PASSWORD
 	_ = r.env.UpsertEnv(ctx, appID, pwdKey, inst.AuthRef, true, "platform")                 // secret
 }
+
+// Cleanup 删 app 的 dedicated 中间件容器（best-effort，不阻塞 Delete）。
+// 只动 strategy=dedicated 的 binding（bind_existing/shared 靠 ON DELETE CASCADE，不碰）。
+// dedicated 容器是宿主资源，CASCADE 只删 DB 行不删容器 → 必须显式 docker rm + 删 instance 行。
+// 总返回 nil（失败记日志，不阻塞删 app）。
+func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
+	binds, err := r.store.ListBindingsByApp(ctx, appID)
+	if err != nil {
+		return nil
+	}
+	for _, b := range binds {
+		if b.Strategy != ModeDedicated || b.ServiceInstanceID == "" {
+			continue
+		}
+		inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID)
+		if ie != nil || inst == nil {
+			continue
+		}
+		if inst.ContainerName != "" {
+			if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
+				r.log.Warn("dedicated 容器清理失败 (best-effort)",
+					zap.String("app", appID), zap.String("container", inst.ContainerName), zap.Error(err))
+			}
+		}
+		// 先删 binding 解 FK 引用（binding.service_instance_id RESTRICT instance 删除），再删 instance。
+		// binding 本就要在 app ON DELETE CASCADE 时删，此处提前无观察差异。
+		_ = r.store.DeleteBinding(ctx, b.ID)
+		_ = r.store.DeleteInstance(ctx, inst.ID)
+	}
+	return nil
+}

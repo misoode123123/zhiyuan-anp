@@ -148,3 +148,10 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_service_instance WHERE id=$1`, id)
 	return err
 }
+
+// DeleteBinding 按 id 删绑定行。dedicated Cleanup 时先删 binding 解 FK 引用
+//（binding.service_instance_id REFERENCES instance(id) 默认 RESTRICT，binding 在则 instance 删不掉）。
+func (s *Store) DeleteBinding(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_service_binding WHERE id=$1`, id)
+	return err
+}
