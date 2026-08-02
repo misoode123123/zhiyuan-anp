@@ -43,7 +43,7 @@ type App = {
   build_log: string;
   deploy_mode: string; // managed(A类) / external(B类纳管外部)
   external_url: string; // external 模式时外部应用访问地址
-  app_kind: string; // 应用类型 web/desktop/mobile/cli/service
+  app_kind: string; // 应用类型 web/desktop/mobile/cli/service/headless
   import_source?: "" | "git" | "dir"; // 导入来源：''=平台建仓 / git=远程仓 / dir=本机zip或服务器目录
   import_ref?: string; // git=url / dir=来源标识
   imported_at?: string; // 导入完成时间，进行中空
@@ -87,6 +87,21 @@ function nodeMatchesEnv(n: { id: string; env?: string } | undefined, targetEnv: 
   return n.env === targetEnv;
 }
 
+// healthBadge headless 实例的健康徽标（进程存活：running/degraded/failed）。
+// 配色用本仓既有自定义类：text-success / text-danger（已 grep 确认 app/ 下存在）。
+function healthBadge(status: string): { text: string; cls: string } {
+  switch (status) {
+    case "running":
+      return { text: "运行中", cls: "text-success" };
+    case "degraded":
+      return { text: "不稳定(crash-loop)", cls: "text-danger" };
+    case "failed":
+      return { text: "已停止", cls: "text-danger" };
+    default:
+      return { text: status, cls: "" };
+  }
+}
+
 // DevWizard 开发向导：编码→测试→上线 进度条 + 项目上下文 + 引导文案。
 // 让开发者一眼看到当前在哪步、下一步做什么（解决"流程不明确"）。
 function DevWizard({ app }: { app: App }) {
@@ -121,17 +136,29 @@ function DevWizard({ app }: { app: App }) {
         {testIns && (
           <span>
             test{" "}
-            <span className={testIns.status === "running" ? "text-success" : ""}>
-              :{testIns.host_port} {testIns.status}
-            </span>
+            {app.app_kind === "headless" ? (
+              <span className={healthBadge(testIns.status).cls}>
+                {healthBadge(testIns.status).text}
+              </span>
+            ) : (
+              <span className={testIns.status === "running" ? "text-success" : ""}>
+                :{testIns.host_port} {testIns.status}
+              </span>
+            )}
           </span>
         )}
         {prodIns && (
           <span>
             prod{" "}
-            <span className={prodIns.status === "running" ? "text-success" : ""}>
-              :{prodIns.host_port} {prodIns.status}
-            </span>
+            {app.app_kind === "headless" ? (
+              <span className={healthBadge(prodIns.status).cls}>
+                {healthBadge(prodIns.status).text}
+              </span>
+            ) : (
+              <span className={prodIns.status === "running" ? "text-success" : ""}>
+                :{prodIns.host_port} {prodIns.status}
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -154,12 +181,14 @@ function ArtifactSection({
   const [arts, setArts] = useState<Artifact[]>([]);
   const [building, setBuilding] = useState(false);
   useEffect(() => {
-    if (appKind === "web" || appKind === "service") return;
+    // headless 是运行态应用（无产物），不拉产物列表。
+    if (appKind === "web" || appKind === "service" || appKind === "headless") return;
     fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/artifacts`)
       .then((r) => r.json())
       .then((r: { data?: { artifacts?: Artifact[] } }) => setArts(r.data?.artifacts ?? []));
   }, [psID, appID, appKind]);
-  if (appKind === "web" || appKind === "service") return null;
+  // headless 是运行态应用（无产物），不显产物区。
+  if (appKind === "web" || appKind === "service" || appKind === "headless") return null;
   const build = async () => {
     setBuilding(true);
     try {
@@ -231,7 +260,7 @@ export default function ApplicationsPage() {
     deploy_mode: "managed" as "managed" | "external",
     external_url: "",
   });
-  const [appKind, setAppKind] = useState<string>("web"); // 应用类型 web/desktop/mobile/cli/service
+  const [appKind, setAppKind] = useState<string>("web"); // 应用类型 web/desktop/mobile/cli/service/headless
   const [wsTool, setWsTool] = useState("opencode"); // 交互编码工具（开发者可选，不同人选不同）
   const [logsFor, setLogsFor] = useState<string>("");
   const [logs, setLogs] = useState("");
@@ -789,6 +818,7 @@ export default function ApplicationsPage() {
             <option value="mobile">移动应用</option>
             <option value="cli">命令行工具</option>
             <option value="service">后端服务</option>
+            <option value="headless">headless（无端口进程）</option>
           </select>
         </div>
         <div>
