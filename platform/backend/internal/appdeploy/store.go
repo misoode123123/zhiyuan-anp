@@ -96,7 +96,7 @@ func (s *Store) AppURLByAppID(ctx context.Context, appID string) (string, error)
 }
 
 // insCols 实例显式列（可空字段 COALESCE）。
-const insCols = `id, app_id, env, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, created_at, updated_at`
+const insCols = `id, app_id, env, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, restart_count, created_at, updated_at`
 
 // GetInstance 取某应用某环境实例（不存在返回 nil,nil）。
 func (s *Store) GetInstance(ctx context.Context, appID, env string) (*AppInstance, error) {

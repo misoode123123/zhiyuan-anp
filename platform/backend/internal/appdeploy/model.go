@@ -20,20 +20,20 @@ type Application struct {
 	InternalPort   int           `json:"internal_port" db:"internal_port"` // 应用容器内监听端口（Dockerfile EXPOSE）
 	Image          string        `json:"image" db:"image"`                 // 镜像引用 appdeploy/<name>:v<n>
 	ContainerName  string        `json:"container_name" db:"container_name"`
-	HostPort       int           `json:"host_port" db:"host_port"` // 分配的宿主端口
+	HostPort       int           `json:"host_port" db:"host_port"`               // 分配的宿主端口
 	DeployHost     string        `json:"deploy_host,omitempty" db:"deploy_host"` // 部署节点（空=本地 .28，如 tcp://10.10.0.30:2375）
-	URL            string        `json:"url" db:"url"`             // http://<host>:<host_port>
-	Version        int           `json:"version" db:"version"`     // 构建版本号
-	Status         string        `json:"status" db:"status"`       // registered/building/running/stopped/failed
+	URL            string        `json:"url" db:"url"`                           // http://<host>:<host_port>
+	Version        int           `json:"version" db:"version"`                   // 构建版本号
+	Status         string        `json:"status" db:"status"`                     // registered/building/running/stopped/failed
 	LastError      string        `json:"last_error,omitempty" db:"last_error"`
-	BuildLog       string        `json:"build_log,omitempty" db:"build_log"` // 最近一次构建输出摘要
-	DeployMode     string        `json:"deploy_mode" db:"deploy_mode"`       // managed(A类) / external(B类纳管外部)
-	AppKind        string        `json:"app_kind" db:"app_kind"`               // web/desktop/mobile/cli/service，默认 web
-	ExternalURL    string        `json:"external_url" db:"external_url"`     // external 模式时外部应用访问地址
-	ImportSource   string        `json:"import_source" db:"import_source"`   // ''/git/dir
-	ImportRef      string        `json:"import_ref" db:"import_ref"`         // git=url / dir=来源标识
+	BuildLog       string        `json:"build_log,omitempty" db:"build_log"`     // 最近一次构建输出摘要
+	DeployMode     string        `json:"deploy_mode" db:"deploy_mode"`           // managed(A类) / external(B类纳管外部)
+	AppKind        string        `json:"app_kind" db:"app_kind"`                 // web/desktop/mobile/cli/service，默认 web
+	ExternalURL    string        `json:"external_url" db:"external_url"`         // external 模式时外部应用访问地址
+	ImportSource   string        `json:"import_source" db:"import_source"`       // ''/git/dir
+	ImportRef      string        `json:"import_ref" db:"import_ref"`             // git=url / dir=来源标识
 	ImportedAt     *time.Time    `json:"imported_at,omitempty" db:"imported_at"` // 导入完成时间，进行中 nil
-	Instances      []AppInstance `json:"instances,omitempty" db:"-"`         // 各环境部署实例（聚合展示，非列）
+	Instances      []AppInstance `json:"instances,omitempty" db:"-"`             // 各环境部署实例（聚合展示，非列）
 	CreatedAt      time.Time     `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at" db:"updated_at"`
 }
@@ -48,11 +48,12 @@ const (
 
 // 应用形态（app_kind 列）。与 deploy_mode 正交：web 走现有容器链路，其余走预置构建容器出产物。
 const (
-	AppKindWeb     = "web"     // 现有链路（docker build→容器→URL）
-	AppKindDesktop = "desktop" // 桌面安装包（exe/dmg/AppImage）
-	AppKindMobile  = "mobile"  // 移动安装包（apk/ipa）
-	AppKindCLI     = "cli"     // 命令行二进制
-	AppKindService = "service" // 后端服务（可能非 HTTP，本期等同 web）
+	AppKindWeb      = "web"      // 现有链路（docker build→容器→URL）
+	AppKindDesktop  = "desktop"  // 桌面安装包（exe/dmg/AppImage）
+	AppKindMobile   = "mobile"   // 移动安装包（apk/ipa）
+	AppKindCLI      = "cli"      // 命令行二进制
+	AppKindService  = "service"  // 后端服务（可能非 HTTP，本期等同 web）
+	AppKindHeadless = "headless" // 无端口长驻进程(bot/worker),进程存活健康监控
 )
 
 // 非常 web 形态产物就绪态（web 链路不出现此状态）。
@@ -101,18 +102,19 @@ type AppInstance struct {
 	Status        string    `json:"status" db:"status"` // registered/building/running/stopped/failed
 	LastError     string    `json:"last_error,omitempty" db:"last_error"`
 	BuildLog      string    `json:"build_log,omitempty" db:"build_log"`
+	RestartCount  int       `json:"restart_count" db:"restart_count"` // 上次观测的 docker RestartCount(reconcile 增量判定基准)
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Artifact 一次构建产出的一个产物文件（如一个 exe 或 apk）。与 Application 一对多。
 type Artifact struct {
-	ID            string    `json:"id" db:"id"`                       // art_xxx
+	ID            string    `json:"id" db:"id"` // art_xxx
 	ApplicationID string    `json:"application_id" db:"application_id"`
 	BuildVersion  int       `json:"build_version" db:"build_version"`
 	AppKind       string    `json:"app_kind" db:"app_kind"`
-	Platform      string    `json:"platform" db:"platform"`           // windows/macos/linux/android/ios/multi
-	Arch          string    `json:"arch" db:"arch"`                   // x64/arm64/x86/universal/multi
+	Platform      string    `json:"platform" db:"platform"` // windows/macos/linux/android/ios/multi
+	Arch          string    `json:"arch" db:"arch"`         // x64/arm64/x86/universal/multi
 	Filename      string    `json:"filename" db:"filename"`
 	SizeBytes     int64     `json:"size_bytes" db:"size_bytes"`
 	SHA256        string    `json:"sha256" db:"sha256"`
