@@ -178,7 +178,8 @@ func (r *Reconciler) writeSharedEnv(ctx context.Context, appID string, inst *Ser
 	}
 }
 
-// supplyDedicated dedicated redis 供给：复用判定（幂等不重启/不换端口/保数据）/ 新供给（端口→起容器→就绪→登记→env）。
+// supplyDedicated dedicated 供给（按 kind 分派）：复用判定（幂等）/ 新供给（端口→launch→ready→登记→env）。
+// redis：1 容器 + AUTH+PING；milvus：专属网络 + milvus/etcd/minio 三容器 + /healthz 探针。
 func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, dep DepService,
 	mkBind func(status, instID, token, lastErr string)) {
 	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据，重写 env。
@@ -191,45 +192,44 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 		}
 	}
 	// 新供给
-	port := allocPort(r.docker.UsedPorts(ctx), mwPortMin, mwPortMax)
+	lo, hi := portRange(dep.Kind)
+	port := allocPort(r.docker.UsedPorts(ctx), lo, hi)
 	if port == 0 {
-		mkBind(StatusFailed, "", "", fmt.Sprintf("redis 端口池 %d-%d 已满", mwPortMin, mwPortMax))
+		mkBind(StatusFailed, "", "", fmt.Sprintf("%s 端口池 %d-%d 已满", dep.Kind, lo, hi))
 		return
 	}
 	short := genShortID()
-	name := dedicatedContainerName(dep.Kind, short)
-	pwd := genPassword()
-	if err := r.docker.RunRedisContainer(ctx, name, pwd, port); err != nil {
-		mkBind(StatusFailed, "", "", "起 redis 容器: "+err.Error())
+	base := dedicatedContainerName(dep.Kind, short)
+	// launch（按 kind）：redis 起 1 容器（返密码）；milvus 起三容器栈（返空 auth）。
+	authRef, launchErr := r.launchDedicated(ctx, dep.Kind, base, port)
+	if launchErr != nil {
+		mkBind(StatusFailed, "", "", "起 "+dep.Kind+" 容器: "+launchErr.Error())
 		return
 	}
-	// 就绪检测（best-effort）：轮询 AUTH+PING，超时 readyPingTimeout。
-	// 失败不阻塞——dedicated 是全新空容器、redis 秒级起；.28 上 backend(deploy_default 网)
-	// 拨不到 host 发布端口会超时（同 P2 flush 的 cross-network 形状），但 app(默认 bridge) 能到。
-	// 故 ping 失败仅记 Warn，继续 claim→bound（容器保留，app 经 host LAN IP:port 使用）。
-	readyCtx, cancel := context.WithTimeout(ctx, readyPingTimeout)
-	defer cancel()
-	if err := r.ready.Ping(readyCtx, r.host, port, pwd); err != nil {
+	// 就绪检测（best-effort，失败不阻塞）：redis AUTH+PING(5s) / milvus /healthz 探针(120s)。
+	// 失败仅记 Warn 后继续 claim→bound（容器/栈保留，app 经 host LAN IP:port 使用）——
+	// .28 上 backend(deploy_default 网) 可能拨不到 host 发布端口（同 P2 flush 的 cross-network 形状），但 app 能到。
+	if err := r.waitDedicatedReady(ctx, dep.Kind, base, port, authRef); err != nil {
 		if r.log != nil {
-			r.log.Warn("dedicated redis 就绪检测失败 (best-effort, proceed to bound)",
+			r.log.Warn("dedicated 就绪检测失败 (best-effort, proceed to bound)",
 				zap.String("app", appID), zap.String("kind", dep.Kind),
 				zap.Int("port", port), zap.Error(err))
 		}
 	}
 	inst := &ServiceInstance{
-		ID:             "svinst-redis-ded-" + short,
+		ID:             "svinst-" + dep.Kind + "-ded-" + short,
 		ProjectSpaceID: nil, // dedicated 实例不挂项目，靠 binding 关联 app
 		Kind:           dep.Kind,
-		Name:           name,
+		Name:           base,
 		SupplyMode:     ModeDedicated,
 		Host:           r.host,
 		Port:           port,
-		AuthRef:        pwd,
-		ContainerName:  name,
+		AuthRef:        authRef,
+		ContainerName:  base,
 		Status:         "active",
 	}
 	if err := r.store.CreateInstance(ctx, inst); err != nil {
-		_ = r.docker.RmForce(ctx, name) // 登记失败回收容器
+		r.rmDedicated(ctx, dep.Kind, base) // 登记失败回收（redis RmForce / milvus RmMilvusStack）
 		mkBind(StatusFailed, "", "", "登记实例: "+err.Error())
 		return
 	}
@@ -237,11 +237,52 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 	mkBind(StatusBound, inst.ID, "", "")
 }
 
-// writeDedicatedEnv 写 REDIS_ADDR + REDIS_PASSWORD，均 source=platform（不写 REDIS_DB，dedicated 用默认 db 0）。
+// launchDedicated 起 dedicated 容器/栈，返回 authRef（redis=密码 / milvus=""）。
+func (r *Reconciler) launchDedicated(ctx context.Context, kind, base string, port int) (string, error) {
+	switch kind {
+	case "redis":
+		pwd := genPassword()
+		return pwd, r.docker.RunRedisContainer(ctx, base, pwd, port)
+	case "milvus":
+		return "", r.docker.RunMilvusStack(ctx, base, port)
+	default:
+		return "", fmt.Errorf("dedicated 不支持 kind %q", kind)
+	}
+}
+
+// waitDedicatedReady 就绪检测（best-effort 由调用方处理）：redis AUTH+PING / milvus /healthz 探针。
+func (r *Reconciler) waitDedicatedReady(ctx context.Context, kind, base string, port int, authRef string) error {
+	switch kind {
+	case "redis":
+		readyCtx, cancel := context.WithTimeout(ctx, readyPingTimeout)
+		defer cancel()
+		return r.ready.Ping(readyCtx, r.host, port, authRef)
+	case "milvus":
+		return r.docker.MilvusReady(ctx, base, milvusReadyTimeout)
+	default:
+		return nil
+	}
+}
+
+// rmDedicated 回收半成品/失败容器栈（best-effort）：redis RmForce / milvus RmMilvusStack。
+func (r *Reconciler) rmDedicated(ctx context.Context, kind, base string) {
+	switch kind {
+	case "redis":
+		_ = r.docker.RmForce(ctx, base)
+	case "milvus":
+		_ = r.docker.RmMilvusStack(ctx, base)
+	}
+}
+
+// writeDedicatedEnv 写 <KIND>_ADDR（+ redis 专 _PASSWORD），均 source=platform。
+// redis：REDIS_ADDR + REDIS_PASSWORD（不写 REDIS_DB，用默认 db 0）。
+// milvus v1 无 auth：只写 MILVUS_ADDR（不写 password、不写 db token）。
 func (r *Reconciler) writeDedicatedEnv(ctx context.Context, appID string, inst *ServiceInstance) {
-	_ = r.env.UpsertEnv(ctx, appID, EnvKeyFor(inst.Kind), ConnStr(inst), false, "platform") // REDIS_ADDR=host:port
-	pwdKey := strings.ToUpper(inst.Kind) + "_PASSWORD"                                      // REDIS_PASSWORD
-	_ = r.env.UpsertEnv(ctx, appID, pwdKey, inst.AuthRef, true, "platform")                 // secret
+	_ = r.env.UpsertEnv(ctx, appID, EnvKeyFor(inst.Kind), ConnStr(inst), false, "platform") // REDIS_ADDR / MILVUS_ADDR
+	if inst.Kind == "redis" {
+		pwdKey := strings.ToUpper(inst.Kind) + "_PASSWORD" // REDIS_PASSWORD
+		_ = r.env.UpsertEnv(ctx, appID, pwdKey, inst.AuthRef, true, "platform")
+	}
 }
 
 // Cleanup 删 app 的 dedicated 中间件容器（best-effort，不阻塞 Delete）。

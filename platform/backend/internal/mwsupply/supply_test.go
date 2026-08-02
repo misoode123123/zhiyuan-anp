@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -462,3 +463,124 @@ func TestReconcile_cleanup_skipsSharedAndBindExisting(t *testing.T) {
 type errStr string
 
 func (e errStr) Error() string { return string(e) }
+
+// —— milvus dedicated 用例 ——
+
+// TestReconcile_dedicatedMilvus 新供给：起栈 + 登记 + MILVUS_ADDR（无 password/db）。
+func TestReconcile_dedicatedMilvus(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "milded1", RepoDir: "/x", InternalPort: 8080}
+	if err := appStore.Create(ctx, a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	// 起了一次栈，端口 9700（空池最小号）
+	if len(dk.stackCalls) != 1 || dk.stackCalls[0].port != milvusPortMin {
+		t.Fatalf("应起 1 栈 port=%d，得 %+v", milvusPortMin, dk.stackCalls)
+	}
+	// env：MILVUS_ADDR=testdeploy:9700；无 MILVUS_PASSWORD；无 MILVUS_DB
+	ma, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR")
+	if ma != "testdeploy:9700" {
+		t.Fatalf("MILVUS_ADDR 应 testdeploy:9700，得 %q", ma)
+	}
+	if mp, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_PASSWORD"); mp != "" {
+		t.Fatalf("milvus v1 无 auth，不应写 MILVUS_PASSWORD，得 %q", mp)
+	}
+	if mdb, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_DB"); mdb != "" {
+		t.Fatalf("milvus dedicated 不应注入 MILVUS_DB，得 %q", mdb)
+	}
+	// binding bound + 实例行 kind=milvus / container_name=mwmilvus-<short> / port=9700
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusBound || binds[0].Strategy != ModeDedicated {
+		t.Fatalf("binding 应 dedicated/bound，得 %+v", binds)
+	}
+	inst, _ := NewStore(db).GetInstance(ctx, binds[0].ServiceInstanceID)
+	if inst == nil || inst.Kind != "milvus" || inst.ContainerName == "" || !strings.HasPrefix(inst.ContainerName, "mwmilvus-") || inst.Port != milvusPortMin {
+		t.Fatalf("实例行应 kind=milvus + mwmilvus-<short> + port=%d，得 %+v", milvusPortMin, inst)
+	}
+}
+
+// TestReconcile_dedicatedMilvus_idempotent 同 app 重部署：不重启栈、port 不变、env 仍在。
+func TestReconcile_dedicatedMilvus_idempotent(t *testing.T) {
+	r, appStore, _, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildidem", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	ma1, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR")
+	dk.stackCalls = nil
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	ma2, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR")
+	if ma1 != ma2 {
+		t.Fatalf("重部署 MILVUS_ADDR 应不变，%q → %q", ma1, ma2)
+	}
+	if len(dk.stackCalls) != 0 {
+		t.Fatalf("重部署复用不应再起栈，得 %d 次", len(dk.stackCalls))
+	}
+}
+
+// TestReconcile_dedicatedMilvus_poolExhaust milvus 端口池满 → failed、不起栈、不写 env。
+func TestReconcile_dedicatedMilvus_poolExhaust(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	full := map[int]struct{}{}
+	for p := milvusPortMin; p <= milvusPortMax; p++ {
+		full[p] = struct{}{}
+	}
+	dk.usedPorts = full
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildex", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed {
+		t.Fatalf("池满应 failed，得 %+v", binds)
+	}
+	if len(dk.stackCalls) != 0 {
+		t.Fatalf("池满不应起栈，得 %d", len(dk.stackCalls))
+	}
+	if ma, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR"); ma != "" {
+		t.Fatalf("池满不应写 MILVUS_ADDR，得 %q", ma)
+	}
+}
+
+// TestReconcile_dedicatedMilvus_stackFail 起栈失败 → failed、不登记实例。
+func TestReconcile_dedicatedMilvus_stackFail(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	dk.stackErr = errStr("docker run milvus 失败")
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildfail", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
+		t.Fatalf("起栈失败应 failed + 无实例，得 %+v", binds)
+	}
+}
+
+// TestReconcile_dedicatedMilvus_readyTimeout_bestEffort 就绪探针超时(best-effort) → 仍 bound、不 RmMilvusStack、env 已写。
+func TestReconcile_dedicatedMilvus_readyTimeout_bestEffort(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	dk.readyErr = errStr("milvus 就绪超时")
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildready", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusBound {
+		t.Fatalf("就绪 best-effort 失败应仍 bound，得 %+v", binds)
+	}
+	if len(dk.rmStackCalls) != 0 {
+		t.Fatalf("best-effort 不应 RmMilvusStack，得 %v", dk.rmStackCalls)
+	}
+	if ma, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR"); ma == "" {
+		t.Fatal("best-effort 应已写 MILVUS_ADDR")
+	}
+}
