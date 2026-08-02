@@ -48,8 +48,51 @@ func TestAllocPort(t *testing.T) {
 }
 
 func TestDedicatedContainerName(t *testing.T) {
-	if n := dedicatedContainerName("abc123"); n != "mwredis-abc123" {
-		t.Fatalf("容器名应 mwredis-abc123，得 %q", n)
+	if n := dedicatedContainerName("redis", "abc123"); n != "mwredis-abc123" {
+		t.Fatalf("redis 容器名应 mwredis-abc123，得 %q", n)
+	}
+	if n := dedicatedContainerName("milvus", "abc123"); n != "mwmilvus-abc123" {
+		t.Fatalf("milvus 容器名应 mwmilvus-abc123，得 %q", n)
+	}
+}
+
+func TestPortRange(t *testing.T) {
+	if lo, hi := portRange("redis"); lo != mwPortMin || hi != mwPortMax {
+		t.Fatalf("redis 端口池应 %d-%d，得 %d-%d", mwPortMin, mwPortMax, lo, hi)
+	}
+	if lo, hi := portRange("milvus"); lo != milvusPortMin || hi != milvusPortMax {
+		t.Fatalf("milvus 端口池应 %d-%d，得 %d-%d", milvusPortMin, milvusPortMax, lo, hi)
+	}
+}
+
+func TestMilvusStackNames(t *testing.T) {
+	base := dedicatedContainerName("milvus", "abc123") // mwmilvus-abc123
+	if milvusEtcdName(base) != "mwmilvus-abc123-etcd" {
+		t.Fatalf("etcd 名错: %q", milvusEtcdName(base))
+	}
+	if milvusMinioName(base) != "mwmilvus-abc123-minio" {
+		t.Fatalf("minio 名错: %q", milvusMinioName(base))
+	}
+	if milvusNetName(base) != "mwmilvus-abc123-net" {
+		t.Fatalf("net 名错: %q", milvusNetName(base))
+	}
+}
+
+func TestMilvusConstants(t *testing.T) {
+	if milvusPortMin != 9700 || milvusPortMax != 9799 {
+		t.Fatalf("milvus 端口池应 9700-9799，得 %d-%d", milvusPortMin, milvusPortMax)
+	}
+	if milvusImage != "milvusdb/milvus:v2.6.15" || etcdImage != "quay.io/coreos/etcd:v3.5.16" || minioImage != "minio:v20.2.5-2024.7.4" {
+		t.Fatalf("milvus 栈镜像不符: %s/%s/%s", milvusImage, etcdImage, minioImage)
+	}
+	if milvusGrpcPort != 19530 || milvusHealthPort != 9091 || etcdInternalPort != 2379 || minioInternalPort != 9000 {
+		t.Fatalf("milvus 端口不符: grpc=%d health=%d etcd=%d minio=%d", milvusGrpcPort, milvusHealthPort, etcdInternalPort, minioInternalPort)
+	}
+	if milvusReadyTimeout != 120*time.Second {
+		t.Fatalf("milvusReadyTimeout 应 120s，得 %v", milvusReadyTimeout)
+	}
+	if readyAlpineImage != "alpine:3.19" {
+		t.Fatalf("探针镜像应 alpine:3.19，得 %q", readyAlpineImage)
 	}
 }
 

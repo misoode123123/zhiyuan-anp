@@ -197,7 +197,7 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 		return
 	}
 	short := genShortID()
-	name := dedicatedContainerName(short)
+	name := dedicatedContainerName(dep.Kind, short)
 	pwd := genPassword()
 	if err := r.docker.RunRedisContainer(ctx, name, pwd, port); err != nil {
 		mkBind(StatusFailed, "", "", "起 redis 容器: "+err.Error())
