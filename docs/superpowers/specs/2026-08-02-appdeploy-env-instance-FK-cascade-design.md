@@ -3,7 +3,7 @@
 - 日期：2026-08-02
 - 类型：横切数据正确性修复（既有缺口，非新功能）
 - 关联：[[appdeploy-env-no-cascade]] 记忆；P3 dedicated e2e（2026-08-02）发现；PRD `2026-08-01-多形态应用治理与开发运维统筹`
-- 状态：待实现
+- 状态：✅ 已实现（commit `44ebbd7`，.28 e2e 通过 2026-08-02）
 
 ## 1. 背景与问题
 
@@ -137,6 +137,14 @@ e2e 步骤：
    - 全库巡检 `SELECT app_id, count(*) FROM appdeploy_env WHERE app_id NOT IN (SELECT id FROM appdeploy_application) GROUP BY app_id` → **空**
    - 同样对 `appdeploy_instance` 巡检 → **空**
 7. 顺带确认 `appdeploy_service_binding` / `appdeploy_database` 等仍 CASCADE 正常（回归未坏）。
+
+### 5.1 e2e 结论（2026-08-02 .28 实测，commit `44ebbd7`）
+
+- **迁移落地**：prod `deploy_postgres_1/anp` 库 `schema_migrations` 最新 = `000031_appdeploy_fk_cascade`；`pg_constraint` 含 `appdeploy_env_app_fk` + `appdeploy_instance_app_fk`。
+- **历史孤儿清理**：部署前 `env_orphans=21` / `instance_orphans=26`（实锤既有泄漏）→ 迁移 DELETE 后双 **0**。
+- **新删 CASCADE 触发**（prod DB 事务内直验）：建 app+2 env+1 instance → `DELETE FROM appdeploy_application` → `env_after_delete=0` / `instance_after_delete=0`（FK CASCADE 真触发，非仅清旧行），ROLLBACK 自清。
+- **单测**：`TestStore_Delete_cascadesEnvAndInstance` 在 .28 anp_test 真 PG 通过（Store 全链路：Create→UpsertEnv→GetOrCreateInstance→Delete→两表归零）。
+- **回归**：`go test ./internal/appdeploy/ -p 1` 全 PASS；backend deep healthz healthy，无崩溃。
 
 ## 6. 影响面 / 风险 / 回滚
 
