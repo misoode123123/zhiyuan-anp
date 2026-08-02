@@ -584,7 +584,7 @@ export default function ApplicationsPage() {
       if (env) body.env = env;
       if (nodeID) body.node_id = nodeID;
       // 节点环境校验：部署 env=test 只能用 env=test 节点；env=prod 只能用 env=prod 节点。
-      // node_local 豁免（始终可用）。os_type=windows 对 web/service 已在选择器过滤，此处按本应用 kind 兜底再拦一次。
+      // node_local 豁免（始终可用）。os_type=windows 对 web/service/headless 已在选择器过滤，此处按本应用 kind 兜底再拦一次。
       const sel = nodes.find((n) => n.id === nodeID);
       const app = apps.find((a) => a.id === id);
       if (env && !nodeMatchesEnv(sel, env)) {

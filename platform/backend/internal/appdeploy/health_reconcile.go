@@ -82,12 +82,14 @@ func (r *HealthReconciler) checkOne(ctx context.Context, t headlessInstance) {
 	}
 	newStatus, newCount := aggregateHealth(h, t.RestartCount, r.burst)
 	if newStatus != t.Status {
-		reason := describeHealth(h, t.RestartCount)
-		_ = r.store.UpdateInstanceHealth(ctx, t.AppID, t.Env, newStatus, reason, newCount)
 		switch newStatus {
 		case "degraded", "failed":
+			reason := describeHealth(h, t.RestartCount)
+			_ = r.store.UpdateInstanceHealth(ctx, t.AppID, t.Env, newStatus, reason, newCount)
 			_ = r.alerter.OnUnhealthy(ctx, t.ProjectSpaceID, t.AppID, t.Name, t.Env, severityFor(newStatus), reason)
 		case "running":
+			// 恢复(degraded/failed → running):实例已健康,last_error 清空,避免残留 crash-loop 文案
+			_ = r.store.UpdateInstanceHealth(ctx, t.AppID, t.Env, "running", "", newCount)
 			_ = r.alerter.OnRecovered(ctx, t.ProjectSpaceID, t.AppID, t.Name, t.Env)
 		}
 	} else if newCount != t.RestartCount {

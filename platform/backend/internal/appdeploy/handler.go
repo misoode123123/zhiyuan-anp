@@ -852,8 +852,8 @@ type createBody struct {
 	RepoDir      string `json:"repo_dir"`      // managed 可选；空=平台托管 git 仓库 /data/repos/<name>
 	InternalPort int    `json:"internal_port"` // managed 可选；buildpack 检测或默认 8080
 	DeployMode   string `json:"deploy_mode"`   // managed(默认,A类) / external(B类纳管外部应用)
-	// 应用形态：web/desktop/mobile/cli/service，空默认 web。与 deploy_mode 正交：
-	// web/service 走容器部署链路；desktop/mobile/cli 走预置构建容器出可下载产物。
+	// 应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：
+	// web/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。
 	AppKind     string `json:"app_kind"`
 	ExternalURL string `json:"external_url"` // external 必填：外部应用访问地址 http(s)://host[:port][/path]
 }
@@ -1645,7 +1645,9 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	ins.Status = "running"
 	ins.LastError = ""
 	ins.BuildLog = tail(log, 2000)
+	ins.RestartCount = 0 // 新容器 docker RestartCount=0,重置 DB 基线避免上轮 reconcile 残留
 	_ = h.store.UpdateInstance(ctx, ins)
+	_ = h.store.UpdateRestartCount(ctx, ins.AppID, ins.Env, 0) // 持久化新基线(UpdateInstance 不写 restart_count)
 	// 写 appgw 路由表:部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
 	// headless 无端口/无 URL,不写 HTTP 路由。失败不阻塞部署;routeWriter nil = 未启用 appgw。
 	if h.routeWriter != nil && a.AppKind != AppKindHeadless {
