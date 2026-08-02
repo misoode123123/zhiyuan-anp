@@ -1,6 +1,7 @@
 package appdeploy
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -202,5 +203,93 @@ func TestDockerSlug_ImageTagValidForChineseName(t *testing.T) {
 	// 容器名允许 [a-zA-Z0-9_.-]，这里全是小写 ASCII + -，用宽松校验
 	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`).MatchString(container) {
 		t.Fatalf("中文应用容器名非法: %q", container)
+	}
+}
+
+func TestParseInspectHealth(t *testing.T) {
+	cases := []struct{ in string; want ContainerHealth }{
+		{"running|3|0|false", ContainerHealth{Running: true, RestartCount: 3, ExitCode: 0, OOMKilled: false}},
+		{"exited|5|137|true", ContainerHealth{Running: false, RestartCount: 5, ExitCode: 137, OOMKilled: true}},
+		{"restarting|2|0|false", ContainerHealth{Running: false, RestartCount: 2, ExitCode: 0, OOMKilled: false}},
+	}
+	for _, c := range cases {
+		got, err := parseInspectHealth(c.in)
+		if err != nil {
+			t.Fatalf("parseInspectHealth(%q) err: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("parseInspectHealth(%q) = %+v, want %+v", c.in, got, c.want)
+		}
+	}
+	if _, err := parseInspectHealth("bad|format"); err == nil {
+		t.Fatal("parseInspectHealth 期望 4 字段,错误格式应报错")
+	}
+}
+
+// TestDeploy_Headless_NoPortNoURL headless 部署:无 -p、无 PORT=、无 URL、无 HostPort。
+func TestDeploy_Headless_NoPortNoURL(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) {
+		got = args
+		return "cid", nil
+	}
+	defer func() { dockerRun = orig }()
+
+	d := NewDeployer("10.10.0.28")
+	ins := &AppInstance{Env: EnvTest, Version: 1}
+	a := &Application{Name: "bot", AppKind: AppKindHeadless, InternalPort: 0}
+	if err := d.Deploy(context.Background(), a, ins, []string{"FOO=bar"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, arg := range got {
+		if arg == "-p" {
+			t.Fatal("headless 部署不得映射端口(-p)")
+		}
+		if strings.HasPrefix(arg, "PORT=") {
+			t.Fatal("headless 部署不得注入 PORT=")
+		}
+	}
+	if ins.URL != "" {
+		t.Fatalf("headless 不得设 URL,得到 %q", ins.URL)
+	}
+	if ins.HostPort != 0 {
+		t.Fatalf("headless 不得设 HostPort,得到 %d", ins.HostPort)
+	}
+	if ins.ContainerName == "" {
+		t.Fatal("container name 未设")
+	}
+}
+
+// TestDeploy_Web_StillMapsPort 回归:web 仍 -p + 设 URL。
+func TestDeploy_Web_StillMapsPort(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) {
+		got = args
+		return "cid", nil
+	}
+	defer func() { dockerRun = orig }()
+	// usedPortsOn 走 dockerRun,返回空 → AllocFreePort 取 min(9100)
+	d := NewDeployer("10.10.0.28")
+	ins := &AppInstance{Env: EnvTest, Version: 1}
+	a := &Application{Name: "webapp", AppKind: AppKindWeb, InternalPort: 3000}
+	if err := d.Deploy(context.Background(), a, ins, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	hasP := false
+	for i, arg := range got {
+		if arg == "-p" {
+			hasP = true
+			if got[i+1] != "9100:3000" {
+				t.Fatalf("web -p 映射 = %s,期望 9100:3000", got[i+1])
+			}
+		}
+	}
+	if !hasP {
+		t.Fatal("web 部署必须有 -p")
+	}
+	if ins.URL == "" {
+		t.Fatal("web 部署必须设 URL")
 	}
 }

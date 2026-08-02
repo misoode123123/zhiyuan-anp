@@ -144,11 +144,26 @@ func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, 
 	return out, e
 }
 
-// Deploy 运行容器（docker run -d --name -p host:internal -e KEY=VALUE ...）。
-// 端口段按环境；优先复用该环境实例原端口（同环境多次发布 URL 稳定）。
-// env 为应用的运行时环境变量（含密钥），逐个 -e 注入容器。
-// Deploy 运行容器。dockerHost 非空时在远程节点部署。
+// Deploy 运行容器。headless:无端口/无 URL;其余:按环境端口映射 + URL。dockerHost 非空时远程部署。
 func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost string) error {
+	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
+	args := []string{"run", "-d", "--name", name, "--restart", "unless-stopped"}
+
+	if a.AppKind == AppKindHeadless {
+		// headless(bot/worker):无端口、无 URL。不分配宿主端口、不注入 PORT、不 -p。
+		for _, e := range env {
+			args = append(args, "-e", e)
+		}
+		args = append(args, ins.Image)
+		out, err := dockerRun(ctx, dockerHost, args...)
+		if err != nil {
+			return fmt.Errorf("docker run 失败: %w: %s", err, out)
+		}
+		ins.ContainerName = name
+		return nil // ins.HostPort/URL 保持零值
+	}
+
+	// web/service 等:端口映射 + URL(原有逻辑)
 	min, max := d.envPortRange(ins.Env)
 	used := d.usedPortsOn(ctx, dockerHost)
 	port := ins.HostPort
@@ -158,23 +173,19 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 	if port == 0 {
 		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 	}
-	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	env = ensurePortEnv(env, a.InternalPort)
-	args := []string{"run", "-d", "--name", name}
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
-	args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort), "--restart", "unless-stopped", ins.Image)
-	out, err := runDockerOn(ctx, dockerHost, args...)
+	args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort), ins.Image)
+	out, err := dockerRun(ctx, dockerHost, args...)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}
 	ins.ContainerName = name
 	ins.HostPort = port
-	// URL 使用部署节点的 host（本地=d.host，远程=节点 IP）
 	urlHost := d.host
 	if dockerHost != "" {
-		// 从 tcp://10.10.0.30:2375 提取 IP
 		parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(dockerHost, "tcp://"), "http://"), ":")
 		if len(parts) > 0 && parts[0] != "" {
 			urlHost = parts[0]
@@ -266,6 +277,40 @@ func (d *Deployer) Stats(ctx context.Context, container string) (*ContainerStats
 		return nil, fmt.Errorf("解析 stats JSON: %w (原文: %s)", err, out)
 	}
 	return &ContainerStats{CPUPerc: raw.CPUPerc, MemUsage: raw.MemUsage, MemPerc: raw.MemPerc, NetIO: raw.NetIO, PIDs: raw.PIDs}, nil
+}
+
+// ContainerHealth docker inspect 解析出的容器健康观测。
+type ContainerHealth struct {
+	Running      bool
+	RestartCount int
+	ExitCode     int
+	OOMKilled    bool
+}
+
+// InspectHealth 经 docker inspect 取容器健康观测。走 docker socket,不受应用网络拓扑影响。
+func (d *Deployer) InspectHealth(ctx context.Context, container string) (ContainerHealth, error) {
+	out, err := runDocker(ctx, "inspect", "--format",
+		"{{.State.Status}}|{{.RestartCount}}|{{.State.ExitCode}}|{{.State.OOMKilled}}", container)
+	if err != nil {
+		return ContainerHealth{}, fmt.Errorf("docker inspect %s: %w: %s", container, err, out)
+	}
+	return parseInspectHealth(strings.TrimSpace(out))
+}
+
+// parseInspectHealth 解析 `status|restartCount|exitCode|oomKilled` 输出。纯函数,可单测。
+func parseInspectHealth(out string) (ContainerHealth, error) {
+	parts := strings.Split(out, "|")
+	if len(parts) != 4 {
+		return ContainerHealth{}, fmt.Errorf("parseInspectHealth: expect 4 fields, got %d in %q", len(parts), out)
+	}
+	rc, _ := strconv.Atoi(parts[1])
+	ec, _ := strconv.Atoi(parts[2])
+	return ContainerHealth{
+		Running:      parts[0] == "running",
+		RestartCount: rc,
+		ExitCode:     ec,
+		OOMKilled:    parts[3] == "true",
+	}, nil
 }
 
 // dockerRun 可替换的 docker 执行函数（测试注入 fake）。默认走 runDockerOn。
