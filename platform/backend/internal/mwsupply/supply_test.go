@@ -96,7 +96,8 @@ func ensureSeed(t *testing.T, db *sqlx.DB) {
 	_, err := db.Exec(`INSERT INTO appdeploy_service_instance (id, project_space_id, kind, name, supply_mode, host, port, isolation, status) VALUES
 	  ('svinst-redis-28',NULL,'redis','yxt-redis','bind_existing','10.10.0.28',6381,'{"default_db":0}'::jsonb,'active'),
 	  ('svinst-milvus-28',NULL,'milvus','yxt-milvus','bind_existing','10.10.0.28',19530,NULL,'active'),
-	  ('svinst-redis-shared-28',NULL,'redis','yxt-redis-shared','shared','10.10.0.28',6381,'{"db_range":[1,15]}'::jsonb,'active')
+	  ('svinst-redis-shared-28',NULL,'redis','yxt-redis-shared','shared','10.10.0.28',6381,'{"db_range":[1,15]}'::jsonb,'active'),
+	  ('svinst-milvus-shared-28',NULL,'milvus','yxt-milvus-shared','shared','10.10.0.28',19530,'{"mode":"prefix"}'::jsonb,'active')
 	  ON CONFLICT (id) DO NOTHING`)
 	if err != nil {
 		t.Fatalf("ensureSeed: %v", err)

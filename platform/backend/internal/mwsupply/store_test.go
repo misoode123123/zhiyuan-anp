@@ -107,10 +107,18 @@ func TestStore_LookupShared_seed(t *testing.T) {
 	if got.ID != "svinst-redis-shared-28" || got.SupplyMode != "shared" || got.Port != 6381 {
 		t.Fatalf("shared 种子不符: %+v", got)
 	}
-	// 无 shared milvus → nil,nil
+	// shared milvus 种子也在（P5）
 	gotM, err := s.LookupShared(context.Background(), "milvus")
-	if err != nil || gotM != nil {
-		t.Fatalf("shared milvus 应 nil,nil，得 %+v err=%v", gotM, err)
+	if err != nil || gotM == nil {
+		t.Fatalf("应命中 shared milvus 种子，err=%v got=%+v", err, gotM)
+	}
+	if gotM.ID != "svinst-milvus-shared-28" || gotM.SupplyMode != "shared" || gotM.Port != 19530 {
+		t.Fatalf("shared milvus 种子不符: %+v", gotM)
+	}
+	// 未注册 kind 仍 nil,nil
+	gotX, err := s.LookupShared(context.Background(), "mongodb")
+	if err != nil || gotX != nil {
+		t.Fatalf("未注册 kind 应 nil,nil，得 %+v err=%v", gotX, err)
 	}
 }
 
@@ -255,6 +263,23 @@ func TestStore_CreateInstance_idempotent(t *testing.T) {
 	}
 	if err := s.CreateInstance(ctx, inst); err != nil {
 		t.Fatalf("二次 Create 应幂等不报错: %v", err)
+	}
+}
+
+// TestMigration_000033_sharedMilvusSeed 迁移后：shared milvus 种子在（isolation mode=prefix）。
+func TestMigration_000033_sharedMilvusSeed(t *testing.T) {
+	_, db := newTestStore(t)
+	var mode, supplyMode string
+	var port int
+	err := db.QueryRow(`SELECT isolation->>'mode', supply_mode, port
+		FROM appdeploy_service_instance
+		WHERE id='svinst-milvus-shared-28' AND kind='milvus' AND project_space_id IS NULL`).
+		Scan(&mode, &supplyMode, &port)
+	if err != nil {
+		t.Fatalf("shared milvus 种子缺失: %v", err)
+	}
+	if mode != "prefix" || supplyMode != "shared" || port != 19530 {
+		t.Fatalf("shared milvus 种子不符: mode=%s supply_mode=%s port=%d", mode, supplyMode, port)
 	}
 }
 
