@@ -362,6 +362,62 @@ func TestStore_ListInstancesByApp(t *testing.T) {
 	}
 }
 
+// TestStore_ListHeadlessActiveInstances 只返回 headless 且 running/degraded 的实例,带 restart_count + 项目空间。
+func TestStore_ListHeadlessActiveInstances(t *testing.T) {
+	s := newTestStore(t)
+	ps := "ps_test_headless"
+	// headless running 实例(应命中)
+	ah := &Application{ProjectSpaceID: ps, Name: "bot1", AppKind: AppKindHeadless, InternalPort: 0}
+	if err := s.Create(context.Background(), ah); err != nil {
+		t.Fatal(err)
+	}
+	ih := &AppInstance{ID: "ins_h1", AppID: ah.ID, Env: EnvTest, Status: "running"}
+	if _, err := s.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status, restart_count) VALUES ($1,$2,$3,$4,$5)`,
+		ih.ID, ih.AppID, ih.Env, ih.Status, 2); err != nil {
+		t.Fatal(err)
+	}
+	// web running 实例(不应命中)
+	aw := &Application{ProjectSpaceID: ps, Name: "web1", AppKind: AppKindWeb, InternalPort: 3000}
+	s.Create(context.Background(), aw)
+	s.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1,$2,$3,'running')`,
+		"ins_w1", aw.ID, EnvTest)
+	// headless stopped 实例(不应命中)
+	ih2 := &AppInstance{ID: "ins_h2", AppID: ah.ID, Env: EnvProd, Status: "stopped"}
+	s.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1,$2,$3,'stopped')`,
+		ih2.ID, ih2.AppID, ih2.Env)
+
+	got, err := s.ListHeadlessActiveInstances(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("期望 1 条 headless 活跃实例,得到 %d", len(got))
+	}
+	if got[0].AppID != ah.ID || got[0].RestartCount != 2 || got[0].Name != "bot1" || got[0].ProjectSpaceID != ps {
+		t.Fatalf("返回字段不对: %+v", got[0])
+	}
+}
+
+// TestStore_UpdateInstanceHealth 写 status+last_error+restart_count。
+func TestStore_UpdateInstanceHealth(t *testing.T) {
+	s := newTestStore(t)
+	ps := "ps_test_uh"
+	a := &Application{ProjectSpaceID: ps, Name: "bot2", AppKind: AppKindHeadless, InternalPort: 0}
+	s.Create(context.Background(), a)
+	s.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ('ins_uh',$1,$2,'running')`, a.ID, EnvTest)
+	if err := s.UpdateInstanceHealth(context.Background(), a.ID, EnvTest, "degraded", "crash-loop", 7); err != nil {
+		t.Fatal(err)
+	}
+	ins, _ := s.GetInstance(context.Background(), a.ID, EnvTest)
+	if ins.Status != "degraded" || ins.LastError != "crash-loop" || ins.RestartCount != 7 {
+		t.Fatalf("UpdateInstanceHealth 未生效: %+v", ins)
+	}
+}
+
 // TestStore_UpsertEnv 新增 → 更新同 key（ON CONFLICT 路径）。
 func TestStore_UpsertEnv(t *testing.T) {
 	s := newTestStore(t)

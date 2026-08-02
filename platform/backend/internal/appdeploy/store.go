@@ -147,6 +147,44 @@ func (s *Store) ListInstancesByApp(ctx context.Context, appID string) ([]AppInst
 	return list, err
 }
 
+// headlessInstance HealthReconciler 巡检目标行(appdeploy_instance JOIN appdeploy_application)。
+type headlessInstance struct {
+	AppID          string `db:"app_id"`
+	Env            string `db:"env"`
+	ContainerName  string `db:"container_name"`
+	Status         string `db:"status"`
+	RestartCount   int    `db:"restart_count"`
+	ProjectSpaceID string `db:"project_space_id"`
+	Name           string `db:"name"`
+}
+
+// ListHeadlessActiveInstances 列出需健康巡检的实例:headless 应用 且 status∈{running,degraded}。
+func (s *Store) ListHeadlessActiveInstances(ctx context.Context) ([]headlessInstance, error) {
+	var list []headlessInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT i.app_id, i.env, COALESCE(i.container_name,'') AS container_name,
+		        i.status, i.restart_count, a.project_space_id, a.name
+		 FROM appdeploy_instance i
+		 JOIN appdeploy_application a ON a.id = i.app_id
+		 WHERE a.app_kind='headless' AND i.status IN ('running','degraded')`)
+	return list, err
+}
+
+// UpdateInstanceHealth 更新实例 status + last_error + restart_count(reconcile 翻转时用)。
+func (s *Store) UpdateInstanceHealth(ctx context.Context, appID, env, status, lastErr string, restartCount int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_instance SET status=$1, last_error=$2, restart_count=$3, updated_at=CURRENT_TIMESTAMP
+		 WHERE app_id=$4 AND env=$5`, status, lastErr, restartCount, appID, env)
+	return err
+}
+
+// UpdateRestartCount 仅更新 restart_count 基线(status 未翻转时用)。
+func (s *Store) UpdateRestartCount(ctx context.Context, appID, env string, restartCount int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_instance SET restart_count=$1 WHERE app_id=$2 AND env=$3`, restartCount, appID, env)
+	return err
+}
+
 // envCols 环境变量显式列。
 const envCols = `id, app_id, key, COALESCE(value,'') AS value, is_secret, COALESCE(source,'user') AS source, created_at`
 
