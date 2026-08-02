@@ -97,7 +97,9 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 	mkBind(StatusBound, inst.ID, "", "")
 }
 
-// supplyShared shared redis 供给：复用判定（幂等不换号不 flush）/ 新分配（最小空闲号 → flush → claim）。
+// supplyShared shared 供给（按 kind 分派）：复用判定（幂等不换 token 不 flush）/ 新分配（按 kind 选 token → claim → env）。
+// redis：db 号池（ParseDBRange + pickLowestFree + claimWithRetry 的 flush+重试）。
+// milvus：随机 collection 前缀（无 flush、无池；极罕见撞号重生）。
 func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep DepService,
 	mkBind func(status, instID, token, lastErr string)) {
 	inst, err := r.store.LookupShared(ctx, dep.Kind)
@@ -105,32 +107,70 @@ func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep D
 		mkBind(StatusFailed, "", "", "无 shared "+dep.Kind+" 实例")
 		return
 	}
-	// 复用：同 app 已 bound 同实例同 token → 不换号、不 flush（保数据）、重写 env。
+	// 复用：同 app 已 bound 同实例同 token → 不换 token、不 flush（保数据）、重写 env。
 	if existing, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && existing != nil &&
 		existing.Status == StatusBound && existing.IsolationToken != "" && existing.ServiceInstanceID == inst.ID {
 		r.writeSharedEnv(ctx, appID, inst, existing.IsolationToken)
 		mkBind(StatusBound, inst.ID, existing.IsolationToken, "")
 		return
 	}
-	// 新分配
-	lo, hi, ok := ParseDBRange(inst.Isolation)
-	if !ok {
-		mkBind(StatusFailed, inst.ID, "", "shared 实例 isolation 缺 db_range")
-		return
-	}
-	allocated, _ := r.store.AllocatedTokens(ctx, inst.ID)
-	first, found := pickLowestFree(lo, hi, allocated)
-	if !found {
-		mkBind(StatusFailed, inst.ID, "", fmt.Sprintf("shared redis db 号耗尽（池 %d-%d）", lo, hi))
-		return
-	}
-	token, err := r.claimWithRetry(ctx, appID, psID, dep.Kind, inst, lo, hi, first, allocated)
+	// 新分配 + claim（按 kind 分派）
+	token, err := r.allocAndClaimShared(ctx, appID, psID, dep.Kind, inst)
 	if err != nil {
 		mkBind(StatusFailed, inst.ID, "", err.Error())
 		return
 	}
 	r.writeSharedEnv(ctx, appID, inst, token)
 	mkBind(StatusBound, inst.ID, token, "")
+}
+
+// allocAndClaimShared 按 kind 分派 shared token 分配 + claim。
+// redis：db 号池；milvus：随机 collection 前缀。
+func (r *Reconciler) allocAndClaimShared(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
+	if kind == "milvus" {
+		return r.allocMilvusPrefix(ctx, appID, psID, kind, inst)
+	}
+	return r.allocRedisDB(ctx, appID, psID, kind, inst)
+}
+
+// allocRedisDB redis shared db 号分配：ParseDBRange + pickLowestFree + claimWithRetry（flush + 有界重试）。
+// 逐字=重构前 supplyShared 的新分配段（零回归）。
+func (r *Reconciler) allocRedisDB(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
+	lo, hi, ok := ParseDBRange(inst.Isolation)
+	if !ok {
+		return "", fmt.Errorf("shared 实例 isolation 缺 db_range")
+	}
+	allocated, _ := r.store.AllocatedTokens(ctx, inst.ID)
+	first, found := pickLowestFree(lo, hi, allocated)
+	if !found {
+		return "", fmt.Errorf("shared redis db 号耗尽（池 %d-%d）", lo, hi)
+	}
+	return r.claimWithRetry(ctx, appID, psID, kind, inst, lo, hi, first, allocated)
+}
+
+// allocMilvusPrefix milvus shared collection 前缀分配：生成随机唯一前缀 + 单次 claim。
+// 无 flush（无前缀级原语）、无有限池（前缀随机生成）；极罕见并发撞号（uq_svbind_inst_token 抛 23505）换号重生，有界 ≤4。
+func (r *Reconciler) allocMilvusPrefix(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
+	allocated, _ := r.store.AllocatedTokens(ctx, inst.ID)
+	taken := make(map[string]bool, len(allocated))
+	for _, t := range allocated {
+		taken[t] = true
+	}
+	for attempts := 0; attempts < 4; attempts++ {
+		token := genMilvusPrefix()
+		if taken[token] {
+			continue
+		}
+		err := r.store.ClaimSharedToken(ctx, appID, psID, kind, inst.ID, token, EnvKeyFor(kind))
+		if err == nil {
+			return token, nil
+		}
+		if !isUniqueViolation(err) {
+			return "", err
+		}
+		taken[token] = true
+	}
+	return "", fmt.Errorf("milvus 前缀分配重试用尽（并发撞号）")
 }
 
 // claimWithRetry flush 后原子 claim；撞唯一索引（并发抢同号）→ 刷新占用集换号重试，有界 ≤ 池大小。
@@ -168,8 +208,15 @@ func (r *Reconciler) claimWithRetry(ctx context.Context, appID, psID, kind strin
 	return "", fmt.Errorf("claim 重试用尽")
 }
 
-// writeSharedEnv 写 REDIS_ADDR + REDIS_DB（+ REDIS_PASSWORD 若鉴权），均 source=platform。
+// writeSharedEnv 写 shared env（按 kind 分派），均 source=platform。
+// redis：REDIS_ADDR + REDIS_DB（+ REDIS_PASSWORD 若鉴权）。
+// milvus：MILVUS_ADDR + MILVUS_COLLECTION_PREFIX（无 password，v1 无 auth；无 db token）。
 func (r *Reconciler) writeSharedEnv(ctx context.Context, appID string, inst *ServiceInstance, token string) {
+	if inst.Kind == "milvus" {
+		_ = r.env.UpsertEnv(ctx, appID, "MILVUS_ADDR", ConnStr(inst), false, "platform")
+		_ = r.env.UpsertEnv(ctx, appID, "MILVUS_COLLECTION_PREFIX", token, false, "platform")
+		return
+	}
 	kindUp := strings.ToUpper(inst.Kind) // redis→REDIS
 	_ = r.env.UpsertEnv(ctx, appID, kindUp+"_ADDR", ConnStr(inst), false, "platform")
 	_ = r.env.UpsertEnv(ctx, appID, kindUp+"_DB", token, false, "platform")

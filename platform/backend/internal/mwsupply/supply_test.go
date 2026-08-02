@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -614,5 +615,108 @@ func TestReconcile_cleanup_dedicatedMilvus(t *testing.T) {
 	// instance 行已删
 	if got, _ := NewStore(db).GetInstance(ctx, instID); got != nil {
 		t.Fatalf("Cleanup 后实例行应删，得 %+v", got)
+	}
+}
+
+// —— milvus shared 用例 ——
+
+// TestReconcile_sharedMilvus 两个 shared milvus app 分到不同前缀；MILVUS_ADDR + MILVUS_COLLECTION_PREFIX；flusher 不被调；无 password/db。
+func TestReconcile_sharedMilvus(t *testing.T) {
+	r, appStore, db, fl, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
+
+	mk := func(name string) string {
+		a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: name, RepoDir: "/x", InternalPort: 8080}
+		_ = appStore.Create(ctx, a)
+		_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+		return a.ID
+	}
+	a1 := mk("msh1")
+	a2 := mk("msh2")
+
+	pf1, _ := appStore.GetEnvValue(ctx, a1, "MILVUS_COLLECTION_PREFIX")
+	pf2, _ := appStore.GetEnvValue(ctx, a2, "MILVUS_COLLECTION_PREFIX")
+	if pf1 == "" || pf2 == "" || pf1 == pf2 {
+		t.Fatalf("两 app 前缀应不同且非空，得 %q / %q", pf1, pf2)
+	}
+	re := regexp.MustCompile(`^app[0-9a-f]{12}_$`)
+	if !re.MatchString(pf1) || !re.MatchString(pf2) {
+		t.Fatalf("前缀应匹配 ^app[0-9a-f]{12}_$，得 %q / %q", pf1, pf2)
+	}
+	for _, aid := range []string{a1, a2} {
+		ma, _ := appStore.GetEnvValue(ctx, aid, "MILVUS_ADDR")
+		if ma != "10.10.0.28:19530" {
+			t.Fatalf("MILVUS_ADDR 应 10.10.0.28:19530，得 %q", ma)
+		}
+		src, _ := appStore.GetEnvSource(ctx, aid, "MILVUS_COLLECTION_PREFIX")
+		if src != "platform" {
+			t.Fatalf("MILVUS_COLLECTION_PREFIX source 应 platform，得 %q", src)
+		}
+		if mp, _ := appStore.GetEnvValue(ctx, aid, "MILVUS_PASSWORD"); mp != "" {
+			t.Fatalf("milvus v1 无 auth，不应写 MILVUS_PASSWORD，得 %q", mp)
+		}
+		if mdb, _ := appStore.GetEnvValue(ctx, aid, "MILVUS_DB"); mdb != "" {
+			t.Fatalf("milvus shared 不应注入 MILVUS_DB，得 %q", mdb)
+		}
+	}
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a1)
+	if len(binds) != 1 || binds[0].Status != StatusBound || binds[0].IsolationToken != pf1 ||
+		binds[0].Strategy != ModeShared || binds[0].ServiceInstanceID != "svinst-milvus-shared-28" {
+		t.Fatalf("a1 binding 应 shared/bound token=%s inst=svinst-milvus-shared-28，得 %+v", pf1, binds)
+	}
+	if fl.calls != 0 {
+		t.Fatalf("milvus shared 不应调 flusher，得 %d", fl.calls)
+	}
+}
+
+// TestReconcile_sharedMilvus_idempotent 同 app 重部署：前缀不变、不重生、flusher 不被调、仍 bound。
+func TestReconcile_sharedMilvus_idempotent(t *testing.T) {
+	r, appStore, db, fl, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mshidem", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	pf1, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_COLLECTION_PREFIX")
+	fl.calls = 0
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	pf2, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_COLLECTION_PREFIX")
+	if pf1 != pf2 {
+		t.Fatalf("重部署前缀应不变，%q → %q", pf1, pf2)
+	}
+	if fl.calls != 0 {
+		t.Fatalf("重部署复用不应调 flusher，得 %d 次", fl.calls)
+	}
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusBound {
+		t.Fatalf("重部署应仍 bound，得 %+v", binds)
+	}
+}
+
+// TestReconcile_sharedMilvus_noInstance 无 shared milvus 实例 → failed。
+func TestReconcile_sharedMilvus_noInstance(t *testing.T) {
+	r, appStore, db, _, _ := newReconcilerTest(t)
+	// 删掉 shared milvus 种子（ensureSeed 插的）；t.Cleanup 幂等补回，免污染后续依赖迁移种子的 store 测试
+	if _, err := db.Exec(`DELETE FROM appdeploy_service_instance WHERE id='svinst-milvus-shared-28'`); err != nil {
+		t.Fatalf("删种子: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`INSERT INTO appdeploy_service_instance
+		  (id, project_space_id, kind, name, supply_mode, host, port, isolation, status) VALUES
+		  ('svinst-milvus-shared-28',NULL,'milvus','yxt-milvus-shared','shared','10.10.0.28',19530,'{"mode":"prefix"}'::jsonb,'active')
+		  ON CONFLICT (id) DO NOTHING`)
+	})
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mshnone", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
+		t.Fatalf("无 shared milvus 实例应 failed + 无实例，得 %+v", binds)
+	}
+	if ma, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR"); ma != "" {
+		t.Fatalf("failed 不应写 MILVUS_ADDR，得 %q", ma)
 	}
 }
