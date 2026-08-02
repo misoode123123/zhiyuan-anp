@@ -363,8 +363,9 @@ func TestReconcile_dedicated_runFail(t *testing.T) {
 	}
 }
 
-// TestReconcile_dedicated_readyFail 就绪失败 → failed、清半成品容器（RmForce 被调）。
-func TestReconcile_dedicated_readyFail(t *testing.T) {
+// TestReconcile_dedicated_readyFail_bestEffort 就绪检测失败(best-effort) → 仍 bound、不 RmForce、env 已写。
+// .28 backend(deploy_default) 拨不到 host 发布端口会超时，但 app(默认 bridge) 能到 → ping 失败不阻塞。
+func TestReconcile_dedicated_readyFail_bestEffort(t *testing.T) {
 	r, appStore, db, fl, dk := newReconcilerTest(t)
 	fl.pingErr = errStr("redis 不可达")
 	ctx := context.Background()
@@ -372,12 +373,16 @@ func TestReconcile_dedicated_readyFail(t *testing.T) {
 	_ = appStore.Create(ctx, a)
 	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
 	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	// best-effort：ping 失败仍 bound、容器保留（不 RmForce）、env 已写
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
-	if len(binds) != 1 || binds[0].Status != StatusFailed {
-		t.Fatalf("就绪失败应 failed，得 %+v", binds)
+	if len(binds) != 1 || binds[0].Status != StatusBound {
+		t.Fatalf("ping best-effort 失败应仍 bound，得 %+v", binds)
 	}
-	if len(dk.rmCalls) == 0 {
-		t.Fatal("就绪失败应 RmForce 清半成品容器")
+	if len(dk.rmCalls) != 0 {
+		t.Fatalf("best-effort 不应 RmForce 容器，得 %v", dk.rmCalls)
+	}
+	if ra, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR"); ra == "" {
+		t.Fatal("best-effort 应已写 REDIS_ADDR")
 	}
 }
 

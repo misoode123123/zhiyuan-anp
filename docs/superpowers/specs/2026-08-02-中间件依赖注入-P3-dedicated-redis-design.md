@@ -385,15 +385,15 @@ osDocker 实现调 `docker` CLI（同 pgsupply `runDocker` helper）：
 
 ## 11. 风险与取舍
 
-| 风险                                                            | 对策                                                                                                                                                 |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| .28 无 `redis:7-alpine` 镜像缓存（类 P2 golang 坑）             | e2e step 1 先验；缺则 `docker pull`（需 .28 联网）或预载镜像                                                                                         |
-| .28 backend 拨不到 dedicated 容器 host:port（同 P2 flusher 坑） | §7.3：dedicated 把不可达变成供给 failed（不泄漏半成品）；e2e step 1 验证。备选：dedicated 容器加入 `deploy_default` 网容器名直连（本期不做，留后续） |
-| 每 app 一容器资源成本（内存/CPU）                               | 端口池即配额（100 槽）；shared 是降本选项；dedicated 是强隔离默认                                                                                    |
-| 同 app 并发部署起两容器（罕见 race）                            | binding `(app_id,service_kind)` 唯一兜底绑定行；两 goroutine 都过「复用判定」查无则各起一容器，孤立容器为轻微泄漏（记风险，不做 partial unique）     |
-| strategy 由 shared 切 dedicated 残留 `REDIS_DB` env 行          | 边缘场景（strategy 一般不变）；`writeDedicatedEnv` 可选清 `REDIS_DB`（YAGNI 记债）                                                                   |
-| `auth_ref` 明文（I1 债）                                        | 沿用 P1/P2 模式；阶段 3 接 vault/KMS（同 pgsupply）                                                                                                  |
-| `container_name` 列迁移对已有种子行影响                         | `ADD COLUMN ... TEXT` nullable，既有行 NULL，无影响                                                                                                  |
+| 风险                                                            | 对策                                                                                                                                                                                                                    |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| .28 无 `redis:7-alpine` 镜像缓存（类 P2 golang 坑）             | e2e step 1 先验；缺则 `docker pull`（需 .28 联网）或预载镜像                                                                                                                                                            |
+| .28 backend 拨不到 dedicated 容器 host:port（同 P2 flusher 坑） | **e2e 实测确认（§14）**：backend(deploy_default) 拨 host 发布端口超时，但 app(默认 bridge) 能到（PONG）。**对策：Ping 降级 best-effort**（失败记 Warn 继续 bound，容器保留、app 经 host LAN IP 用），同 P2 flush 范式。 |
+| 每 app 一容器资源成本（内存/CPU）                               | 端口池即配额（100 槽）；shared 是降本选项；dedicated 是强隔离默认                                                                                                                                                       |
+| 同 app 并发部署起两容器（罕见 race）                            | binding `(app_id,service_kind)` 唯一兜底绑定行；两 goroutine 都过「复用判定」查无则各起一容器，孤立容器为轻微泄漏（记风险，不做 partial unique）                                                                        |
+| strategy 由 shared 切 dedicated 残留 `REDIS_DB` env 行          | 边缘场景（strategy 一般不变）；`writeDedicatedEnv` 可选清 `REDIS_DB`（YAGNI 记债）                                                                                                                                      |
+| `auth_ref` 明文（I1 债）                                        | 沿用 P1/P2 模式；阶段 3 接 vault/KMS（同 pgsupply）                                                                                                                                                                     |
+| `container_name` 列迁移对已有种子行影响                         | `ADD COLUMN ... TEXT` nullable，既有行 NULL，无影响                                                                                                                                                                     |
 
 ---
 
@@ -421,4 +421,25 @@ osDocker 实现调 `docker` CLI（同 pgsupply `runDocker` helper）：
 
 ---
 
-_本设计把 mwsupply 范式从 bind_existing/shared 推进到 dedicated（每 app 专属 redis 容器）：迁移加 container_name 列 + supplyDedicated（端口分配→起容器→就绪→登记→双 env）+ MWReconciler.Cleanup（docker rm + 删 instance 行）+ Delete handler 接入。完全对称 pgsupply（InstanceManager/Provisioner/Cleanup），且 dedicated 无 flusher 天然避开 P2 的 .28 backend↔redis 不可达坑。milvus dedicated 留后续。_
+## 14. e2e 修订（2026-08-02）：Ping 降级 best-effort
+
+**实测**（部署前只读预检，起临时 redis `-p 9699:6379`）：
+
+- `deploy_backend_1`（`deploy_default` 网）→ `10.10.0.28:9699`：**拨不通**（wget error getting response）。印证 cross-network 教训（bridge 无 hairpin，容器→host LAN IP 不通）。
+- 默认 bridge 容器（模拟 app）→ `10.10.0.28:9699`：**PONG** ✓（app 能用）。
+
+**含义**：原设计「Ping 失败 → binding=failed」会让 dedicated 供给在 .28 上直接 failed——但 app 本能用到（PONG），是 P2 flush 同一个坑的形状（backend 拨不到、app 拨得到）。
+
+**决策（用户拍板，同 P2 flush 范式）**：Ping **降级 best-effort**。
+
+- `supplyDedicated` 就绪检测失败 → 记 Warn（经 `SetLogger` 注入的 zap）后**继续 claim→bound**，**不 RmForce**（容器保留，app 经 host LAN IP:port 使用）。
+- 短超时 `readyPingTimeout=5s`（不可达时快速放行，避免干等；可达时秒级成功）。
+- 依据：dedicated 是全新空容器、redis 秒级起；app 部署+连上的时序里 redis 早已就绪。Ping 失去的是「redis 启动失败」边缘检测（罕见，且 `RunRedisContainer` 已兜底 `docker run` 失败），换来 .28 可用性。
+
+**单测**：`TestReconcile_dedicated_readyFail_bestEffort`——ping 返错 → binding 仍 `bound`、不 RmForce、`REDIS_ADDR` 已写。
+
+**备选（不做）**：dedicated 容器 `--network deploy_default` + publish，backend 用容器名 ping——但 Ping 地址(容器名)与 `REDIS_ADDR`(host IP) 模型不一致，改动更大，留后续。
+
+---
+
+_本设计把 mwsupply 范式从 bind_existing/shared 推进到 dedicated（每 app 专属 redis 容器）：迁移加 container_name 列 + supplyDedicated（端口分配→起容器→就绪(best-effort)→登记→双 env）+ MWReconciler.Cleanup（docker rm + 先删 binding 解 FK 再删 instance）+ Delete handler 接入。完全对称 pgsupply，且 Ping best-effort（§14，e2e 驱动）让 dedicated 在 .28 真正可用。milvus dedicated 留后续。_

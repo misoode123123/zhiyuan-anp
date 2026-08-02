@@ -203,13 +203,18 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 		mkBind(StatusFailed, "", "", "起 redis 容器: "+err.Error())
 		return
 	}
-	// 就绪检测（轮询 AUTH+PING，超时 readyTimeout）；失败清半成品容器。
-	readyCtx, cancel := context.WithTimeout(ctx, readyTimeout)
+	// 就绪检测（best-effort）：轮询 AUTH+PING，超时 readyPingTimeout。
+	// 失败不阻塞——dedicated 是全新空容器、redis 秒级起；.28 上 backend(deploy_default 网)
+	// 拨不到 host 发布端口会超时（同 P2 flush 的 cross-network 形状），但 app(默认 bridge) 能到。
+	// 故 ping 失败仅记 Warn，继续 claim→bound（容器保留，app 经 host LAN IP:port 使用）。
+	readyCtx, cancel := context.WithTimeout(ctx, readyPingTimeout)
 	defer cancel()
 	if err := r.ready.Ping(readyCtx, r.host, port, pwd); err != nil {
-		_ = r.docker.RmForce(ctx, name)
-		mkBind(StatusFailed, "", "", "redis 未就绪: "+err.Error())
-		return
+		if r.log != nil {
+			r.log.Warn("dedicated redis 就绪检测失败 (best-effort, proceed to bound)",
+				zap.String("app", appID), zap.String("kind", dep.Kind),
+				zap.Int("port", port), zap.Error(err))
+		}
 	}
 	inst := &ServiceInstance{
 		ID:             "svinst-redis-ded-" + short,

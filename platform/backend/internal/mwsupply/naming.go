@@ -12,7 +12,8 @@ const (
 	mwPortMax         = 9699              // 上界（100 槽；池满即配额超限 failed）
 	redisImage        = "redis:7-alpine"
 	redisInternalPort = 6379
-	readyTimeout      = 15 * time.Second // 就绪检测轮询上限
+	readyTimeout      = 15 * time.Second // 就绪检测轮询上限（严格场景）
+	readyPingTimeout  = 5 * time.Second  // dedicated best-effort 就绪检测超时（.28 backend 拨不到时快速放行）
 )
 
 // genShortID 生成 12 位 hex 短 ID（crypto/rand）。
