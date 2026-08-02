@@ -76,9 +76,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 // 节点过滤辅助（Task 11）：按应用类型 + 部署环境过滤可选节点。
 // - node_local 始终可选（.28 本地，env=test/os_type=linux，双环境通用）。
-// - web/service(docker 形态) 排除 os_type=windows 节点——Windows 节点无 Docker 守护进程，不可容器部署。
+// - web/service/headless(docker 形态) 排除 os_type=windows 节点——Windows 节点无 Docker 守护进程，不可容器部署。
 // - env 过滤：test 部署只匹配 env=test 节点，prod 只匹配 env=prod；node_local 豁免。
-const isDockerKind = (kind: string) => kind === "web" || kind === "service" || !kind;
+const isDockerKind = (kind: string) =>
+  kind === "web" || kind === "service" || kind === "headless" || !kind;
 
 // 判断节点是否可部署到目标环境（node_local 豁免；否则 env 必须匹配）。
 function nodeMatchesEnv(n: { id: string; env?: string } | undefined, targetEnv: string): boolean {
@@ -108,6 +109,9 @@ function DevWizard({ app }: { app: App }) {
   const s = devStep({ image: app.image, instances: app.instances });
   const testIns = app.instances?.find((i) => i.env === "test");
   const prodIns = app.instances?.find((i) => i.env === "prod");
+  // 健康徽标只算一次（避免每个 span 调两次 healthBadge）。
+  const testHb = testIns ? healthBadge(testIns.status) : null;
+  const prodHb = prodIns ? healthBadge(prodIns.status) : null;
   const step = (key: "code" | "test" | "prod", label: string) => {
     const st = s[key];
     const isCur = s.current === key;
@@ -133,13 +137,11 @@ function DevWizard({ app }: { app: App }) {
         <span>
           仓库 <code>{app.repo_dir}</code>
         </span>
-        {testIns && (
+        {testIns && testHb && (
           <span>
             test{" "}
             {app.app_kind === "headless" ? (
-              <span className={healthBadge(testIns.status).cls}>
-                {healthBadge(testIns.status).text}
-              </span>
+              <span className={testHb.cls}>{testHb.text}</span>
             ) : (
               <span className={testIns.status === "running" ? "text-success" : ""}>
                 :{testIns.host_port} {testIns.status}
@@ -147,13 +149,11 @@ function DevWizard({ app }: { app: App }) {
             )}
           </span>
         )}
-        {prodIns && (
+        {prodIns && prodHb && (
           <span>
             prod{" "}
             {app.app_kind === "headless" ? (
-              <span className={healthBadge(prodIns.status).cls}>
-                {healthBadge(prodIns.status).text}
-              </span>
+              <span className={prodHb.cls}>{prodHb.text}</span>
             ) : (
               <span className={prodIns.status === "running" ? "text-success" : ""}>
                 :{prodIns.host_port} {prodIns.status}
@@ -594,7 +594,7 @@ export default function ApplicationsPage() {
         return;
       }
       if (sel && app && isDockerKind(app.app_kind) && sel.os_type === "windows") {
-        alert("Windows 节点不可部署 web/service（docker）应用，请选 Linux 节点。");
+        alert("Windows 节点不可部署 docker 形态(web/service/headless)应用，请选 Linux 节点。");
         return;
       }
     } else {
@@ -747,7 +747,7 @@ export default function ApplicationsPage() {
               className="rounded-md border border-border px-2 py-1 text-sm"
               title={
                 isDockerKind(appKind)
-                  ? "新增应用的默认部署节点（web/service 不显示 Windows 节点）"
+                  ? "新增应用的默认部署节点（docker 形态不显示 Windows 节点）"
                   : "新增应用的默认部署节点"
               }
             >
@@ -756,7 +756,7 @@ export default function ApplicationsPage() {
               </option>
               {nodes
                 .filter((n) => n.id !== "node_local")
-                // web/service(docker) 排除 os_type=windows：Windows 节点不可容器部署。
+                // web/service/headless(docker) 排除 os_type=windows：Windows 节点不可容器部署。
                 .filter((n) => !(isDockerKind(appKind) && n.os_type === "windows"))
                 .map((n) => (
                   <option key={n.id} value={n.id}>
@@ -1225,10 +1225,13 @@ export default function ApplicationsPage() {
                     </>
                   ) : (
                     <>
-                      {/* 容器部署按钮（构建部署/上线 prod）仅 web/service 形态显示：
+                      {/* 容器部署按钮（构建部署/上线 prod）仅 web/service/headless 形态显示：
                           desktop/mobile/cli 走 ArtifactSection 的「构建产物」流程，
                           无容器可部署，点了会 docker build 失败（I-4）。 */}
-                      {(a.app_kind === "web" || a.app_kind === "service" || !a.app_kind) && (
+                      {(a.app_kind === "web" ||
+                        a.app_kind === "service" ||
+                        a.app_kind === "headless" ||
+                        !a.app_kind) && (
                         <>
                           <button
                             onClick={() => act(a.id, "deploy", "test", selectedNode)}
