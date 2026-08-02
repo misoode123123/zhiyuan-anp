@@ -139,3 +139,44 @@ func TestRedisFlush_ServerError(t *testing.T) {
 		t.Fatalf("应收含 boom 的错，得 %v", err)
 	}
 }
+
+// TestRedisPing_ok 拨假 redis 发 PING 读 +OK。
+func TestRedisPing_ok(t *testing.T) {
+	addr, _, closer := startFakeRedis(t) // 假 redis 每条命令回 +OK（含 PING）
+	defer closer()
+	host, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+	if err := NewRedisFlusher().Ping(context.Background(), host, port, ""); err != nil {
+		t.Fatalf("Ping 应成功（假 redis 回 +OK），得 %v", err)
+	}
+}
+
+// TestRedisPing_withAuth 有密码时先 AUTH 再 PING。
+func TestRedisPing_withAuth(t *testing.T) {
+	addr, got, closer := startFakeRedis(t)
+	defer closer()
+	host, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+	if err := NewRedisFlusher().Ping(context.Background(), host, port, "secret"); err != nil {
+		t.Fatalf("Ping(有密码) 应成功，得 %v", err)
+	}
+	found := false
+	for _, c := range *got {
+		if c == "AUTH secret" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("应有 AUTH secret，得 %v", *got)
+	}
+}
+
+// TestRedisPing_unreachable 不可达 → Ping 返错（轮询超时）。
+func TestRedisPing_unreachable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err := NewRedisFlusher().Ping(ctx, "127.0.0.1", 1, "") // port 1 不可达
+	if err == nil {
+		t.Fatal("不可达应收错")
+	}
+}
