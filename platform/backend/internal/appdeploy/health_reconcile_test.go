@@ -110,3 +110,32 @@ func TestCheckOne_InspectFail_NoFlip(t *testing.T) {
 		t.Fatalf("inspect 失败应保留 running 不告警,得 status=%s alerts=%d", ins.Status, len(al.unhealthy))
 	}
 }
+
+// 无翻转但基线推进:冷启动观测到历史重启(stored=0 观测 9),status 不变不告警,但 restart_count 0→9 回写。
+// 回归保护:若有人删掉 checkOne 的 else-if 分支,aggregateHealth 纯函数测试仍通过,但存储基线永不前进 →
+// 冷启动分支每周期重入 → 真实 crash-loop 永远检测不到。此测试强制 UpdateRestartCount 在 checkOne 层执行。
+func TestCheckOne_NoFlip_WritesBaseline(t *testing.T) {
+	store := newTestStore(t)
+	ps := "ps_nf"
+	a := &Application{ProjectSpaceID: ps, Name: "bot4", AppKind: AppKindHeadless, InternalPort: 0}
+	store.Create(context.Background(), a)
+	store.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status, container_name, restart_count)
+		 VALUES ('ins_nf',$1,$2,'running','bot-ctr',0)`, a.ID, EnvTest)
+
+	al := &fakeAlerter{}
+	r := &HealthReconciler{store: store, deployer: &fakeInspector{h: ContainerHealth{Running: true, RestartCount: 9}}, alerter: al, interval: time.Second, burst: 3}
+
+	// 冷启动基线:stored=0 观测 9 → status=running 不翻转,不告警,但基线 0→9 回写
+	r.checkOne(context.Background(), headlessInstance{AppID: a.ID, Env: EnvTest, ContainerName: "bot-ctr", Status: "running", RestartCount: 0, ProjectSpaceID: ps, Name: "bot4"})
+	ins, _ := store.GetInstance(context.Background(), a.ID, EnvTest)
+	if ins.Status != "running" {
+		t.Fatalf("无翻转应保留 running,得 %s", ins.Status)
+	}
+	if len(al.unhealthy) != 0 || len(al.recovered) != 0 {
+		t.Fatalf("无翻转不应告警,得 unhealthy=%d recovered=%d", len(al.unhealthy), len(al.recovered))
+	}
+	if ins.RestartCount != 9 {
+		t.Fatalf("基线应回写为 9(证明 UpdateRestartCount 执行),得 %d", ins.RestartCount)
+	}
+}
