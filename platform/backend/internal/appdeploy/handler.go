@@ -858,11 +858,11 @@ type createBody struct {
 	ExternalURL string `json:"external_url"` // external 必填：外部应用访问地址 http(s)://host[:port][/path]
 }
 
-// validAppKind 应用形态合法性校验（web/desktop/mobile/cli/service）。
-// 纯函数，供 Create 校验 + 测试断言。
+// validAppKind 应用形态合法性校验(web/desktop/mobile/cli/service/headless)。
+// 纯函数，供 Create 校验 + 测试断言。空=默认 web，合法。
 func validAppKind(k string) bool {
 	switch k {
-	case AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService:
+	case "", AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService, AppKindHeadless:
 		return true
 	}
 	return false
@@ -1646,9 +1646,9 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	ins.LastError = ""
 	ins.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateInstance(ctx, ins)
-	// 写 appgw 路由表：部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
-	// 失败不阻塞部署（应用仍可裸端口访问）；routeWriter nil = 未启用 appgw。
-	if h.routeWriter != nil {
+	// 写 appgw 路由表:部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
+	// headless 无端口/无 URL,不写 HTTP 路由。失败不阻塞部署;routeWriter nil = 未启用 appgw。
+	if h.routeWriter != nil && a.AppKind != AppKindHeadless {
 		if err := h.routeWriter.UpsertRoute(ctx, a.ID, a.ProjectSpaceID, env, h.deployer.host, ins.HostPort); err != nil {
 			// 路由表写入失败仅记录到 instance.LastError，不影响部署成功态；另记 WARN 便于排查
 			ins.LastError = "部署成功但 appgw 路由表写入失败: " + err.Error()
@@ -1969,8 +1969,17 @@ func (h *Handler) Stats(c *gin.Context) {
 	stats, _ := h.deployer.Stats(c.Request.Context(), ins.ContainerName)
 	httpx.OK(c, gin.H{
 		"env": env, "url": ins.URL, "deployed": true,
-		"stats": stats, "health": probeHealth(ins.URL),
+		"stats": stats, "health": appDeployHealth(a, ins),
 	})
+}
+
+// appDeployHealth 部署响应的健康字段:headless 用实例 status(无 URL 可探);其余按 URL 探活。
+// headless 无端口，ins.URL 为空，probeHealth 只会回 unknown；改用 status(running/degraded/failed) 更准。
+func appDeployHealth(a *Application, ins *AppInstance) string {
+	if a.AppKind == AppKindHeadless {
+		return ins.Status // running/degraded/failed(由 HealthReconciler 维护;刚部署=running)
+	}
+	return probeHealth(ins.URL)
 }
 
 // probeHealth 探测 URL 健康状态：up / down / error(code) / unknown。

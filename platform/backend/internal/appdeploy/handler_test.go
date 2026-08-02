@@ -25,6 +25,19 @@ func TestIsValidEnv(t *testing.T) {
 	}
 }
 
+// TestValidAppKind_IncludesHeadless 应用形态合法性：headless 合法 + 空(默认 web)合法 + 非法拒绝。
+func TestValidAppKind_IncludesHeadless(t *testing.T) {
+	if !validAppKind(AppKindHeadless) {
+		t.Fatal("validAppKind 应接受 headless")
+	}
+	if !validAppKind("") { // 空默认 web，合法
+		t.Fatal("validAppKind 应接受空(默认 web)")
+	}
+	if validAppKind("bogus") {
+		t.Fatal("validAppKind 应拒绝非法 kind")
+	}
+}
+
 // TestTail 截断尾部 n 字符 + 头尾空白清理。
 // 注意：tail 按【字节】切片（非 rune），多字节字符可能切碎——此处校验该行为。
 func TestTail(t *testing.T) {

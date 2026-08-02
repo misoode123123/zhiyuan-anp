@@ -1468,12 +1468,13 @@ func TestHandler_BuildArtifacts_ExternalRejected(t *testing.T) {
 
 // TestValidAppKind 应用形态合法性校验纯函数。
 func TestValidAppKind(t *testing.T) {
-	for _, k := range []string{AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService} {
+	// 空串合法(默认 web)；headless 也合法。详见 TestValidAppKind_IncludesHeadless。
+	for _, k := range []string{"", AppKindWeb, AppKindDesktop, AppKindMobile, AppKindCLI, AppKindService, AppKindHeadless} {
 		if !validAppKind(k) {
 			t.Fatalf("合法 app_kind %q 应 true", k)
 		}
 	}
-	for _, bad := range []string{"", "game", "WEB", "desktop ", "cli/app"} {
+	for _, bad := range []string{"game", "WEB", "desktop ", "cli/app"} {
 		if validAppKind(bad) {
 			t.Fatalf("非法 app_kind %q 应 false", bad)
 		}
