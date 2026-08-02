@@ -8,7 +8,8 @@ import (
 )
 
 const instCols = `id, project_space_id, kind, name, supply_mode, host, port,
- COALESCE(auth_ref,'') AS auth_ref, COALESCE(isolation::text,'') AS isolation, status, created_at, updated_at`
+ COALESCE(auth_ref,'') AS auth_ref, COALESCE(isolation::text,'') AS isolation,
+ COALESCE(container_name,'') AS container_name, status, created_at, updated_at`
 
 const bindCols = `id, app_id, project_space_id, service_kind, strategy,
  COALESCE(service_instance_id,'') AS service_instance_id, COALESCE(isolation_token,'') AS isolation_token,

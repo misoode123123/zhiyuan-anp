@@ -34,6 +34,7 @@ type ServiceInstance struct {
 	Port           int      `json:"port" db:"port"`
 	AuthRef        string   `json:"auth_ref,omitempty" db:"auth_ref"`       // 密码/token 引用（明文，同 pgsupply I1 债）
 	Isolation      string   `json:"isolation,omitempty" db:"isolation"`     // raw jsonb text（shared 用）
+	ContainerName  string   `json:"container_name,omitempty" db:"container_name"` // dedicated 容器名（Cleanup docker rm 用）
 	Status         string   `json:"status" db:"status"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`

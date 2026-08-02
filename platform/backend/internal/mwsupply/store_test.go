@@ -178,6 +178,29 @@ func TestStore_shared_recycle(t *testing.T) {
 	}
 }
 
+// TestMigration_000030_containerNameColumn 迁移后：service_instance 有 container_name 列；
+// 既有 bind_existing/shared 种子行该列为 NULL → LookupBindExisting 取回 ContainerName==""（instCols 回归）。
+func TestMigration_000030_containerNameColumn(t *testing.T) {
+	s, db := newTestStore(t)
+	// 列存在
+	var hasCol bool
+	if err := db.Get(&hasCol, `SELECT EXISTS(SELECT 1 FROM information_schema.columns
+		WHERE table_name='appdeploy_service_instance' AND column_name='container_name')`); err != nil {
+		t.Fatalf("查列: %v", err)
+	}
+	if !hasCol {
+		t.Fatal("container_name 列应存在（迁移 000030）")
+	}
+	// instCols 含 container_name：LookupBindExisting 取回的种子行 ContainerName 为空（NULL→COALESCE '')
+	got, err := s.LookupBindExisting(context.Background(), "ps_1", "redis")
+	if err != nil || got == nil {
+		t.Fatalf("应命中 redis 种子，err=%v got=%+v", err, got)
+	}
+	if got.ContainerName != "" {
+		t.Fatalf("bind_existing 种子 ContainerName 应空，得 %q", got.ContainerName)
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {
