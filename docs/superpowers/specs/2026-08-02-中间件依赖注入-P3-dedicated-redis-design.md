@@ -442,4 +442,20 @@ osDocker 实现调 `docker` CLI（同 pgsupply `runDocker` helper）：
 
 ---
 
-_本设计把 mwsupply 范式从 bind_existing/shared 推进到 dedicated（每 app 专属 redis 容器）：迁移加 container_name 列 + supplyDedicated（端口分配→起容器→就绪(best-effort)→登记→双 env）+ MWReconciler.Cleanup（docker rm + 先删 binding 解 FK 再删 instance）+ Delete handler 接入。完全对称 pgsupply，且 Ping best-effort（§14，e2e 驱动）让 dedicated 在 .28 真正可用。milvus dedicated 留后续。_
+## 15. e2e 验证结论（.28，2026-08-02，commit 984f685）
+
+P3 dedicated redis 已 `.28` live 验证通过（python:3-alpine app，`.anp/deps.yaml` strategy:dedicated）：
+
+- **供给**：deploy 后 `docker ps` 见 `mwredis-<short>` 容器（`0.0.0.0:9600->6379`）；`appdeploy_env` 两行 `REDIS_ADDR=10.10.0.28:9600`+`REDIS_PASSWORD`（均 source=platform，**无 REDIS_DB**）；`appdeploy_service_instance` 一行 `supply_mode=dedicated, container_name=mwredis-<short>, port=9600, status=active`；binding `strategy=dedicated, status=bound`。
+- **app 真能用**：app 容器内 SET `anp:e2e`=「dedicated-ok」→ GET 返 RESP bulk `$12`（值长度 12 = 写入值，`$-1` 才是 nil）→ redis 存取 round-trip 成功。
+- **Ping 实际成功（关键修正 §14 前提）**：`nc -z deploy_backend_1(deploy_default) → 10.10.0.28:9600` = **TCP_OK**；backend log 无 `proceed to bound` warn。**dedicated 容器起在默认 bridge，backend 能拨到其 host 发布端口**——cross-network 坑（§14 担心的）专指 yxt-redis（`yxt-infra_default`），对默认 bridge 的 dedicated 容器不成立。故 best-effort 在 .28 **未被触发**，留作其它不可达拓扑的安全网。
+- **回收**：DELETE app → `mwredis-<short>` 容器 `docker rm` 消失 + `appdeploy_service_instance`/`binding` 行清 0（Cleanup 先删 binding 解 FK 再删 instance，实证正确）。
+- **幂等/隔离/平台保护**：单测全覆盖（端口池单增隔离、重部署复用不重启、source=platform 409）。
+
+**⚠️ 既有发现（非 P3 引入，记后续）**：`appdeploy_env.app_id` **无 FK 到 appdeploy_application**（查询空）→ 删 app 后 env 行变孤儿（残留含 `DATABASE_URL` = pgsupply 的，证明全平台既有）。修法（后续）：清孤儿 + 迁移加 `FOREIGN KEY (app_id) REFERENCES appdeploy_application(id) ON DELETE CASCADE`。P3 的 dedicated 资源（容器/instance/binding）回收正确，env 孤儿是平台级既有缺口。
+
+e2e 脚本：`/root/e2e-p3.sh`，fixture 宿主 `/opt/anp/data/p3ded1`（=容器 `/data/p3ded1`）。
+
+---
+
+_本设计把 mwsupply 范式从 bind_existing/shared 推进到 dedicated（每 app 专属 redis 容器）：迁移加 container_name 列 + supplyDedicated（端口分配→起容器→就绪→登记→双 env）+ MWReconciler.Cleanup（docker rm + 先删 binding 解 FK 再删 instance）+ Delete handler 接入。完全对称 pgsupply。e2e 证实 .28 上 Ping 实际成功（dedicated 在默认 bridge，backend 可达），best-effort 作安全网；app 真能 SET/GET dedicated redis。milvus dedicated / env-CASCADE 既有缺口留后续。_
