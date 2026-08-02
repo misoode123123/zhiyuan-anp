@@ -429,3 +429,21 @@ func milvusNetName(base string) string   { return base + "-net" }
 ---
 
 _本设计把 mwsupply 的 dedicated 从 redis 推进到 milvus：`supplyDedicated` 重构为 kind 分派骨架（redis 路径逐字保留），milvus 起专属网络 + milvus/etcd/minio 三容器（1:1 复刻 .28 yxt-milvus 配方，镜像全缓存），alpine 探针长超时就绪（绕过 cross-network 坑 + best-effort 降级），Cleanup 按 kind rm 三容器+网络。零迁移、零 main.go、零 handler 改动（P3 已铺好）。milvus shared / 鉴权 / 数据卷 / UI 勾选留后续。审核通过后开 plan → 实现。_
+
+---
+
+## 15. e2e 验证结论（.28，2026-08-02，commit 03c1ab1）
+
+P4 dedicated milvus 已 `.28` live 验证通过（python:3-alpine app，`.anp/deps.yaml` `strategy:dedicated`）：
+
+- **供给**：deploy 后 `docker ps` 见 `mwmilvus-<short>` + `-etcd` + `-minio` 三容器（仅 milvus `0.0.0.0:9700->19530`，sidecar 不 publish）；`docker network ls` 见 `<base>-net`；`appdeploy_env` 一行 `MILVUS_ADDR=10.10.0.28:9700`（source=platform，**无 MILVUS_PASSWORD / 无 MILVUS_DB**——仅此一个 MILVUS% key，证 milvus 分支）；`appdeploy_service_instance` 一行 `kind=milvus, supply_mode=dedicated, port=9700, container_name=mwmilvus-<short>, status=active`；binding `strategy=dedicated, status=bound`。
+- **app→milvus 可达**：app 容器内 `nc -z 10.10.0.28 9700` = **APP_TO_MILVUS_TCP_OK**；app 自身 `/` 报 `MILVUS_ADDR=10.10.0.28:9700` + `TCP_CHECK=OK`（app 容器走 host LAN IP:publish 端口达 milvus，同 redis dedicated P3 范式）。
+- **就绪探针实测**：手动起一套临时栈（复刻 `RunMilvusStack` 命令），alpine 探针 `http://milvus:9091/healthz` **~10s 返 OK**（milvus v2.6.15 启动比预估 30-90s 快；120s 超时是安全冗余，best-effort 未触发）。探针经 docker socket 起临时容器加入 `<base>-net`，**不受 .28 cross-network 坑影响**。
+- **回收**：DELETE app → `mwmilvus-<short>` + `-etcd` + `-minio` 三容器 `docker rm` 消失 + `<base>-net` 网络删除 + `appdeploy_service_instance`/`binding`/`env` 行清 0 + 9700 端口释放（Cleanup 先 docker rm 三容器+网络，再删 binding 解 FK，再删 instance，实证正确）。
+- **镜像全缓存**：`milvusdb/milvus:v2.6.15` / `quay.io/coreos/etcd:v3.5.16` / `minio:v20.2.5-2024.7.4` / `alpine:3.19` 均 .28 本地已存（消除 P2/P3 慢拉镜像风险）。
+
+**⚠️ 既有发现（非 P4 引入，记后续）**：pymilvus 向量 CRUD（create collection/insert/search）在 .28 被 **numpy/CPU 不匹配**阻断——pip 装的 numpy 编译为 X86_V2 baseline，而 .28 CPU 老（pre-X86_V2）不支持，import 即崩（`NumPy was built with baseline optimizations: X86_V2 but your machine doesn't support`）。这是 **app 端可移植性问题**（pymilvus 依赖 numpy），非 P4 供给问题：milvus 服务本身健康（探针 OK）、可达（TCP_OK）、供给/注入/回收全对。对策（后续/app 侧）：pin `numpy<2` 或用兼容老 CPU 的 wheel，或用 milvus REST 客户端免 numpy。
+
+**隔离 / 重部署复用**：单测全覆盖（端口池单增隔离、重部署不重启栈保数据）；e2e 单 app 实证供给机制，两 app 隔离 / 重部署复用逻辑等价（`allocPort` 最小未占用号 + reuse 判定，单测护栏）。
+
+e2e 脚本：`/root/e2e-milvus.sh`（注：状态轮询路由应用 `/apps/:aid/detail` 而非 `/apps/:aid`，后者 404 致脚本 `set -e` 中断；本次 deploy 实际成功，手查补完状态/cleanup 验证）。fixture 宿主 `/opt/anp/data/milded1`（=容器 `/data/milded1`）。
