@@ -201,6 +201,63 @@ func TestMigration_000030_containerNameColumn(t *testing.T) {
 	}
 }
 
+// TestStore_CreateGetInstance dedicated 实例行落库 + 取回（含 container_name）。
+func TestStore_CreateGetInstance(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	inst := &ServiceInstance{
+		ID: "svinst-redis-ded-test1", Kind: "redis", Name: "mwredis-test1",
+		SupplyMode: ModeDedicated, Host: "10.10.0.28", Port: 9600,
+		AuthRef: "pwd123", ContainerName: "mwredis-test1", Status: "active",
+	}
+	if err := s.CreateInstance(ctx, inst); err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	got, err := s.GetInstance(ctx, inst.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetInstance 应取回，err=%v got=%+v", err, got)
+	}
+	if got.ContainerName != "mwredis-test1" || got.Port != 9600 || got.AuthRef != "pwd123" || got.SupplyMode != ModeDedicated {
+		t.Fatalf("dedicated 实例行不符: %+v", got)
+	}
+	// 无 → nil,nil
+	gotNil, err := s.GetInstance(ctx, "nope")
+	if err != nil || gotNil != nil {
+		t.Fatalf("无实例应 nil,nil，得 %+v err=%v", gotNil, err)
+	}
+}
+
+// TestStore_DeleteInstance 删实例行。
+func TestStore_DeleteInstance(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	inst := &ServiceInstance{
+		ID: "svinst-redis-ded-test2", Kind: "redis", Name: "mwredis-test2",
+		SupplyMode: ModeDedicated, Host: "h", Port: 9601, ContainerName: "mwredis-test2", Status: "active",
+	}
+	_ = s.CreateInstance(ctx, inst)
+	if err := s.DeleteInstance(ctx, inst.ID); err != nil {
+		t.Fatalf("DeleteInstance: %v", err)
+	}
+	got, _ := s.GetInstance(ctx, inst.ID)
+	if got != nil {
+		t.Fatalf("删后应取不到，得 %+v", got)
+	}
+}
+
+// TestStore_CreateInstance_idempotent 同 id 再 Create 不报错（DO NOTHING）。
+func TestStore_CreateInstance_idempotent(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	inst := &ServiceInstance{ID: "svinst-ded-idem", Kind: "redis", Name: "n", SupplyMode: ModeDedicated, Host: "h", Port: 9602, ContainerName: "n", Status: "active"}
+	if err := s.CreateInstance(ctx, inst); err != nil {
+		t.Fatalf("首次 Create: %v", err)
+	}
+	if err := s.CreateInstance(ctx, inst); err != nil {
+		t.Fatalf("二次 Create 应幂等不报错: %v", err)
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {

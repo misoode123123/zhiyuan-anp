@@ -116,3 +116,35 @@ func (s *Store) ClaimSharedToken(ctx context.Context, appID, psID, kind, instID,
 		EnvKey: envKey, Status: StatusBound,
 	})
 }
+
+// CreateInstance 登记 dedicated 实例行（supply_mode=dedicated，含 container_name）。
+// id PK 冲突 → DO NOTHING（幂等）。project_space_id 传 *string（dedicated 实例不挂项目，靠 binding 关联 app）。
+func (s *Store) CreateInstance(ctx context.Context, inst *ServiceInstance) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO appdeploy_service_instance
+		   (id, project_space_id, kind, name, supply_mode, host, port, auth_ref, isolation, container_name, status)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,'')::jsonb,NULLIF($10,''),$11)
+		 ON CONFLICT (id) DO NOTHING`,
+		inst.ID, inst.ProjectSpaceID, inst.Kind, inst.Name, inst.SupplyMode,
+		inst.Host, inst.Port, inst.AuthRef, inst.Isolation, inst.ContainerName, inst.Status)
+	return err
+}
+
+// GetInstance 按 id 取实例。无则 nil,nil。
+func (s *Store) GetInstance(ctx context.Context, id string) (*ServiceInstance, error) {
+	var inst ServiceInstance
+	err := s.db.GetContext(ctx, &inst, `SELECT `+instCols+` FROM appdeploy_service_instance WHERE id=$1`, id)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &inst, nil
+}
+
+// DeleteInstance 按 id 删实例行（binding/env 由 FK CASCADE 兜底；dedicated 容器由调用方先 docker rm）。
+func (s *Store) DeleteInstance(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_service_instance WHERE id=$1`, id)
+	return err
+}
