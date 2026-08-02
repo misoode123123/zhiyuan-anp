@@ -57,6 +57,13 @@ func genPassword() string {
 	return hex.EncodeToString(b)
 }
 
+// genMilvusPrefix 生成 milvus shared collection 前缀：app<12hex>_。
+// 复用 genShortID 的 crypto/rand 12-hex；'app' 首字符为字母、仅 [a-zA-Z0-9_]，合 milvus collection 名规则
+// （首字符字母、仅字母数字下划线、长度 1-255）。app 给 collection 加前缀后仍合法（如 app1a2b..._foo）。
+func genMilvusPrefix() string {
+	return "app" + genShortID() + "_"
+}
+
 // allocPort 在 [min,max] 选首个未占用端口；无可用返回 0。纯函数，可单测。
 func allocPort(used map[int]struct{}, min, max int) int {
 	for p := min; p <= max; p++ {

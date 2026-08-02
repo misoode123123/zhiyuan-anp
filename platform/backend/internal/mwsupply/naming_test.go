@@ -1,6 +1,7 @@
 package mwsupply
 
 import (
+	"regexp"
 	"testing"
 	"time"
 )
@@ -105,5 +106,23 @@ func TestConstants(t *testing.T) {
 	}
 	if readyTimeout != 15*time.Second {
 		t.Fatalf("readyTimeout 应 15s，得 %v", readyTimeout)
+	}
+}
+
+func TestGenMilvusPrefix(t *testing.T) {
+	re := regexp.MustCompile(`^app[0-9a-f]{12}_$`)
+	seen := make(map[string]bool, 1000)
+	for i := 0; i < 1000; i++ {
+		p := genMilvusPrefix()
+		if !re.MatchString(p) {
+			t.Fatalf("前缀应匹配 ^app[0-9a-f]{12}_$，得 %q", p)
+		}
+		if p[0] != 'a' { // 首字符须字母（milvus collection 名规则）
+			t.Fatalf("首字符应字母，得 %q", p)
+		}
+		if seen[p] {
+			t.Fatalf("1000 次内不应碰撞：%q", p)
+		}
+		seen[p] = true
 	}
 }
