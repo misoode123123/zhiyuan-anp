@@ -161,7 +161,9 @@ type headlessInstance struct {
 	Name           string `db:"name"`
 }
 
-// ListHeadlessActiveInstances 列出需健康巡检的实例:headless 应用 且 status∈{running,degraded}。
+// ListHeadlessActiveInstances 列出需健康巡检的实例:headless 应用 且 status∈{running,degraded,failed}。
+// 含 failed 是为让 reconcile 能捕获"崩溃后又被 docker restart 拉起"的实例并翻回 running+resolve 告警；
+// stopped(用户主动停) 不纳入,registered/building/built 亦同。
 func (s *Store) ListHeadlessActiveInstances(ctx context.Context) ([]headlessInstance, error) {
 	var list []headlessInstance
 	err := s.db.SelectContext(ctx, &list,
@@ -169,7 +171,7 @@ func (s *Store) ListHeadlessActiveInstances(ctx context.Context) ([]headlessInst
 		        i.status, i.restart_count, a.project_space_id, a.name
 		 FROM appdeploy_instance i
 		 JOIN appdeploy_application a ON a.id = i.app_id
-		 WHERE a.app_kind='headless' AND i.status IN ('running','degraded')`)
+		 WHERE a.app_kind='headless' AND i.status IN ('running','degraded','failed')`)
 	return list, err
 }
 

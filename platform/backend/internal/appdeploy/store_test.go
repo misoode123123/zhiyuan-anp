@@ -362,7 +362,9 @@ func TestStore_ListInstancesByApp(t *testing.T) {
 	}
 }
 
-// TestStore_ListHeadlessActiveInstances 只返回 headless 且 running/degraded 的实例,带 restart_count + 项目空间。
+// TestStore_ListHeadlessActiveInstances 返回 headless 且 running/degraded/failed 的实例,带 restart_count + 项目空间。
+// failed 纳入是为了让 HealthReconciler 能发现"崩溃后 docker 又拉起"的实例并翻回 running+resolve 告警。
+// stopped(用户主动停)/web 形态 仍排除。
 func TestStore_ListHeadlessActiveInstances(t *testing.T) {
 	s := newTestStore(t)
 	ps := "ps_test_headless"
@@ -377,13 +379,24 @@ func TestStore_ListHeadlessActiveInstances(t *testing.T) {
 		ih.ID, ih.AppID, ih.Env, ih.Status, 2); err != nil {
 		t.Fatal(err)
 	}
+	// headless failed 实例(应命中 — 崩溃后可能被 docker restart 拉起,reconcile 需复查)
+	// 单独建一个 headless app 以避开 (app_id,env) UNIQUE,与 running/stopped 同 app 区分。
+	ahf := &Application{ProjectSpaceID: ps, Name: "bot_failed", AppKind: AppKindHeadless, InternalPort: 0}
+	if err := s.Create(context.Background(), ahf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(context.Background(),
+		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1,$2,$3,'failed')`,
+		"ins_h_failed", ahf.ID, EnvTest); err != nil {
+		t.Fatal(err)
+	}
 	// web running 实例(不应命中)
 	aw := &Application{ProjectSpaceID: ps, Name: "web1", AppKind: AppKindWeb, InternalPort: 3000}
 	s.Create(context.Background(), aw)
 	s.db.ExecContext(context.Background(),
 		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1,$2,$3,'running')`,
 		"ins_w1", aw.ID, EnvTest)
-	// headless stopped 实例(不应命中)
+	// headless stopped 实例(不应命中 — 用户主动停)
 	ih2 := &AppInstance{ID: "ins_h2", AppID: ah.ID, Env: EnvProd, Status: "stopped"}
 	s.db.ExecContext(context.Background(),
 		`INSERT INTO appdeploy_instance (id, app_id, env, status) VALUES ($1,$2,$3,'stopped')`,
@@ -393,11 +406,25 @@ func TestStore_ListHeadlessActiveInstances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("期望 1 条 headless 活跃实例,得到 %d", len(got))
+	if len(got) != 2 {
+		t.Fatalf("期望 2 条 headless 活跃实例(running+failed),得到 %d: %+v", len(got), got)
 	}
-	if got[0].AppID != ah.ID || got[0].RestartCount != 2 || got[0].Name != "bot1" || got[0].ProjectSpaceID != ps {
-		t.Fatalf("返回字段不对: %+v", got[0])
+	// 找到 running 那条校验字段(restart_count/name/ps 透传)
+	var runHit *headlessInstance
+	hitFailed := false
+	for i := range got {
+		if got[i].Status == "running" {
+			runHit = &got[i]
+		}
+		if got[i].Status == "failed" {
+			hitFailed = true
+		}
+	}
+	if runHit == nil || runHit.AppID != ah.ID || runHit.RestartCount != 2 || runHit.Name != "bot1" || runHit.ProjectSpaceID != ps {
+		t.Fatalf("running 返回字段不对: %+v", runHit)
+	}
+	if !hitFailed {
+		t.Fatalf("failed 实例应被纳入巡检,结果集: %+v", got)
 	}
 }
 
