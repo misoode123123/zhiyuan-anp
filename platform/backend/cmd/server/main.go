@@ -335,6 +335,12 @@ func main() {
 	monitor.Start(backupCtx)
 	logger.Info("server monitor started")
 
+	// ---- headless 应用健康巡检:HealthReconciler 周期 docker inspect headless 实例 → 翻 status + ops 告警 ----
+	healthInspector := appdeploy.NewDeployer(cfg.AppDeployHost) // 无状态,满足 HealthInspector
+	healthAlerter := appdeploy.NewOpsHealthAlerter(opsStore)    // 写 ops_alert
+	healthRec := appdeploy.NewHealthReconciler(appDeployStore, healthInspector, healthAlerter)
+	healthRec.Start(backupCtx)
+
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv,
