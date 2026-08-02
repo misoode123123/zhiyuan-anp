@@ -584,3 +584,34 @@ func TestReconcile_dedicatedMilvus_readyTimeout_bestEffort(t *testing.T) {
 		t.Fatal("best-effort 应已写 MILVUS_ADDR")
 	}
 }
+
+// TestReconcile_cleanup_dedicatedMilvus 删 milvus dedicated app → RmMilvusStack(base) + 删 instance 行。
+func TestReconcile_cleanup_dedicatedMilvus(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildclean", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
+	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	instID := binds[0].ServiceInstanceID
+	inst, _ := NewStore(db).GetInstance(ctx, instID)
+	base := inst.ContainerName
+	dk.rmStackCalls = nil
+
+	if err := r.Cleanup(ctx, a.ID); err != nil {
+		t.Fatalf("Cleanup 不应报错: %v", err)
+	}
+	// docker rm 了 milvus 栈（按 base）
+	if len(dk.rmStackCalls) != 1 || dk.rmStackCalls[0] != base {
+		t.Fatalf("应 RmMilvusStack %q，得 %v", base, dk.rmStackCalls)
+	}
+	// redis 的 RmForce 不应被调（此 app 只有 milvus dedicated）
+	if len(dk.rmCalls) != 0 {
+		t.Fatalf("milvus cleanup 不应触发 redis RmForce，得 %v", dk.rmCalls)
+	}
+	// instance 行已删
+	if got, _ := NewStore(db).GetInstance(ctx, instID); got != nil {
+		t.Fatalf("Cleanup 后实例行应删，得 %+v", got)
+	}
+}

@@ -303,9 +303,17 @@ func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
 			continue
 		}
 		if inst.ContainerName != "" {
-			if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
-				r.log.Warn("dedicated 容器清理失败 (best-effort)",
-					zap.String("app", appID), zap.String("container", inst.ContainerName), zap.Error(err))
+			switch inst.Kind {
+			case "milvus":
+				if err := r.docker.RmMilvusStack(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("dedicated milvus 栈清理失败 (best-effort)",
+						zap.String("app", appID), zap.String("base", inst.ContainerName), zap.Error(err))
+				}
+			default: // redis
+				if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("dedicated 容器清理失败 (best-effort)",
+						zap.String("app", appID), zap.String("container", inst.ContainerName), zap.Error(err))
+				}
 			}
 		}
 		// 先删 binding 解 FK 引用（binding.service_instance_id RESTRICT instance 删除），再删 instance。
