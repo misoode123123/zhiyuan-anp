@@ -121,7 +121,7 @@ func (h *Handler) Inspect(c *gin.Context) {
 			sev = "warning"
 		}
 		title := "组件异常: " + comp.Name
-		fp := fingerprint("patrol", title)
+		fp := Fingerprint("patrol", title)
 		exist, err := h.store.HasFiringFingerprint(ctx, fp)
 		if err == nil && !exist {
 			_ = h.store.CreateAlert(ctx, &Alert{

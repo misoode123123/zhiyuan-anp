@@ -18,8 +18,9 @@ type Store struct {
 // NewStore 构造 Store。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
-// fingerprint 由来源+标题生成去重指纹（同源同类聚合）。
-func fingerprint(source, title string) string {
+// Fingerprint 由来源+标题生成去重指纹（同源同类聚合）。
+// 导出供 OpsHealthAlerter 等外部模块按相同口径算指纹（OnRecovered 需复算 OnUnhealthy 的指纹做 resolve）。
+func Fingerprint(source, title string) string {
 	h := sha1.Sum([]byte(source + "|" + title))
 	return "fp_" + hex.EncodeToString(h[:])[:12]
 }
@@ -29,7 +30,7 @@ func fingerprint(source, title string) string {
 // CreateAlert 新建告警（自动算 fingerprint）。
 func (s *Store) CreateAlert(ctx context.Context, a *Alert) error {
 	a.ID = "alt_" + uuid.NewString()[:20]
-	a.Fingerprint = fingerprint(a.Source, a.Title)
+	a.Fingerprint = Fingerprint(a.Source, a.Title)
 	if a.Status == "" {
 		a.Status = "firing"
 	}
@@ -72,6 +73,13 @@ func (s *Store) ResolveAlert(ctx context.Context, psID, id string) error {
 		return fmt.Errorf("告警 %s 不存在", id)
 	}
 	return nil
+}
+
+// ResolveByFingerprint 按 fingerprint 把 firing 告警置 resolved（HealthReconciler 恢复时用；无命中 no-op）。
+func (s *Store) ResolveByFingerprint(ctx context.Context, fp string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE ops_alert SET status='resolved', resolved_at=CURRENT_TIMESTAMP WHERE fingerprint=$1 AND status='firing'`, fp)
+	return err
 }
 
 // HasFiringFingerprint 是否已存在同指纹的 firing 告警（巡检去重用）。

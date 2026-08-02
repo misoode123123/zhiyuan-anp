@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"zhiyuan-anp/platform/backend/internal/ops"
 )
 
 func TestAggregateHealth(t *testing.T) {
@@ -138,4 +140,40 @@ func TestCheckOne_NoFlip_WritesBaseline(t *testing.T) {
 	if ins.RestartCount != 9 {
 		t.Fatalf("基线应回写为 9(证明 UpdateRestartCount 执行),得 %d", ins.RestartCount)
 	}
+}
+
+// TestOpsHealthAlerter_Dedup 已有 firing 时 OnUnhealthy 跳过(去重)；OnRecovered 按 fingerprint resolve。
+// 桥接：appdeploy.Store.DB() → ops.NewStore 同库，OpsHealthAlerter 写 ops_alert 表。
+func TestOpsHealthAlerter_Dedup(t *testing.T) {
+	s := newTestStore(t)
+	odb := ops.NewStore(s.DB())
+	alerter := NewOpsHealthAlerter(odb)
+	ctx := context.Background()
+	ps := "ps_dedup"
+
+	// 两次 OnUnhealthy 同源同标题 → 去重，只留 1 条 firing
+	if err := alerter.OnUnhealthy(ctx, ps, "app1", "bot", EnvTest, "critical", "exit 1"); err != nil {
+		t.Fatalf("OnUnhealthy 1: %v", err)
+	}
+	if err := alerter.OnUnhealthy(ctx, ps, "app1", "bot", EnvTest, "critical", "exit 1"); err != nil {
+		t.Fatalf("OnUnhealthy 2: %v", err)
+	}
+	list, _ := odb.ListAlerts(ctx, ps, "", "firing")
+	if len(list) != 1 {
+		t.Fatalf("去重后期望 1 条 firing,得到 %d", len(list))
+	}
+
+	// OnRecovered → resolve 该 fingerprint，firing 归 0
+	if err := alerter.OnRecovered(ctx, ps, "app1", "bot", EnvTest); err != nil {
+		t.Fatalf("OnRecovered: %v", err)
+	}
+	list, _ = odb.ListAlerts(ctx, ps, "", "firing")
+	if len(list) != 0 {
+		t.Fatalf("recover 后期望 0 条 firing,得到 %d", len(list))
+	}
+}
+
+// TestOpsHealthAlerter_SatisfiesInterface 编译期断言：OpsHealthAlerter 实现 HealthAlerter。
+func TestOpsHealthAlerter_SatisfiesInterface(t *testing.T) {
+	var _ HealthAlerter = (*OpsHealthAlerter)(nil)
 }

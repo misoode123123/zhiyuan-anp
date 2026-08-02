@@ -16,6 +16,9 @@ type Store struct {
 // NewStore 构造。
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
+// DB 暴露底层连接（跨模块装配/测试用，如 HealthReconciler 装配处复用同一 *sqlx.DB 建 ops.Store）。
+func (s *Store) DB() *sqlx.DB { return s.db }
+
 func appCols() string {
 	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(app_kind,'web') AS app_kind, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
 }

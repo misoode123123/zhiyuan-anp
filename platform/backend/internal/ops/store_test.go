@@ -57,6 +57,35 @@ func TestAlert_FingerprintDedupAndList(t *testing.T) {
 	}
 }
 
+// TestStore_ResolveByFingerprint 按 fingerprint resolve firing 告警；无命中 no-op。
+func TestStore_ResolveByFingerprint(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ps := "ps_rfp"
+	title := "应用 bot test 异常"
+	fp := Fingerprint("apphealth", title)
+	if err := s.CreateAlert(ctx, &Alert{ProjectSpaceID: ps, Source: "apphealth", Severity: "critical", Title: title}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if firing, _ := s.HasFiringFingerprint(ctx, fp); !firing {
+		t.Fatal("应有 firing 告警")
+	}
+	if err := s.ResolveByFingerprint(ctx, fp); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if firing, _ := s.HasFiringFingerprint(ctx, fp); firing {
+		t.Fatal("resolve 后不应再有 firing")
+	}
+	// 无命中 no-op：再次 resolve 不报错。
+	if err := s.ResolveByFingerprint(ctx, fp); err != nil {
+		t.Fatalf("无命中应 no-op，得 %v", err)
+	}
+	// 不存在指纹 no-op。
+	if err := s.ResolveByFingerprint(ctx, "fp_nonexistent"); err != nil {
+		t.Fatalf("不存在指纹应 no-op，得 %v", err)
+	}
+}
+
 func TestSOP_CRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
