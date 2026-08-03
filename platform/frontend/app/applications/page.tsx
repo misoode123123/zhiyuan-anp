@@ -50,6 +50,28 @@ type App = {
   updated_at: string;
   instances?: Instance[]; // 各环境部署实例（test/prod）
 };
+// 中间件依赖声明（后端 appdeploy.DepDeclaration）：kind/strategy 用户编，status/instance/token 供给结果。
+type Dep = {
+  kind: string;
+  strategy: string;
+  status: string;
+  instance?: string;
+  token?: string;
+  error?: string;
+};
+// 依赖勾选器选项（后端 appdeploy.DepsCatalog）：kinds/strategies 固定，instances 为可见 active 实例。
+type DepsCatalog = {
+  kinds: string[];
+  strategies: { name: string; desc: string }[];
+  instances: {
+    id: string;
+    kind: string;
+    name: string;
+    supply_mode: string;
+    host: string;
+    port: number;
+  }[];
+};
 type Req = { id: string; title: string; status: string; application_id: string };
 type Detail = {
   application: App;
@@ -233,6 +255,167 @@ function ArtifactSection({
             </a>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+// 依赖声明区：列当前 deps（kind/strategy/status/token），编辑态增删改（catalog 驱动下拉），PUT 整体替换保存。
+// 声明与部署解耦：保存只落库，下次部署/重新部署时由 mwsupply 供给 env（REDIS_ADDR/MILVUS_ADDR）注入。
+// 自包含组件（同 ArtifactSection 范式）：props 取 psID/appID，mount 时 Promise.all 拉 deps+catalog。
+function DepsSection({ psID, appID }: { psID: string; appID: string }) {
+  const [deps, setDeps] = useState<Dep[]>([]);
+  const [catalog, setCatalog] = useState<DepsCatalog | null>(null);
+  const [editingDeps, setEditingDeps] = useState<Dep[] | null>(null); // null=查看态，非 null=编辑态
+
+  async function loadDeps() {
+    try {
+      const [d, c] = await Promise.all([
+        fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deps`).then((r) => r.json()),
+        fetch(`${API_BASE_URL}/project-spaces/${psID}/deps/catalog`).then((r) => r.json()),
+      ]);
+      setDeps((d as Envelope<Dep[]>)?.data ?? []);
+      setCatalog((c as Envelope<DepsCatalog>)?.data ?? null);
+    } catch {
+      // 网络抖动忽略，不阻塞面板渲染
+    }
+  }
+  useEffect(() => {
+    loadDeps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [psID, appID]);
+
+  async function saveDeps(next: Dep[]) {
+    // PUT 整体替换：body 只发 kind/strategy（status/instance/token 由后端供给回填）。
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deps`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next.map((d) => ({ kind: d.kind, strategy: d.strategy }))),
+    });
+    const j = (await res.json()) as Envelope<unknown>;
+    if (res.ok && j.code === 0) {
+      toast.success("依赖已保存，下次部署生效");
+      setEditingDeps(null);
+      await loadDeps();
+    } else {
+      toast.error(j.message || "保存失败");
+    }
+  }
+
+  const list = editingDeps ?? deps;
+  return (
+    <div className="mt-3 rounded border border-border p-3">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-sm font-semibold">🔗 中间件依赖</span>
+        {editingDeps ? (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEditingDeps(null)}
+              className="rounded bg-surface-2 px-2 py-0.5 text-xs text-text-muted"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => saveDeps(editingDeps)}
+              className="rounded bg-accent px-2 py-0.5 text-xs text-white"
+            >
+              保存
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditingDeps(deps.length ? deps : [])}
+            className="rounded bg-surface-2 px-2 py-0.5 text-xs"
+          >
+            编辑
+          </button>
+        )}
+      </div>
+      <p className="mb-2 text-xs text-text-muted">
+        依赖在下次部署/重新部署时注入生效（REDIS_ADDR / MILVUS_ADDR 等）。
+      </p>
+      {list.length === 0 ? (
+        <div className="text-xs text-text-muted">
+          {editingDeps ? "点「+ 添加依赖」声明" : "暂无依赖"}
+        </div>
+      ) : (
+        list.map((d, i) => {
+          const cur = editingDeps ?? deps;
+          const set = (patch: Partial<Dep>) =>
+            setEditingDeps(cur.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+          return (
+            <div key={i} className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+              {editingDeps ? (
+                <>
+                  <select
+                    value={d.kind}
+                    onChange={(e) => set({ kind: e.target.value })}
+                    className="rounded border border-border px-1 py-0.5"
+                  >
+                    {(catalog?.kinds ?? []).map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={d.strategy}
+                    onChange={(e) => set({ strategy: e.target.value })}
+                    className="rounded border border-border px-1 py-0.5"
+                  >
+                    {(catalog?.strategies ?? []).map((s) => (
+                      <option key={s.name} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setEditingDeps(cur.filter((_, j) => j !== i))}
+                    className="rounded bg-danger/10 px-1.5 py-0.5 text-danger"
+                  >
+                    删除
+                  </button>
+                </>
+              ) : (
+                <>
+                  <code className="text-text">{d.kind}</code>
+                  <span className="text-text-muted">·</span>
+                  <span className="text-text-muted">{d.strategy}</span>
+                  <span
+                    className={`rounded px-1.5 py-0.5 ${
+                      d.status === "bound"
+                        ? "bg-success/10 text-success"
+                        : d.status === "failed"
+                          ? "bg-danger/10 text-danger"
+                          : "bg-surface-2 text-text-muted"
+                    }`}
+                  >
+                    {d.status}
+                  </span>
+                  {d.token && <span className="text-text-muted">🔑 {d.token}</span>}
+                  {d.error && <span className="text-danger">{d.error}</span>}
+                </>
+              )}
+            </div>
+          );
+        })
+      )}
+      {editingDeps && (
+        <button
+          onClick={() =>
+            setEditingDeps([
+              ...editingDeps,
+              {
+                kind: catalog?.kinds?.[0] ?? "redis",
+                strategy: catalog?.strategies?.[0]?.name ?? "bind_existing",
+                status: "declared",
+              },
+            ])
+          }
+          className="mt-1 rounded bg-warn/10 px-2 py-0.5 text-xs text-warn"
+        >
+          + 添加依赖
+        </button>
       )}
     </div>
   );
@@ -1631,6 +1814,7 @@ export default function ApplicationsPage() {
                 </>
               )}
               <ArtifactSection psID={psID} appID={a.id} appKind={a.app_kind} />
+              <DepsSection psID={psID} appID={a.id} />
             </div>
           );
         })}
