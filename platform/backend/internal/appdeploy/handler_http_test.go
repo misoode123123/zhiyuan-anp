@@ -50,6 +50,15 @@ func newRouterWith(h *Handler) *gin.Engine {
 	return r
 }
 
+// newRouterWithRoles 同 newRouterWith 但注入指定角色（测 RBAC 403 用；既有两个 helper 写死 admin）。
+func newRouterWithRoles(h *Handler, roles []string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("roles", roles); c.Next() })
+	h.Register(r.Group("/api/v1"))
+	return r
+}
+
 // doReq 发请求返回状态码 + 解析后的 JSON body。
 func doReq(t *testing.T, r http.Handler, method, target string, body interface{}) (int, map[string]interface{}) {
 	t.Helper()
@@ -1604,5 +1613,56 @@ func TestStore_UpdateNetworkMode(t *testing.T) {
 	got2, _ := h.store.Get(ctx, "ps_1", a.ID)
 	if got2.NetworkMode != "host" {
 		t.Fatalf("应 host，得 %q", got2.NetworkMode)
+	}
+}
+
+// TestHandler_PutNetworkMode_admin_ok admin → 200 + 写 host。
+func TestHandler_PutNetworkMode_admin_ok(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h) // admin
+	a := seedApp(t, h, "ps_1", "nm1", "/tmp/nm1")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/network-mode",
+		map[string]string{"mode": "host"})
+	if code != 200 {
+		t.Fatalf("admin 应 200，得 %d", code)
+	}
+	got, _ := h.store.Get(context.Background(), "ps_1", a.ID)
+	if got.NetworkMode != "host" {
+		t.Fatalf("应写 host，得 %q", got.NetworkMode)
+	}
+}
+
+// TestHandler_PutNetworkMode_dev_forbidden dev → 403（无 app.net.host）。
+func TestHandler_PutNetworkMode_dev_forbidden(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWithRoles(h, []string{"dev"})
+	a := seedApp(t, h, "ps_1", "nm2", "/tmp/nm2")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/network-mode",
+		map[string]string{"mode": "host"})
+	if code != 403 {
+		t.Fatalf("dev 改 host 应 403，得 %d", code)
+	}
+}
+
+// TestHandler_PutNetworkMode_badMode 非法 mode → 400（admin 绕过角色专测 mode 校验）。
+func TestHandler_PutNetworkMode_badMode(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "nm3", "/tmp/nm3")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/network-mode",
+		map[string]string{"mode": "macvlan"})
+	if code != 400 {
+		t.Fatalf("非法 mode 应 400，得 %d", code)
+	}
+}
+
+// TestHandler_PutNetworkMode_notFound 应用不存在 → 404。
+func TestHandler_PutNetworkMode_notFound(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/app_none/network-mode",
+		map[string]string{"mode": "host"})
+	if code != 404 {
+		t.Fatalf("应用不存在应 404，得 %d", code)
 	}
 }

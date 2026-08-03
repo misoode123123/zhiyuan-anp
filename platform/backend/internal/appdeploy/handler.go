@@ -145,6 +145,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
 	r.GET("/project-spaces/:id/apps/:aid/deps", h.GetDeps)   // P6：依赖声明列表
 	r.PUT("/project-spaces/:id/apps/:aid/deps", h.PutDeps)   // P6：整体替换依赖声明
+	r.PUT("/project-spaces/:id/apps/:aid/network-mode", h.PutNetworkMode) // host 网络门禁：设网络模式（需 gatekeeper/admin）
 	r.GET("/project-spaces/:id/deps/catalog", h.GetDepsCatalog) // P6：依赖目录（勾选器选项）
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
@@ -927,6 +928,37 @@ func (h *Handler) PutDeps(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"ok": true})
+}
+
+// PutNetworkMode 设置应用网络模式（bridge/host）。host 削弱隔离 → 需 gatekeeper/admin（op app.net.host）。
+// network_mode 为 app 级配置（test/prod 共用）；下次部署生效（deploy 时 deployer 按 mode 拼 --network）。
+func (h *Handler) PutNetworkMode(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, _ := h.store.Get(c.Request.Context(), psID, aid)
+	if a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	if !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限修改网络模式（仅 gatekeeper/admin）")
+		return
+	}
+	var in struct {
+		Mode string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if in.Mode != "bridge" && in.Mode != "host" {
+		httpx.Err(c, 400, 40001, "mode 非法: "+in.Mode)
+		return
+	}
+	if err := h.store.UpdateNetworkMode(c.Request.Context(), aid, in.Mode); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"ok": true, "network_mode": in.Mode})
 }
 
 // GetDepsCatalog 依赖勾选器选项（kinds/strategies/可见实例）。

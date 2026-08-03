@@ -28,6 +28,8 @@ var OpRoles = map[string][]string{
 	"app.start.test":         {RoleDev, RoleGatekeeper, RoleAdmin},
 	"app.start.prod":         {RoleGatekeeper, RoleAdmin},
 	"app.delete":             {RoleAdmin},
+	// host 网络门禁（spec 2026-08-03）：host 削弱隔离，仅 gatekeeper/admin 可开启 + 部署
+	"app.net.host":           {RoleGatekeeper, RoleAdmin},
 	// 绩效（admin 看全员/某人/互动聊天；me 自校验不登记）
 	"performance.view.all": {RoleAdmin},
 }
