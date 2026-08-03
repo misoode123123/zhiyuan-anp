@@ -489,7 +489,12 @@ func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.De
 // added（新声明不在现 binding）/ changed → DeclareBinding 写 declared；
 // unchanged（同 kind 同策略）→ 不动（保 bound，不重供）。
 func (r *Reconciler) SetDeps(ctx context.Context, appID, psID string, decls []appdeploy.DepDeclaration) error {
-	cur, _ := r.store.ListBindingsByApp(ctx, appID)
+	// 写路径（用户 PUT），错误必须传播：ListBindingsByApp 瞬时失败→curMap 空→所有 bound
+	// 当 missing→DeclareBinding upsert 成 declared（ON CONFLICT DO UPDATE）丢 instance/token。
+	cur, err := r.store.ListBindingsByApp(ctx, appID)
+	if err != nil {
+		return err
+	}
 	curMap := map[string]ServiceBinding{}
 	for _, b := range cur {
 		curMap[b.ServiceKind] = b
@@ -498,7 +503,7 @@ func (r *Reconciler) SetDeps(ctx context.Context, appID, psID string, decls []ap
 	for _, d := range decls {
 		newStrategy[d.Kind] = d.Strategy
 	}
-	// removed / changed → 释放
+	// removed / changed → 释放（ReleaseDep 保持 best-effort：即发即忘清理，不阻断主流程）
 	for kind, b := range curMap {
 		ns, ok := newStrategy[kind]
 		if !ok || ns != b.Strategy {
@@ -509,7 +514,9 @@ func (r *Reconciler) SetDeps(ctx context.Context, appID, psID string, decls []ap
 	for kind, strategy := range newStrategy {
 		b, exists := curMap[kind]
 		if !exists || b.Strategy != strategy {
-			_ = r.store.DeclareBinding(ctx, appID, psID, kind, strategy)
+			if err := r.store.DeclareBinding(ctx, appID, psID, kind, strategy); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

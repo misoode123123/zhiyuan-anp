@@ -344,7 +344,7 @@ function DepsSection({ psID, appID }: { psID: string; appID: string }) {
           const set = (patch: Partial<Dep>) =>
             setEditingDeps(cur.map((x, j) => (j === i ? { ...x, ...patch } : x)));
           return (
-            <div key={i} className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+            <div key={d.kind} className="mb-1 flex flex-wrap items-center gap-2 text-xs">
               {editingDeps ? (
                 <>
                   <select
@@ -1814,7 +1814,9 @@ export default function ApplicationsPage() {
                 </>
               )}
               <ArtifactSection psID={psID} appID={a.id} appKind={a.app_kind} />
-              <DepsSection psID={psID} appID={a.id} />
+              {/* external 应用不经 buildAndDeploy→Reconcile 从不调→声明的依赖永不供给，
+                  不渲染依赖 section，避免误导性的「下次部署生效」hint。 */}
+              {a.deploy_mode !== "external" && <DepsSection psID={psID} appID={a.id} />}
             </div>
           );
         })}
