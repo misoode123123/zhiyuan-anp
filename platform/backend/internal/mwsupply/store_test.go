@@ -283,6 +283,63 @@ func TestMigration_000033_sharedMilvusSeed(t *testing.T) {
 	}
 }
 
+// TestStore_DeclareIfAbsent_absent 无 binding → 种 declared；已有 → 不覆盖。
+func TestStore_DeclareIfAbsent(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	app := mkAppRow(t, db, "dia_a", "ps_1")
+
+	if err := s.DeclareIfAbsent(ctx, app, "ps_1", "redis", ModeShared); err != nil {
+		t.Fatalf("DeclareIfAbsent: %v", err)
+	}
+	b, _ := s.GetBinding(ctx, app, "redis")
+	if b == nil || b.Status != StatusDeclared || b.Strategy != ModeShared || b.EnvKey != "REDIS_ADDR" {
+		t.Fatalf("应种 declared/shared/REDIS_ADDR，得 %+v", b)
+	}
+	// 已存在（用户 UI 改成 dedicated+bound）→ DeclareIfAbsent 不覆盖
+	if err := s.UpsertBinding(ctx, &ServiceBinding{AppID: app, ProjectSpaceID: "ps_1",
+		ServiceKind: "redis", Strategy: ModeDedicated, EnvKey: "REDIS_ADDR", Status: StatusBound}); err != nil {
+		t.Fatalf("upsert bound: %v", err)
+	}
+	if err := s.DeclareIfAbsent(ctx, app, "ps_1", "redis", ModeShared); err != nil {
+		t.Fatalf("DeclareIfAbsent 二次: %v", err)
+	}
+	b2, _ := s.GetBinding(ctx, app, "redis")
+	if b2.Strategy != ModeDedicated || b2.Status != StatusBound {
+		t.Fatalf("DeclareIfAbsent 不应覆盖已存在声明，得 %+v", b2)
+	}
+}
+
+// TestStore_DeclareBinding_upsertDeclared upsert declared，重置 instance/token；幂等。
+func TestStore_DeclareBinding(t *testing.T) {
+	s, db := newTestStore(t)
+	ctx := context.Background()
+	app := mkAppRow(t, db, "dcb_a", "ps_1")
+
+	if err := s.DeclareBinding(ctx, app, "ps_1", "milvus", ModeShared); err != nil {
+		t.Fatalf("DeclareBinding: %v", err)
+	}
+	b, _ := s.GetBinding(ctx, app, "milvus")
+	if b == nil || b.Status != StatusDeclared || b.Strategy != ModeShared ||
+		b.EnvKey != "MILVUS_ADDR" || b.ServiceInstanceID != "" || b.IsolationToken != "" {
+		t.Fatalf("应 declared/shared/MILVUS_ADDR + 空结果字段，得 %+v", b)
+	}
+	// 模拟已供给（bound + instance + token）后重新声明 → 重置回 declared、清结果
+	if err := s.UpsertBinding(ctx, &ServiceBinding{AppID: app, ProjectSpaceID: "ps_1",
+		ServiceKind: "milvus", Strategy: ModeShared, ServiceInstanceID: "svinst-milvus-shared-28",
+		IsolationToken: "appabc123def_", EnvKey: "MILVUS_ADDR", Status: StatusBound}); err != nil {
+		t.Fatalf("upsert bound: %v", err)
+	}
+	if err := s.DeclareBinding(ctx, app, "ps_1", "milvus", ModeDedicated); err != nil {
+		t.Fatalf("DeclareBinding 改策略: %v", err)
+	}
+	b2, _ := s.GetBinding(ctx, app, "milvus")
+	if b2.Status != StatusDeclared || b2.Strategy != ModeDedicated ||
+		b2.ServiceInstanceID != "" || b2.IsolationToken != "" {
+		t.Fatalf("重新声明应 declared+新策略+清结果，得 %+v", b2)
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {

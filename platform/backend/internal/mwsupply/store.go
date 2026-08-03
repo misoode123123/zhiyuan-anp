@@ -155,3 +155,29 @@ func (s *Store) DeleteBinding(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM appdeploy_service_binding WHERE id=$1`, id)
 	return err
 }
+
+// DeclareIfAbsent 种声明（仅当该 (app,kind) 无 binding 时）；ON CONFLICT DO NOTHING。
+// 导入种子用：不覆盖用户已 UI 设的声明。
+func (s *Store) DeclareIfAbsent(ctx context.Context, appID, psID, kind, strategy string) error {
+	if strategy == "" {
+		strategy = ModeBindExisting
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO appdeploy_service_binding (id, app_id, project_space_id, service_kind, strategy, env_key, status)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7)
+		 ON CONFLICT (app_id, service_kind) DO NOTHING`,
+		"svb_"+uuid.NewString()[:20], appID, psID, kind, strategy, EnvKeyFor(kind), StatusDeclared)
+	return err
+}
+
+// DeclareBinding upsert 声明（status=declared，重置 instance/token/env_key）。
+// PutDeps 的 added/changed 用：结果字段清空，待下次部署供给。
+func (s *Store) DeclareBinding(ctx context.Context, appID, psID, kind, strategy string) error {
+	if strategy == "" {
+		strategy = ModeBindExisting
+	}
+	return s.UpsertBinding(ctx, &ServiceBinding{
+		AppID: appID, ProjectSpaceID: psID, ServiceKind: kind,
+		Strategy: strategy, EnvKey: EnvKeyFor(kind), Status: StatusDeclared,
+	})
+}
