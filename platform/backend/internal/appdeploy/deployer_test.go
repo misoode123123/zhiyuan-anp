@@ -293,3 +293,48 @@ func TestDeploy_Web_StillMapsPort(t *testing.T) {
 		t.Fatal("web 部署必须设 URL")
 	}
 }
+
+// TestDeploy_Host_NoPortMap_NetworkHost host 网络：args 含 --network host、无 -p、HostPort=internalPort、URL 含 internalPort、注入 PORT=。
+func TestDeploy_Host_NoPortMap_NetworkHost(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) {
+		got = args
+		return "cid", nil
+	}
+	defer func() { dockerRun = orig }()
+
+	d := NewDeployer("10.10.0.28")
+	ins := &AppInstance{Env: EnvTest, Version: 1}
+	a := &Application{Name: "hostapp", AppKind: AppKindWeb, InternalPort: 18080, NetworkMode: "host"}
+	if err := d.Deploy(context.Background(), a, ins, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	hasNet, hasP, hasPort := false, false, false
+	for i, arg := range got {
+		if arg == "--network" && i+1 < len(got) && got[i+1] == "host" {
+			hasNet = true
+		}
+		if arg == "-p" {
+			hasP = true
+		}
+		if arg == "PORT=18080" {
+			hasPort = true
+		}
+	}
+	if !hasNet {
+		t.Fatalf("host 部署须含 --network host，得 %v", got)
+	}
+	if hasP {
+		t.Fatalf("host 部署不得 -p 映射端口，得 %v", got)
+	}
+	if !hasPort {
+		t.Fatalf("host 部署须注入 PORT=18080，得 %v", got)
+	}
+	if ins.HostPort != 18080 {
+		t.Fatalf("HostPort 应 = internalPort 18080，得 %d", ins.HostPort)
+	}
+	if ins.URL == "" || !strings.HasSuffix(ins.URL, ":18080") {
+		t.Fatalf("URL 应以 :18080 结尾，得 %q", ins.URL)
+	}
+}

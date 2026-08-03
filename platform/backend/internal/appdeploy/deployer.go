@@ -144,13 +144,19 @@ func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, 
 	return out, e
 }
 
-// Deploy 运行容器。headless:无端口/无 URL;其余:按环境端口映射 + URL。dockerHost 非空时远程部署。
+// Deploy 运行容器。headless:无端口/无 URL；web/service:bridge 分配宿主端口 + -p，host 直接绑宿主 internalPort（无 -p）。
+// network_mode 与 app_kind 正交：host flag 对所有 app_kind 生效（headless+host 也共享宿主网络）。
+// dockerHost 非空时远程部署（host = 该远程节点的 host 网络）。
 func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost string) error {
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	args := []string{"run", "-d", "--name", name, "--restart", "unless-stopped"}
+	isHost := a.NetworkMode == "host"
+	if isHost {
+		args = append(args, "--network", "host")
+	}
 
 	if a.AppKind == AppKindHeadless {
-		// headless(bot/worker):无端口、无 URL。不分配宿主端口、不注入 PORT、不 -p。
+		// headless(bot/worker)：无端口、无 URL。不分配宿主端口、不注入 PORT、不 -p（host flag 已在 args 顶部）。
 		for _, e := range env {
 			args = append(args, "-e", e)
 		}
@@ -163,27 +169,35 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 		return nil // ins.HostPort/URL 保持零值
 	}
 
-	// web/service 等:端口映射 + URL(原有逻辑)
-	min, max := d.envPortRange(ins.Env)
-	used := d.usedPortsOn(ctx, dockerHost)
-	port := ins.HostPort
-	if _, occupied := used[port]; port < min || port > max || occupied {
-		port = AllocFreePort(used, min, max)
-	}
-	if port == 0 {
-		return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
+	// web/service：host 模式无 -p（绑宿主 internalPort）；bridge 模式分配宿主端口 + -p。
+	var port int
+	if isHost {
+		port = a.InternalPort
+	} else {
+		min, max := d.envPortRange(ins.Env)
+		used := d.usedPortsOn(ctx, dockerHost)
+		port = ins.HostPort
+		if _, occupied := used[port]; port < min || port > max || occupied {
+			port = AllocFreePort(used, min, max)
+		}
+		if port == 0 {
+			return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
+		}
 	}
 	env = ensurePortEnv(env, a.InternalPort)
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
-	args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort), ins.Image)
+	if !isHost {
+		args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort))
+	}
+	args = append(args, ins.Image)
 	out, err := dockerRun(ctx, dockerHost, args...)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}
 	ins.ContainerName = name
-	ins.HostPort = port
+	ins.HostPort = port // host 模式 = internalPort（host 命名空间可达端口）→ appgw UpsertRoute 零改动
 	urlHost := d.host
 	if dockerHost != "" {
 		parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(dockerHost, "tcp://"), "http://"), ":")
