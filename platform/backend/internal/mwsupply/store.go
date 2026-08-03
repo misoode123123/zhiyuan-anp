@@ -170,6 +170,16 @@ func (s *Store) DeclareIfAbsent(ctx context.Context, appID, psID, kind, strategy
 	return err
 }
 
+// ListActiveInstances 列某 ps 可见的 active 实例（项目级 + 平台级 NULL）。
+func (s *Store) ListActiveInstances(ctx context.Context, psID string) ([]ServiceInstance, error) {
+	var list []ServiceInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT `+instCols+` FROM appdeploy_service_instance
+		 WHERE status='active' AND (project_space_id=$1 OR project_space_id IS NULL)
+		 ORDER BY kind, supply_mode`, psID)
+	return list, err
+}
+
 // DeclareBinding upsert 声明（status=declared，重置 instance/token/env_key）。
 // PutDeps 的 added/changed 用：结果字段清空，待下次部署供给。
 func (s *Store) DeclareBinding(ctx context.Context, appID, psID, kind, strategy string) error {

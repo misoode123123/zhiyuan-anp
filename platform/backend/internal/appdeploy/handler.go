@@ -78,6 +78,8 @@ type MWReconciler interface {
 	Reconcile(ctx context.Context, appID, psID string) error
 	Cleanup(ctx context.Context, appID string) error                                                      // P3：docker rm dedicated 容器（best-effort）
 	SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error // P6：导入时 .anp/deps.yaml → DB declared binding
+	ListDeps(ctx context.Context, appID string) ([]DepDeclaration, error)    // P6：读 app 的依赖声明（binding → DTO）
+	DepsCatalog(ctx context.Context, psID string) (DepsCatalog, error)       // P6：读勾选器选项（kinds/strategies/instances）
 }
 
 // SetMwReconciler 注入中间件供给器（main.go 在 Register 后调）。

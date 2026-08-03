@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+
+	"zhiyuan-anp/platform/backend/internal/appdeploy"
 )
 
 // EnvWriter 写/删应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
@@ -440,4 +442,44 @@ func (r *Reconciler) ReleaseDep(ctx context.Context, b *ServiceBinding) {
 	if dedInstID != "" {
 		_ = r.store.DeleteInstance(ctx, dedInstID)
 	}
+}
+
+// ListDeps 该 app 的依赖声明（binding → DepDeclaration）。
+func (r *Reconciler) ListDeps(ctx context.Context, appID string) ([]appdeploy.DepDeclaration, error) {
+	binds, err := r.store.ListBindingsByApp(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]appdeploy.DepDeclaration, 0, len(binds))
+	for _, b := range binds {
+		out = append(out, appdeploy.DepDeclaration{
+			Kind: b.ServiceKind, Strategy: b.Strategy, Status: b.Status,
+			Instance: b.ServiceInstanceID, Token: b.IsolationToken, Error: b.LastError,
+		})
+	}
+	return out, nil
+}
+
+// DepsCatalog 勾选器选项：固定 kinds/strategies + 可见 active 实例。
+func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.DepsCatalog, error) {
+	insts, err := r.store.ListActiveInstances(ctx, psID)
+	if err != nil {
+		return appdeploy.DepsCatalog{}, err
+	}
+	cis := make([]appdeploy.CatalogInstance, 0, len(insts))
+	for _, ins := range insts {
+		cis = append(cis, appdeploy.CatalogInstance{
+			ID: ins.ID, Kind: ins.Kind, Name: ins.Name, SupplyMode: ins.SupplyMode,
+			Host: ins.Host, Port: ins.Port,
+		})
+	}
+	return appdeploy.DepsCatalog{
+		Kinds: []string{"redis", "milvus"},
+		Strategies: []appdeploy.StrategyOption{
+			{Name: ModeBindExisting, Desc: "绑定部署机已运行的服务（最省，导入最常见）"},
+			{Name: ModeShared, Desc: "ANP 共享实例 + 每 app 隔离 token（db号/前缀）"},
+			{Name: ModeDedicated, Desc: "每 app 专属容器（隔离最强，资源独占）"},
+		},
+		Instances: cis,
+	}, nil
 }

@@ -812,3 +812,47 @@ func TestSeedFromManifest_noFile(t *testing.T) {
 		t.Fatalf("无文件应 0 binding，得 %d", len(binds))
 	}
 }
+
+// —— Task 5：ListDeps / DepsCatalog 读路径 ——
+
+// TestListDeps binding 行 → DepDeclaration（kind/strategy/status/instance/token）。
+func TestListDeps(t *testing.T) {
+	r, _, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "ldapp", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, a)
+	_ = NewStore(db).DeclareBinding(ctx, a.ID, "ps_1", "redis", ModeShared)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: ModeShared}})
+
+	decls, err := r.ListDeps(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("ListDeps: %v", err)
+	}
+	if len(decls) != 1 || decls[0].Kind != "redis" || decls[0].Strategy != ModeShared ||
+		decls[0].Status != StatusBound || decls[0].Instance == "" || decls[0].Token == "" {
+		t.Fatalf("应 1 条 redis/shared/bound+instance+token，得 %+v", decls)
+	}
+}
+
+// TestDepsCatalog 返回 kinds/strategies + ps 级与平台级 active 实例。
+func TestDepsCatalog(t *testing.T) {
+	r, _, _, _, _ := newReconcilerTest(t)
+	cat, err := r.DepsCatalog(context.Background(), "ps_1")
+	if err != nil {
+		t.Fatalf("DepsCatalog: %v", err)
+	}
+	if len(cat.Kinds) != 2 || cat.Kinds[0] != "redis" || cat.Kinds[1] != "milvus" {
+		t.Fatalf("kinds 应 [redis,milvus]，得 %v", cat.Kinds)
+	}
+	if len(cat.Strategies) != 3 {
+		t.Fatalf("strategies 应 3 个，得 %d", len(cat.Strategies))
+	}
+	// 平台级 redis/milvus 种子在 instances
+	kinds := map[string]bool{}
+	for _, ins := range cat.Instances {
+		kinds[ins.Kind] = true
+	}
+	if !kinds["redis"] || !kinds["milvus"] {
+		t.Fatalf("instances 应含 redis+milvus，得 %v", kinds)
+	}
+}

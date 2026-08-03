@@ -1,0 +1,34 @@
+package appdeploy
+
+// DepDeclaration 应用对单个中间件的依赖声明 + 供给结果（UI/API 用）。
+type DepDeclaration struct {
+	Kind     string `json:"kind"`               // redis / milvus
+	Strategy string `json:"strategy"`           // bind_existing / shared / dedicated
+	Status   string `json:"status"`             // declared / bound / failed
+	Instance string `json:"instance,omitempty"` // 供给的 service_instance_id（bound 时）
+	Token    string `json:"token,omitempty"`    // 隔离 token（shared：db号/前缀）
+	Error    string `json:"error,omitempty"`    // failed 时的 last_error
+}
+
+// StrategyOption 策略选项（catalog 用，UI 渲染）。
+type StrategyOption struct {
+	Name string `json:"name"`
+	Desc string `json:"desc"`
+}
+
+// CatalogInstance 可见中间件实例（catalog 用）。
+type CatalogInstance struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	SupplyMode string `json:"supply_mode"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+}
+
+// DepsCatalog 依赖勾选器所需选项集合。
+type DepsCatalog struct {
+	Kinds      []string          `json:"kinds"`
+	Strategies []StrategyOption  `json:"strategies"`
+	Instances  []CatalogInstance `json:"instances"`
+}

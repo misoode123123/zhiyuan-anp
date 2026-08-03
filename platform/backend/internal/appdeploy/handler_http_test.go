@@ -421,9 +421,15 @@ func TestHandler_SetMwReconciler(t *testing.T) {
 
 type fakeMWReconciler struct{}
 
-func (f *fakeMWReconciler) Reconcile(_ context.Context, _, _ string) error              { return nil }
-func (f *fakeMWReconciler) Cleanup(_ context.Context, _ string) error                   { return nil }
-func (f *fakeMWReconciler) SeedFromManifest(_ context.Context, _, _, _ string) error    { return nil }
+func (f *fakeMWReconciler) Reconcile(_ context.Context, _, _ string) error           { return nil }
+func (f *fakeMWReconciler) Cleanup(_ context.Context, _ string) error                { return nil }
+func (f *fakeMWReconciler) SeedFromManifest(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeMWReconciler) ListDeps(_ context.Context, _ string) ([]DepDeclaration, error) {
+	return nil, nil
+}
+func (f *fakeMWReconciler) DepsCatalog(_ context.Context, _ string) (DepsCatalog, error) {
+	return DepsCatalog{}, nil
+}
 
 // TestHandler_UpsertEnv_platformProtected 平台注入的 key 用户改不了（409）。
 func TestHandler_UpsertEnv_platformProtected(t *testing.T) {
