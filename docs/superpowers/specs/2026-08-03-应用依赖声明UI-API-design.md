@@ -237,3 +237,22 @@ for _, b := range binds {
 4. UI 删除依赖 → dedicated 容器/platform env/binding 行均清。
 5. PG 单测 + handler_http_test 全绿（`go test -p 1`）；`.28` e2e 全走 UI（redis/milvus shared 各一 + 导入种子 + 删除清理）全绿。
 6. 零迁移、零新表；P1–P5 既有 e2e 用例（改走 UI 声明）仍全绿（无回归）。
+
+---
+
+## 13. e2e 验证结论（.28，2026-08-03，HEAD `891b163`）
+
+**部署**：push origin main（b6db717..891b163）→ tar+scp+重建 backend/frontend → 三项核查全绿（源码 SetDeps/SeedFromManifest 命中、容器新创建 23:17/23:18、迁移仍 000033 P6 零迁移、healthz/deep healthy）。
+
+**API 驱动 e2e（6/6 PASS，零实现 bug）**：
+
+1. **redis shared 全链路** ✅：PUT deps(redis/shared)→binding declared→deploy v2 running→`REDIS_ADDR=10.10.0.28:6381`+`REDIS_DB=1` source=platform→binding bound token=1→容器内 `nc -z 10.10.0.28 6381`=OK。
+2. **milvus shared 全链路** ✅：PUT +milvus/shared→deploy v3 running→`MILVUS_ADDR=10.10.0.28:19530`+`MILVUS_COLLECTION_PREFIX=app620682c8f013_`（`app<12hex>_`）source=platform→binding bound svinst-milvus-shared-28→`nc -z 19530`=OK。（caveat 同 P4/P5：pymilvus numpy/X86_V2 仅阻断客户端库，TCP 连通+平台注入正确。）
+3. **导入种子 SeedFromManifest** ✅：导入 `.anp/deps.yaml`(kind:redis 无 strategy) 的 app→自动种 `bind_existing/declared`→deploy→bound svinst-redis-28。
+4. **删除清理 SetDeps diff→ReleaseDep+DeleteEnv** ✅：PUT deps=`[]`→0 binding 行+0 REDIS*/MILVUS* env 行（共享实例本体保留，仅 app 隔离 token/db 号释放）。
+5. **校验负路径** ✅：`kind:mongodb`→400「kind 非法」；`strategy:magic`→400「strategy 非法」；均无脏 binding。
+6. **catalog** ✅：kinds=[redis,milvus]、strategies 3（带 desc）、instances 4（.28 种子 bind_existing+shared）。
+
+**前端核查**：frontend 重建 23:18，入口 200，deps UI 关键字（`bind_existing`/`deps/catalog`）在重建后 `.next` SSR chunk 命中。
+
+**结论**：P6 deps-ui 端到端全链路闭合（UI/API PUT→SetDeps diff→binding declared→下次 deploy Reconcile 读 DB→supplyAll→env 注入；导入→SeedFromManifest→declared）。声明与部署解耦、移除清理、导入种子、校验、catalog 均符合 §5/§6 规格。**P1-P5 依赖注入链路自此可通过 UI/API 声明驱动，不再依赖手编 `.anp/deps.yaml`**（文件降为导入初始来源）。零迁移、零回归。
