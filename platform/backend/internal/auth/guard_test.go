@@ -133,3 +133,12 @@ func TestAutoRequire_AllowsAdminDeniesAnonymous(t *testing.T) {
 		t.Fatalf("读取类对 anonymous 应放行(200)，得到 %d", w3.Code)
 	}
 }
+
+// TestRouteOp_NetworkModeRegistered 防回归：PUT /network-mode 必须登记在 routeOps，
+// 否则 AutoRequire 不注入 roles → PutNetworkMode 的 rolesFromCtx 返 nil → 所有人 403（含 admin）。
+func TestRouteOp_NetworkModeRegistered(t *testing.T) {
+	got := RouteOp("PUT", "/api/v1/project-spaces/:id/apps/:aid/network-mode")
+	if got != "app.net.host" {
+		t.Fatalf("PUT /network-mode 应登记 op app.net.host（否则 AutoRequire 不注入 roles，生产全员 403），得 %q", got)
+	}
+}

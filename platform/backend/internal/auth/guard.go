@@ -62,7 +62,9 @@ var routeOps = map[string]string{
 	"POST /api/v1/project-spaces/:id/apps/:aid/deploy-commit": "app.deploy-commit._",
 	"POST /api/v1/project-spaces/:id/apps/:aid/stop":          "app.stop._",
 	"POST /api/v1/project-spaces/:id/apps/:aid/start":         "app.start._",
-	"DELETE /api/v1/project-spaces/:id/apps/:aid":             "app.delete._",
+	"DELETE /api/v1/project-spaces/:id/apps/:aid": "app.delete._",
+	// host 网络门禁（set-time）：改 network_mode 需 gatekeeper/admin（op app.net.host，静态 op 故 AutoRequire 直接强制）。
+	"PUT /api/v1/project-spaces/:id/apps/:aid/network-mode": "app.net.host",
 	// 绩效（admin 看全员/某人/互动聊天；me 不登记→任意登录自校验）
 	"GET /api/v1/project-spaces/:id/performance/members":                      "performance.view.all",
 	"GET /api/v1/project-spaces/:id/performance/members/:userID":              "performance.view.all",
