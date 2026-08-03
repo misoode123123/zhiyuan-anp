@@ -405,3 +405,23 @@ func genMilvusPrefix() string {
 ---
 
 _本设计把 mwsupply 的 shared 从 redis 推进到 milvus：`supplyShared` 重构为 kind 分派骨架（redis 路径逐字保留），milvus 用随机 collection 前缀隔离（`app<12hex>_`，复用 `uq_svbind_inst_token` 唯一索引兜底），注入 `MILVUS_ADDR` + `MILVUS_COLLECTION_PREFIX`，CASCADE 自动回收。零 main.go、零 handler、零 docker、零新依赖、仅 1 迁移（种子）。补齐后 milvus 三策略（bind_existing / shared / dedicated）全齐。隔离是逻辑前缀（需 app 配合），透明隔离 + 残留清理留给后续「milvus 鉴权」项。审核通过后开 plan → 实现。_
+
+---
+
+## 14. e2e 验证结论（.28，2026-08-03，commit ab56d6b）
+
+P5 shared milvus 已 `.28` live 验证通过（两个 python:3-alpine app，`.anp/deps.yaml` `strategy:shared`，**顺序 deploy** 避同时 build 竞态）：
+
+- **供给 + 隔离**：两 app 容器内 `MILVUS_COLLECTION_PREFIX` **不同**（实测 `app593f87795665_` ≠ `app839205477dd8_`；跨多轮恒不同：`app4fd3ce49c4f5_`/`app32e790a2a72f_`、`app316256748b45_`/`app3d4ed88fa1e2_`），`MILVUS_ADDR` **同**（均 `10.10.0.28:19530`）；每 app 仅 2 个 `MILVUS_` env（`MILVUS_ADDR` + `MILVUS_COLLECTION_PREFIX`），**无 `MILVUS_PASSWORD` / 无 `MILVUS_DB`**，均 `source=platform`。
+- **binding**：两 app 各一行 `service_kind=milvus, strategy=shared, isolation_token=app<12hex>_, status=bound, service_instance_id=svinst-milvus-shared-28`（复用同一条 shared 种子）。
+- **app→milvus 可达**：两 app 容器内 `nc -z 10.10.0.28 19530` = `APP1_TO_MILVUS_TCP_OK` / `APP2_TO_MILVUS_TCP_OK`；app `/` python `TCP_CHECK=OK`（app 容器走 host LAN IP:19530 达共享 milvus，同 redis shared 范式；shared 不起容器故无就绪探针，复用已运行的 `yxt-milvus`）。
+- **回收**：DELETE app → `appdeploy_service_binding` + `appdeploy_env`(MILVUS_*) 行 **CASCADE 删**（实测 `0|0`），无残留容器。
+- **平台保护**：`POST /project-spaces/:id/apps/:aid/env` 改 `MILVUS_COLLECTION_PREFIX` → **409 / 40960**（source=platform 保护，`GetEnvSource=="platform"` 拦截）。
+- **种子**：迁移 `000033`（`//go:embed migrations/pg/*.sql`，backend rebuild 启动自动 migrate）落 `svinst-milvus-shared-28`（shared/milvus/`{"mode":"prefix"}`/10.10.0.28/19530/auth_ref=NULL），与 bind_existing `svinst-milvus-28` 同机同端口复用 `yxt-milvus`（同 P2 redis shared 复用 yxt-redis 范式）。
+
+**⚠️ 已知（非 P5）**：
+
+1. pymilvus 向量 CRUD 仍被 .28 numpy/X86_V2 老 CPU 阻断（同 P4，[[milvus-dedicated-closed]]），e2e 不测 app 端 CRUD（§6 app 配合契约由 app 侧负责）。
+2. 两 app **同时** deploy 会偶发其一 building→failed（docker builder 竞态；supply 阶段已成功 binding=bound，非 P5），**顺序 deploy** 即稳——记为 e2e 操作要点。
+
+e2e 脚本：`.28:/root/e2e-milvus-shared-v3.sh`（顺序 deploy + 容器按名 `appdeploy-<slug>-test-v<n>` 找；状态轮询用 `/apps/:aid/detail` 非 `/apps/:aid`，后者 404；`app.status` 字段常空、状态在 `instance.status`）。fixture 宿主 `/opt/anp/data/milsh{1,2}`（=容器 `/data/milsh{1,2}`）。
