@@ -44,6 +44,7 @@ type App = {
   deploy_mode: string; // managed(A类) / external(B类纳管外部)
   external_url: string; // external 模式时外部应用访问地址
   app_kind: string; // 应用类型 web/desktop/mobile/cli/service/headless
+  network_mode: string; // bridge(默认) / host(需 gatekeeper/admin)
   import_source?: "" | "git" | "dir"; // 导入来源：''=平台建仓 / git=远程仓 / dir=本机zip或服务器目录
   import_ref?: string; // git=url / dir=来源标识
   imported_at?: string; // 导入完成时间，进行中空
@@ -417,6 +418,53 @@ function DepsSection({ psID, appID }: { psID: string; appID: string }) {
           + 添加依赖
         </button>
       )}
+    </div>
+  );
+}
+
+// 网络模式区：bridge(默认)/host 选择器，改选即 PUT。host 削弱隔离需 gatekeeper/admin；
+// applications 页无 roles 上下文 → 不前置置灰，靠 403 toast 提示（服务端是安全真相）。
+function NetworkModeSection({ psID, appID, mode }: { psID: string; appID: string; mode: string }) {
+  const [m, setM] = useState(mode || "bridge");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setM(mode || "bridge"), [mode]);
+
+  async function save(next: string) {
+    setSaving(true);
+    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/network-mode`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: next }),
+    });
+    const j = (await res.json()) as Envelope<unknown>;
+    setSaving(false);
+    if (res.ok && j.code === 0) {
+      toast.success("网络模式已改为 " + next + "，下次部署生效");
+      setM(next);
+    } else {
+      toast.error(j.message || "保存失败（host 需 gatekeeper/admin）");
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded border border-border p-3">
+      <div className="mb-1 text-sm font-semibold">🌐 网络模式</div>
+      <p className="mb-2 text-xs text-text-muted">
+        host 模式容器共享宿主网络（直接占宿主端口、直达 host-LAN），削弱隔离。默认 bridge
+        更安全；host 需 gatekeeper/admin。
+      </p>
+      <div className="flex items-center gap-2 text-xs">
+        <select
+          value={m}
+          onChange={(e) => save(e.target.value)}
+          disabled={saving}
+          className="rounded border border-border px-1 py-0.5"
+        >
+          <option value="bridge">bridge（默认）</option>
+          <option value="host">host</option>
+        </select>
+        {saving && <span className="text-text-muted">保存中…</span>}
+      </div>
     </div>
   );
 }
@@ -1816,7 +1864,12 @@ export default function ApplicationsPage() {
               <ArtifactSection psID={psID} appID={a.id} appKind={a.app_kind} />
               {/* external 应用不经 buildAndDeploy→Reconcile 从不调→声明的依赖永不供给，
                   不渲染依赖 section，避免误导性的「下次部署生效」hint。 */}
-              {a.deploy_mode !== "external" && <DepsSection psID={psID} appID={a.id} />}
+              {a.deploy_mode !== "external" && (
+                <>
+                  <DepsSection psID={psID} appID={a.id} />
+                  <NetworkModeSection psID={psID} appID={a.id} mode={a.network_mode} />
+                </>
+              )}
             </div>
           );
         })}
