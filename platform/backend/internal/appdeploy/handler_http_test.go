@@ -430,6 +430,7 @@ func (f *fakeMWReconciler) ListDeps(_ context.Context, _ string) ([]DepDeclarati
 func (f *fakeMWReconciler) DepsCatalog(_ context.Context, _ string) (DepsCatalog, error) {
 	return DepsCatalog{}, nil
 }
+func (f *fakeMWReconciler) SetDeps(_ context.Context, _, _ string, _ []DepDeclaration) error { return nil }
 
 // TestHandler_UpsertEnv_platformProtected 平台注入的 key 用户改不了（409）。
 func TestHandler_UpsertEnv_platformProtected(t *testing.T) {

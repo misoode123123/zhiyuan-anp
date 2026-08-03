@@ -856,3 +856,76 @@ func TestDepsCatalog(t *testing.T) {
 		t.Fatalf("instances 应含 redis+milvus，得 %v", kinds)
 	}
 }
+
+// —— Task 6：SetDeps diff（PutDeps 核心）——
+
+// TestSetDeps_added 新增声明 → declared binding（不立即供给）。
+func TestSetDeps_added(t *testing.T) {
+	r, _, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "sdadd", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, a)
+	err := r.SetDeps(ctx, a.ID, "ps_1", []appdeploy.DepDeclaration{
+		{Kind: "redis", Strategy: ModeShared},
+	})
+	if err != nil {
+		t.Fatalf("SetDeps: %v", err)
+	}
+	b, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	if b == nil || b.Status != StatusDeclared || b.Strategy != ModeShared {
+		t.Fatalf("应 declared/shared，得 %+v", b)
+	}
+}
+
+// TestSetDeps_unchanged 同 kind 同 strategy → 不动（保 bound，不重供、不释放）。
+func TestSetDeps_unchanged(t *testing.T) {
+	r, _, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "sdunc", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, a)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: ModeShared}})
+	before, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	_ = r.SetDeps(ctx, a.ID, "ps_1", []appdeploy.DepDeclaration{{Kind: "redis", Strategy: ModeShared}})
+	after, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	if after.Status != StatusBound || after.IsolationToken != before.IsolationToken {
+		t.Fatalf("unchanged 应保 bound+同 token，before=%+v after=%+v", before, after)
+	}
+}
+
+// TestSetDeps_removed 删除声明 → dedicated docker rm + 删 instance/env/binding。
+func TestSetDeps_removed(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "sdrem", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: ModeDedicated}})
+	dk.rmCalls = nil
+	_ = r.SetDeps(ctx, a.ID, "ps_1", nil) // 清空
+	if len(dk.rmCalls) != 1 {
+		t.Fatalf("应 RmForce 1 次，得 %d", len(dk.rmCalls))
+	}
+	if got, _ := NewStore(db).GetBinding(ctx, a.ID, "redis"); got != nil {
+		t.Fatalf("binding 应删，得 %+v", got)
+	}
+	if v, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR"); v != "" {
+		t.Fatalf("REDIS_ADDR 应删，得 %q", v)
+	}
+}
+
+// TestSetDeps_changed 策略变 → 释放旧资源 + 声明新（declared）。
+func TestSetDeps_changed(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "sdchg", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: ModeDedicated}})
+	dk.rmCalls = nil
+	_ = r.SetDeps(ctx, a.ID, "ps_1", []appdeploy.DepDeclaration{{Kind: "redis", Strategy: ModeShared}})
+	if len(dk.rmCalls) != 1 {
+		t.Fatalf("策略变更应释放旧 dedicated 容器，得 %d 次 RmForce", len(dk.rmCalls))
+	}
+	b, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	if b == nil || b.Status != StatusDeclared || b.Strategy != ModeShared {
+		t.Fatalf("应变 declared/shared，得 %+v", b)
+	}
+}

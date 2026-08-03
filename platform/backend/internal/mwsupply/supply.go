@@ -483,3 +483,34 @@ func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.De
 		Instances: cis,
 	}, nil
 }
+
+// SetDeps 整体替换声明（PutDeps 核心，best-effort）：
+// removed（现 binding 不在新声明）/ changed（同 kind 策略变）→ ReleaseDep 释放资源；
+// added（新声明不在现 binding）/ changed → DeclareBinding 写 declared；
+// unchanged（同 kind 同策略）→ 不动（保 bound，不重供）。
+func (r *Reconciler) SetDeps(ctx context.Context, appID, psID string, decls []appdeploy.DepDeclaration) error {
+	cur, _ := r.store.ListBindingsByApp(ctx, appID)
+	curMap := map[string]ServiceBinding{}
+	for _, b := range cur {
+		curMap[b.ServiceKind] = b
+	}
+	newStrategy := map[string]string{}
+	for _, d := range decls {
+		newStrategy[d.Kind] = d.Strategy
+	}
+	// removed / changed → 释放
+	for kind, b := range curMap {
+		ns, ok := newStrategy[kind]
+		if !ok || ns != b.Strategy {
+			r.ReleaseDep(ctx, &b)
+		}
+	}
+	// added / changed → 声明
+	for kind, strategy := range newStrategy {
+		b, exists := curMap[kind]
+		if !exists || b.Strategy != strategy {
+			_ = r.store.DeclareBinding(ctx, appID, psID, kind, strategy)
+		}
+	}
+	return nil
+}
