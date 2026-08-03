@@ -37,15 +37,37 @@ func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyCh
 // SetLogger 注入 logger（可选；main 装配时调，测试不调则 flush 失败静默）。
 func (r *Reconciler) SetLogger(l *zap.Logger) { r.log = l }
 
-// Reconcile 读 repoDir 的 .anp/deps.yaml → supplyAll（读源在 Task 4 换 DB）。
-// 幂等（binding 已 bound 且同实例则复用 token 不 flush）。读清单失败=空清单（不报错）。
-// 总不返回错（best-effort，不阻塞部署）。
-func (r *Reconciler) Reconcile(ctx context.Context, appID, psID, repoDir string) error {
+// Reconcile 读该 app 的 binding 声明（DB）→ 逐个供给 → 写 env + binding。
+// 幂等（binding 已 bound 且同实例则复用 token 不 flush）。总不返回错（best-effort，不阻塞部署）。
+func (r *Reconciler) Reconcile(ctx context.Context, appID, psID string) error {
+	binds, err := r.store.ListBindingsByApp(ctx, appID)
+	if err != nil {
+		return nil // best-effort：读声明失败不阻塞部署
+	}
+	deps := make([]DepService, 0, len(binds))
+	for _, b := range binds {
+		if b.ServiceKind == "" {
+			continue
+		}
+		deps = append(deps, DepService{Kind: b.ServiceKind, Strategy: b.Strategy})
+	}
+	r.supplyAll(ctx, appID, psID, deps)
+	return nil
+}
+
+// SeedFromManifest 读 repoDir/.anp/deps.yaml → 对每个声明种 declared binding（不覆盖已存在）。
+// 导入时调：opencode 适配/手编的 .anp/deps.yaml 由此进入平台 DB。best-effort，无文件=空清单不报错。
+func (r *Reconciler) SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error {
 	m, err := LoadDepsManifest(repoDir)
 	if err != nil || m == nil {
 		return nil
 	}
-	r.supplyAll(ctx, appID, psID, m.Services)
+	for _, dep := range m.Services {
+		if dep.Kind == "" {
+			continue
+		}
+		_ = r.store.DeclareIfAbsent(ctx, appID, psID, dep.Kind, dep.Strategy)
+	}
 	return nil
 }
 

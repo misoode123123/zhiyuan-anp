@@ -72,11 +72,12 @@ type AdaptSubmitter interface {
 // SetAdaptSubmitter 注入适配触发器（main.go 在 Register 后调，避免改 NewHandler 签名）。
 func (h *Handler) SetAdaptSubmitter(a AdaptSubmitter) { h.adaptSubmitter = a }
 
-// MWReconciler 中间件依赖供给（部署前读 repo 的 .anp/deps.yaml → 注入 REDIS_ADDR 等连接 env；
+// MWReconciler 中间件依赖供给（部署前读 DB binding 声明 → 注入 REDIS_ADDR 等连接 env；
 // 删 app 时回收 dedicated 中间件容器）。由 mwsupply.Reconciler 实现（经 main.go SetMwReconciler 注入，避免 appdeploy→mwsupply 依赖）。
 type MWReconciler interface {
-	Reconcile(ctx context.Context, appID, psID, repoDir string) error
-	Cleanup(ctx context.Context, appID string) error // P3：docker rm dedicated 容器（best-effort）
+	Reconcile(ctx context.Context, appID, psID string) error
+	Cleanup(ctx context.Context, appID string) error                                                      // P3：docker rm dedicated 容器（best-effort）
+	SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error // P6：导入时 .anp/deps.yaml → DB declared binding
 }
 
 // SetMwReconciler 注入中间件供给器（main.go 在 Register 后调）。
@@ -1625,10 +1626,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	ins.BuildLog = tail(log, 2000)
 	_ = h.store.UpdateInstance(ctx, ins)
 	// a.Status=building 已由 Deploy handler 同步标记（markBuilding），此处无需重写
-	// 中间件依赖供给（P1 bind_existing）：读 buildDir 的 .anp/deps.yaml → 注入 REDIS_ADDR 等 env。
-	// best-effort（失败不阻塞部署）。buildDir 已 checkout 到目标版本，读该 commit 的清单。
+	// 中间件依赖供给（P6：读 DB binding 声明 → 注入 REDIS_ADDR 等 env）。
+	// best-effort（失败不阻塞部署）。声明源已由导入/UI 切到 DB（SeedFromManifest）。
 	if h.mwReconciler != nil {
-		_ = h.mwReconciler.Reconcile(ctx, a.ID, a.ProjectSpaceID, buildDir)
+		_ = h.mwReconciler.Reconcile(ctx, a.ID, a.ProjectSpaceID)
 	}
 	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
 	// docker run 限 3 分钟：镜像已构建，run 卡住通常是端口/挂载问题，无需长等；超时同走 failed。

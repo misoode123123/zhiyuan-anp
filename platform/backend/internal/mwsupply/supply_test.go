@@ -748,3 +748,67 @@ func TestReleaseDep_shared(t *testing.T) {
 		t.Fatalf("binding 应删，得 %+v", got)
 	}
 }
+
+// —— Task 4：Reconcile 读 DB binding + SeedFromManifest 导入种子 ——
+
+// TestReconcile_readsBindings Reconcile 从 DB binding 声明供给（不再读文件）。
+func TestReconcile_readsBindings(t *testing.T) {
+	r, appStore, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rbapp", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	// 不写文件；直接种一条 declared binding
+	_ = NewStore(db).DeclareBinding(ctx, a.ID, "ps_1", "redis", ModeShared)
+	if err := r.Reconcile(ctx, a.ID, "ps_1"); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	ra, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
+	if ra != "10.10.0.28:6381" {
+		t.Fatalf("REDIS_ADDR 应 10.10.0.28:6381，得 %q", ra)
+	}
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 1 || binds[0].Status != StatusBound {
+		t.Fatalf("应 1 binding bound，得 %+v", binds)
+	}
+}
+
+// TestSeedFromManifest 有 deps.yaml → 种 declared；已声明 → 不覆盖。
+func TestSeedFromManifest(t *testing.T) {
+	r, _, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "seedapp", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, a)
+	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
+
+	if err := r.SeedFromManifest(ctx, a.ID, "ps_1", dir); err != nil {
+		t.Fatalf("SeedFromManifest: %v", err)
+	}
+	b, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	if b == nil || b.Status != StatusDeclared || b.Strategy != ModeShared {
+		t.Fatalf("应种 declared/shared，得 %+v", b)
+	}
+	// 用户改 dedicated 后再 seed → 不覆盖
+	_ = NewStore(db).DeclareBinding(ctx, a.ID, "ps_1", "redis", ModeDedicated)
+	if err := r.SeedFromManifest(ctx, a.ID, "ps_1", dir); err != nil {
+		t.Fatalf("SeedFromManifest 二次: %v", err)
+	}
+	b2, _ := NewStore(db).GetBinding(ctx, a.ID, "redis")
+	if b2.Strategy != ModeDedicated {
+		t.Fatalf("SeedFromManifest 不应覆盖已声明，得 %+v", b2)
+	}
+}
+
+// TestSeedFromManifest_noFile 无 deps.yaml → 不报错、不种。
+func TestSeedFromManifest_noFile(t *testing.T) {
+	r, _, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "seednone", RepoDir: "/x", InternalPort: 8080}
+	_ = appdeploy.NewStore(db).Create(ctx, a)
+	if err := r.SeedFromManifest(ctx, a.ID, "ps_1", t.TempDir()); err != nil {
+		t.Fatalf("无文件不应报错: %v", err)
+	}
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	if len(binds) != 0 {
+		t.Fatalf("无文件应 0 binding，得 %d", len(binds))
+	}
+}
