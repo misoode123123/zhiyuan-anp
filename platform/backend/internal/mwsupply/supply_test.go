@@ -720,3 +720,67 @@ func TestReconcile_sharedMilvus_noInstance(t *testing.T) {
 		t.Fatalf("failed 不应写 MILVUS_ADDR，得 %q", ma)
 	}
 }
+
+// —— ReleaseDep 用例（P6）——
+
+// TestReleaseDep_dedicatedRedis bound dedicated redis → RmForce + 删 instance + 删 env(3 键) + 删 binding。
+// 直接种一条 bound dedicated binding + instance（不依赖供给流程，故本任务可独立编译）。
+func TestReleaseDep_dedicatedRedis(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "relrd", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	inst := &ServiceInstance{ID: "svinst-redis-ded-rel", Kind: "redis", Name: "mwredis-rel",
+		SupplyMode: ModeDedicated, Host: "testdeploy", Port: 9600, AuthRef: "p",
+		ContainerName: "mwredis-rel", Status: "active"}
+	_ = NewStore(db).CreateInstance(ctx, inst)
+	_ = NewStore(db).UpsertBinding(ctx, &ServiceBinding{AppID: a.ID, ProjectSpaceID: "ps_1",
+		ServiceKind: "redis", Strategy: ModeDedicated, ServiceInstanceID: inst.ID,
+		EnvKey: "REDIS_ADDR", Status: StatusBound})
+	_ = appStore.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "testdeploy:9600", false, "platform")
+	_ = appStore.UpsertEnv(ctx, a.ID, "REDIS_PASSWORD", "p", true, "platform")
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	b := binds[0]
+	dk.rmCalls = nil
+
+	r.ReleaseDep(ctx, &b)
+	if len(dk.rmCalls) != 1 || dk.rmCalls[0] != "mwredis-rel" {
+		t.Fatalf("应 RmForce mwredis-rel，得 %v", dk.rmCalls)
+	}
+	if got, _ := NewStore(db).GetInstance(ctx, inst.ID); got != nil {
+		t.Fatalf("instance 行应删，得 %+v", got)
+	}
+	for _, k := range []string{"REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD"} {
+		if v, _ := appStore.GetEnvValue(ctx, a.ID, k); v != "" {
+			t.Fatalf("env %q 应删，得 %q", k, v)
+		}
+	}
+	if got, _ := NewStore(db).GetBinding(ctx, a.ID, "redis"); got != nil {
+		t.Fatalf("binding 行应删，得 %+v", got)
+	}
+}
+
+// TestReleaseDep_shared 只删 env + binding（无 docker rm）；token 随行释放。
+func TestReleaseDep_shared(t *testing.T) {
+	r, appStore, db, _, dk := newReconcilerTest(t)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "relsh", RepoDir: "/x", InternalPort: 8080}
+	_ = appStore.Create(ctx, a)
+	_ = NewStore(db).ClaimSharedToken(ctx, a.ID, "ps_1", "redis", "svinst-redis-shared-28", "7", "REDIS_ADDR")
+	_ = appStore.UpsertEnv(ctx, a.ID, "REDIS_ADDR", "10.10.0.28:6381", false, "platform")
+	_ = appStore.UpsertEnv(ctx, a.ID, "REDIS_DB", "7", false, "platform")
+	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
+	b := binds[0]
+	dk.rmCalls = nil
+
+	r.ReleaseDep(ctx, &b)
+	if len(dk.rmCalls) != 0 {
+		t.Fatalf("shared 不应 RmForce，得 %v", dk.rmCalls)
+	}
+	if v, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR"); v != "" {
+		t.Fatalf("REDIS_ADDR 应删，得 %q", v)
+	}
+	if got, _ := NewStore(db).GetBinding(ctx, a.ID, "redis"); got != nil {
+		t.Fatalf("binding 应删，得 %+v", got)
+	}
+}

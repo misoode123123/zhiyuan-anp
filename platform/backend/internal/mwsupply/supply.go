@@ -9,9 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// EnvWriter 写应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
+// EnvWriter 写/删应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
 type EnvWriter interface {
 	UpsertEnv(ctx context.Context, appID, key, value string, isSecret bool, source string) error
+	DeleteEnv(ctx context.Context, appID, key string) error // P6：声明移除时删注入的 platform env
 }
 
 // Reconciler 中间件依赖供给。best-effort：失败记 binding，不阻塞部署。
@@ -369,4 +370,47 @@ func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
 		_ = r.store.DeleteInstance(ctx, inst.ID)
 	}
 	return nil
+}
+
+// injectedEnvKeys 某 kind 供给时注入的全部 env 键（ReleaseDep 删除用）。
+func injectedEnvKeys(kind string) []string {
+	switch kind {
+	case "redis":
+		return []string{"REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD"}
+	case "milvus":
+		return []string{"MILVUS_ADDR", "MILVUS_COLLECTION_PREFIX"}
+	default:
+		return []string{strings.ToUpper(kind) + "_ADDR"}
+	}
+}
+
+// ReleaseDep 释放单个依赖的资源（声明移除/变更时；best-effort，不报错）：
+// dedicated → docker rm 容器/栈 + 删 instance 行；三类都删注入的 platform env 键 + 删 binding 行。
+func (r *Reconciler) ReleaseDep(ctx context.Context, b *ServiceBinding) {
+	// dedicated：docker rm（复用 Cleanup 的 per-binding rm 逻辑）。instance 行须在 binding 删后再删（FK RESTRICT）。
+	var dedInstID string
+	if b.Strategy == ModeDedicated && b.ServiceInstanceID != "" {
+		if inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID); ie == nil && inst != nil && inst.ContainerName != "" {
+			switch inst.Kind {
+			case "milvus":
+				if err := r.docker.RmMilvusStack(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("ReleaseDep milvus 栈清理失败 (best-effort)", zap.String("app", b.AppID), zap.Error(err))
+				}
+			default:
+				if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("ReleaseDep 容器清理失败 (best-effort)", zap.String("app", b.AppID), zap.Error(err))
+				}
+			}
+			dedInstID = inst.ID
+		}
+	}
+	// 删注入的 platform env 键
+	for _, key := range injectedEnvKeys(b.ServiceKind) {
+		_ = r.env.DeleteEnv(ctx, b.AppID, key)
+	}
+	// 先删 binding 解 FK 引用（binding.service_instance_id RESTRICT instance 删除），再删 instance。
+	_ = r.store.DeleteBinding(ctx, b.ID)
+	if dedInstID != "" {
+		_ = r.store.DeleteInstance(ctx, dedInstID)
+	}
 }
