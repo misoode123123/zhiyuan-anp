@@ -2056,6 +2056,13 @@ func (h *Handler) Delete(c *gin.Context) {
 			}
 			_ = h.artifactStore.DeleteByApp(ctx, a.ID)
 		}
+		// 删除平台托管仓库目录(含 .worktrees/ 编码工作台);external 模式(外部仓库,平台不管)不删。
+		// 仅认 ManagedRepoBase 下的 RepoDir(前缀校验),防误删任意路径;失败仅 Warn 不阻塞删 app。
+		if a.DeployMode != AppExternal && a.RepoDir != "" && strings.HasPrefix(a.RepoDir, ManagedRepoBase) {
+			if err := os.RemoveAll(a.RepoDir); err != nil {
+				zap.L().Warn("删应用仓库目录失败(不阻塞)", zap.String("app", a.ID), zap.String("repo", a.RepoDir), zap.Error(err))
+			}
+		}
 	}
 	if err := h.store.Delete(c.Request.Context(), c.Param("id"), c.Param("aid")); err != nil {
 		httpx.Err(c, 500, 50020, err.Error())

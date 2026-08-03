@@ -614,6 +614,48 @@ func TestHandler_Delete_appNotFound(t *testing.T) {
 	}
 }
 
+// TestHandler_Delete_removesRepoDir 删应用应清除其托管仓库目录(含 .worktrees);修复曾漏删致磁盘泄漏。
+func TestHandler_Delete_removesRepoDir(t *testing.T) {
+	orig := ManagedRepoBase
+	ManagedRepoBase = t.TempDir() // 测试用临时根,避免依赖本机 /data/repos
+	defer func() { ManagedRepoBase = orig }()
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	repoDir := ManagedRepoDir("snake")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := seedApp(t, h, "ps_1", "snake", repoDir)
+	code, _ := doReq(t, r, http.MethodDelete, "/api/v1/project-spaces/ps_1/apps/"+a.ID, nil)
+	if code != 200 {
+		t.Fatalf("删除应 200,得到 %d", code)
+	}
+	if _, err := os.Stat(repoDir); !os.IsNotExist(err) {
+		t.Fatalf("删应用后托管仓库目录应被清除,仍存在: %s", repoDir)
+	}
+}
+
+// TestHandler_Delete_keepsRepoOutsideBase RepoDir 不在 ManagedRepoBase 下 → 不删(防误删任意路径)。
+func TestHandler_Delete_keepsRepoOutsideBase(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	repoDir := t.TempDir() // 任意目录,不在 /data/repos 下
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := seedApp(t, h, "ps_1", "foreign", repoDir)
+	code, _ := doReq(t, r, http.MethodDelete, "/api/v1/project-spaces/ps_1/apps/"+a.ID, nil)
+	if code != 200 {
+		t.Fatalf("删除应 200,得到 %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "README.md")); err != nil {
+		t.Fatalf("非托管 RepoDir 不应被删,但已消失: %s", repoDir)
+	}
+}
+
 // TestHandler_Stop_notDeployed 应用未在 prod 部署 → 400（不调 docker）。
 func TestHandler_Stop_notDeployed(t *testing.T) {
 	h, _ := newHTTPHandler(t)
