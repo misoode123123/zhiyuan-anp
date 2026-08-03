@@ -37,7 +37,7 @@ func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyCh
 // SetLogger 注入 logger（可选；main 装配时调，测试不调则 flush 失败静默）。
 func (r *Reconciler) SetLogger(l *zap.Logger) { r.log = l }
 
-// Reconcile 读 repoDir 的 .anp/deps.yaml → 对每个声明服务按策略供给 → 写 env + binding。
+// Reconcile 读 repoDir 的 .anp/deps.yaml → supplyAll（读源在 Task 4 换 DB）。
 // 幂等（binding 已 bound 且同实例则复用 token 不 flush）。读清单失败=空清单（不报错）。
 // 总不返回错（best-effort，不阻塞部署）。
 func (r *Reconciler) Reconcile(ctx context.Context, appID, psID, repoDir string) error {
@@ -45,13 +45,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, appID, psID, repoDir string)
 	if err != nil || m == nil {
 		return nil
 	}
-	for _, dep := range m.Services {
+	r.supplyAll(ctx, appID, psID, m.Services)
+	return nil
+}
+
+// supplyAll 按声明列表逐个供给（best-effort，幂等）。供给逻辑核心，被 Reconcile 与测试共用。
+func (r *Reconciler) supplyAll(ctx context.Context, appID, psID string, deps []DepService) {
+	for _, dep := range deps {
 		if dep.Kind == "" {
 			continue
 		}
 		r.supplyOne(ctx, appID, psID, dep)
 	}
-	return nil
 }
 
 // supplyOne 供给单个依赖。bind_existing（P1）/ shared（P2 redis）；dedicated 暂 failed（P3）。

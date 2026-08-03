@@ -122,10 +122,7 @@ func TestReconcile_bindExisting(t *testing.T) {
 	if err := appStore.Create(ctx, a); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	dir := writeManifest(t, "services:\n  - kind: redis\n  - kind: milvus\n")
-	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis"}, {Kind: "milvus"}})
 	ra, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
 	if ra != "10.10.0.28:6381" {
 		t.Fatalf("REDIS_ADDR 应 10.10.0.28:6381，得 %q", ra)
@@ -145,11 +142,8 @@ func TestReconcile_idempotent(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp2", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
-	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-		t.Fatalf("二次 reconcile 不应报错: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis"}})
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis"}})
 }
 
 func TestReconcile_missingInstanceKind(t *testing.T) {
@@ -157,10 +151,7 @@ func TestReconcile_missingInstanceKind(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp3", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: mongodb\n")
-	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-		t.Fatalf("未注册 kind 不应报错: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "mongodb"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed {
 		t.Fatalf("未注册 kind 应 binding failed，得 %+v", binds)
@@ -172,9 +163,7 @@ func TestReconcile_noManifest(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "rcapp4", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	if err := r.Reconcile(ctx, a.ID, "ps_1", t.TempDir()); err != nil {
-		t.Fatalf("无清单不应报错: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", nil)
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 0 {
 		t.Fatalf("无清单应 0 binding，得 %d", len(binds))
@@ -187,12 +176,11 @@ func TestReconcile_noManifest(t *testing.T) {
 func TestReconcile_sharedRedis(t *testing.T) {
 	r, appStore, db, fl, _ := newReconcilerTest(t)
 	ctx := context.Background()
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
 
 	mk := func(name string) string {
 		a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: name, RepoDir: "/x", InternalPort: 8080}
 		_ = appStore.Create(ctx, a)
-		_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+		r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 		return a.ID
 	}
 	a1 := mk("sh1")
@@ -228,11 +216,10 @@ func TestReconcile_shared_idempotent(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shidem", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	db1, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB")
 	fl.calls = 0 // 重置计数
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}}) // 重部署
 	db2, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB")
 	if db1 != db2 {
 		t.Fatalf("重部署 db 号应不变，%q → %q", db1, db2)
@@ -250,8 +237,7 @@ func TestReconcile_shared_flushFailBestEffort(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shfail", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusBound {
 		t.Fatalf("flush best-effort 失败应仍 bound，得 %+v", binds)
@@ -266,17 +252,14 @@ func TestReconcile_shared_flushFailBestEffort(t *testing.T) {
 func TestReconcile_shared_poolExhaust(t *testing.T) {
 	r, appStore, db, _, _ := newReconcilerTest(t)
 	ctx := context.Background()
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n")
 	for i := 0; i < 15; i++ {
 		a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "ex" + string(rune('a'+i)), RepoDir: "/x", InternalPort: 8080}
 		_ = appStore.Create(ctx, a)
-		if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-			t.Fatalf("前 15 不应错: %v", err)
-		}
+		r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	}
 	a16 := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "ex16", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a16)
-	_ = r.Reconcile(ctx, a16.ID, "ps_1", dir)
+	r.supplyAll(ctx, a16.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a16.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed {
 		t.Fatalf("第 16 个应 failed（池满），得 %+v", binds)
@@ -293,10 +276,7 @@ func TestReconcile_dedicatedRedis(t *testing.T) {
 	if err := appStore.Create(ctx, a); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	// 起了一次容器，端口 9600（空池最小号）
 	if len(dk.runCalls) != 1 || dk.runCalls[0].port != mwPortMin {
 		t.Fatalf("应起 1 容器 port=%d，得 %+v", mwPortMin, dk.runCalls)
@@ -335,11 +315,10 @@ func TestReconcile_dedicated_idempotent(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedidem", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	ra1, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
 	dk.runCalls = nil // 重置
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}}) // 重部署
 	ra2, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
 	if ra1 != ra2 {
 		t.Fatalf("重部署 REDIS_ADDR 应不变，%q → %q", ra1, ra2)
@@ -361,8 +340,7 @@ func TestReconcile_dedicated_poolExhaust(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedex", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed {
 		t.Fatalf("池满应 failed，得 %+v", binds)
@@ -382,8 +360,7 @@ func TestReconcile_dedicated_runFail(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedfail", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
 		t.Fatalf("起容器失败应 failed + 无实例，得 %+v", binds)
@@ -398,8 +375,7 @@ func TestReconcile_dedicated_readyFail_bestEffort(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedready", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	// best-effort：ping 失败仍 bound、容器保留（不 RmForce）、env 已写
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusBound {
@@ -419,8 +395,7 @@ func TestReconcile_cleanup_dedicated(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "dedclean", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: redis\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	instID := binds[0].ServiceInstanceID
 	inst, _ := NewStore(db).GetInstance(ctx, instID)
@@ -447,11 +422,11 @@ func TestReconcile_cleanup_skipsSharedAndBindExisting(t *testing.T) {
 	// shared app
 	as := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "shclean", RepoDir: "/x", InternalPort: 8080}
 	_ = appdeploy.NewStore(db).Create(ctx, as)
-	_ = r.Reconcile(ctx, as.ID, "ps_1", writeManifest(t, "services:\n  - kind: redis\n    strategy: shared\n"))
+	r.supplyAll(ctx, as.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	// bind_existing app
 	ab := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "beclean", RepoDir: "/x", InternalPort: 8080}
 	_ = appdeploy.NewStore(db).Create(ctx, ab)
-	_ = r.Reconcile(ctx, ab.ID, "ps_1", writeManifest(t, "services:\n  - kind: redis\n"))
+	r.supplyAll(ctx, ab.ID, "ps_1", []DepService{{Kind: "redis"}})
 	dk.rmCalls = nil
 
 	_ = r.Cleanup(ctx, as.ID)
@@ -476,10 +451,7 @@ func TestReconcile_dedicatedMilvus(t *testing.T) {
 	if err := appStore.Create(ctx, a); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	if err := r.Reconcile(ctx, a.ID, "ps_1", dir); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	// 起了一次栈，端口 9700（空池最小号）
 	if len(dk.stackCalls) != 1 || dk.stackCalls[0].port != milvusPortMin {
 		t.Fatalf("应起 1 栈 port=%d，得 %+v", milvusPortMin, dk.stackCalls)
@@ -512,11 +484,10 @@ func TestReconcile_dedicatedMilvus_idempotent(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildidem", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	ma1, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR")
 	dk.stackCalls = nil
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}}) // 重部署
 	ma2, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_ADDR")
 	if ma1 != ma2 {
 		t.Fatalf("重部署 MILVUS_ADDR 应不变，%q → %q", ma1, ma2)
@@ -537,8 +508,7 @@ func TestReconcile_dedicatedMilvus_poolExhaust(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildex", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed {
 		t.Fatalf("池满应 failed，得 %+v", binds)
@@ -558,8 +528,7 @@ func TestReconcile_dedicatedMilvus_stackFail(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildfail", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
 		t.Fatalf("起栈失败应 failed + 无实例，得 %+v", binds)
@@ -573,8 +542,7 @@ func TestReconcile_dedicatedMilvus_readyTimeout_bestEffort(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildready", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusBound {
 		t.Fatalf("就绪 best-effort 失败应仍 bound，得 %+v", binds)
@@ -593,8 +561,7 @@ func TestReconcile_cleanup_dedicatedMilvus(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mildclean", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: dedicated\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "dedicated"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	instID := binds[0].ServiceInstanceID
 	inst, _ := NewStore(db).GetInstance(ctx, instID)
@@ -624,12 +591,11 @@ func TestReconcile_cleanup_dedicatedMilvus(t *testing.T) {
 func TestReconcile_sharedMilvus(t *testing.T) {
 	r, appStore, db, fl, _ := newReconcilerTest(t)
 	ctx := context.Background()
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
 
 	mk := func(name string) string {
 		a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: name, RepoDir: "/x", InternalPort: 8080}
 		_ = appStore.Create(ctx, a)
-		_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+		r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "shared"}})
 		return a.ID
 	}
 	a1 := mk("msh1")
@@ -676,11 +642,10 @@ func TestReconcile_sharedMilvus_idempotent(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mshidem", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "shared"}})
 	pf1, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_COLLECTION_PREFIX")
 	fl.calls = 0
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir) // 重部署
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "shared"}}) // 重部署
 	pf2, _ := appStore.GetEnvValue(ctx, a.ID, "MILVUS_COLLECTION_PREFIX")
 	if pf1 != pf2 {
 		t.Fatalf("重部署前缀应不变，%q → %q", pf1, pf2)
@@ -710,8 +675,7 @@ func TestReconcile_sharedMilvus_noInstance(t *testing.T) {
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "mshnone", RepoDir: "/x", InternalPort: 8080}
 	_ = appStore.Create(ctx, a)
-	dir := writeManifest(t, "services:\n  - kind: milvus\n    strategy: shared\n")
-	_ = r.Reconcile(ctx, a.ID, "ps_1", dir)
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "milvus", Strategy: "shared"}})
 	binds, _ := NewStore(db).ListBindingsByApp(ctx, a.ID)
 	if len(binds) != 1 || binds[0].Status != StatusFailed || binds[0].ServiceInstanceID != "" {
 		t.Fatalf("无 shared milvus 实例应 failed + 无实例，得 %+v", binds)
