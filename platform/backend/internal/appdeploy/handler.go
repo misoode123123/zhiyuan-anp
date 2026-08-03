@@ -1512,6 +1512,11 @@ func (h *Handler) Deploy(c *gin.Context) {
 		httpx.Err(c, 403, 40301, "无权限部署到 "+env+" 环境")
 		return
 	}
+	// host 网络门禁：host 模式应用须 gatekeeper/admin 部署（防 dev 部署他人开启的 host 应用）
+	if a.NetworkMode == "host" && !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "host 网络应用需 gatekeeper/admin 部署")
+		return
+	}
 	// prod 额外要求变更已审批（变更闸门，与 Promote 一致，防 /deploy env=prod 绕过 /promote）
 	if env == EnvProd && h.changes != nil {
 		if hasAny, _ := h.changes.HasAny(c.Request.Context(), aid); hasAny {
@@ -1581,13 +1586,20 @@ func (h *Handler) Deploy(c *gin.Context) {
 // @Router       /project-spaces/{id}/apps/{aid}/promote [post]
 func (h *Handler) Promote(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
-	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
+	a, _ := h.store.Get(c.Request.Context(), psID, aid)
+	if a == nil || a.ID == "" {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
 	}
 	// 部署权限分离：上线 prod 需 gatekeeper/admin
 	if !auth.Allowed("app.deploy.prod", rolesFromCtx(c)) {
 		httpx.Err(c, 403, 40301, "无权限上线 prod（仅 gatekeeper/admin）")
+		return
+	}
+	// host 网络门禁（defense-in-depth：当前角色矩阵下 gatekeeper 同持 app.deploy.prod+app.net.host，此 403 不可达；
+	// 保留以备 app.net.host 收窄或新增只持 prod 权限的角色）
+	if a.NetworkMode == "host" && !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "host 网络应用需 gatekeeper/admin 部署")
 		return
 	}
 	var in struct {
@@ -1650,8 +1662,14 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 		httpx.Err(c, 403, 40301, "无权限部署到 "+env+" 环境")
 		return
 	}
-	if _, err := h.store.Get(c.Request.Context(), psID, aid); err != nil {
+	a, err := h.store.Get(c.Request.Context(), psID, aid)
+	if err != nil {
 		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	// host 网络门禁：host 模式应用须 gatekeeper/admin 部署
+	if a.NetworkMode == "host" && !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "host 网络应用需 gatekeeper/admin 部署")
 		return
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条

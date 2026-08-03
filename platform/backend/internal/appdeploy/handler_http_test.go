@@ -1666,3 +1666,32 @@ func TestHandler_PutNetworkMode_notFound(t *testing.T) {
 		t.Fatalf("应用不存在应 404，得 %d", code)
 	}
 }
+
+// TestHandler_Deploy_HostApp_Dev_Forbidden dev 部署 host 应用 → 403（deploy-time host 门禁）。
+// dev 有 app.deploy.test（过 env 门禁）但无 app.net.host → 命中 host 门禁。
+func TestHandler_Deploy_HostApp_Dev_Forbidden(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	a := seedApp(t, h, "ps_1", "hdep", "/tmp/hdep")
+	if err := h.store.UpdateNetworkMode(context.Background(), a.ID, "host"); err != nil {
+		t.Fatalf("UpdateNetworkMode: %v", err)
+	}
+	r := newRouterWithRoles(h, []string{"dev"})
+	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deploy",
+		map[string]string{"env": "test"})
+	if code != 403 {
+		t.Fatalf("dev 部署 host 应用应 403，得 %d", code)
+	}
+}
+
+// TestHandler_DeployCommit_HostApp_Dev_Forbidden dev 版本化部署 host 应用 → 403。
+func TestHandler_DeployCommit_HostApp_Dev_Forbidden(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	a := seedApp(t, h, "ps_1", "hdc", "/tmp/hdc")
+	_ = h.store.UpdateNetworkMode(context.Background(), a.ID, "host")
+	r := newRouterWithRoles(h, []string{"dev"})
+	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deploy-commit",
+		map[string]string{"env": "test", "sha": "deadbeef"})
+	if code != 403 {
+		t.Fatalf("dev deploy-commit host 应用应 403，得 %d", code)
+	}
+}
