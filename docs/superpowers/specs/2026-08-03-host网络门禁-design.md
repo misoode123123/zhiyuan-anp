@@ -244,5 +244,23 @@ func Deploy(ctx, a, ins, env, dockerHost):
 2. `PUT /network-mode`：gatekeeper/admin 可改；dev → 403；非法 mode → 400。
 3. Deploy/Promote/DeployCommit：`network_mode=host` 应用由 dev 部署 → 403；gatekeeper/admin 放行。
 4. host 应用部署后 `docker inspect` 验 `NetworkMode=host` + 无 `-p` + 绑宿主 internalPort + appgw 路由可达；改回 bridge 恢复 `-p`+端口分配。
-5. 前端「网络模式」选择器：授权角色可改，非授权置灰+提示。
+5. 前端「网络模式」选择器：授权角色可改；非授权保存时 **403 toast 提示**（applications 页无 roles 上下文，§8「前置置灰」降级为 403 toast——服务端是安全真相，见 §14 偏离说明）。
 6. PG 单测 + handler_http_test + deployer 测试全绿（`go test -p 1`）；`.28` e2e 正/负路径全绿；既有 bridge 应用零回归。
+
+---
+
+## 14. e2e 验证结论（.28，2026-08-03，HEAD `3b26929`）
+
+**部署**：push origin main（`891b163..3b26929`）→ tar+scp+重建 backend/frontend → 三项核查全绿（源码 `NetworkMode`(model.go:32)/routeOps(guard.go:67) 命中、backend/frontend 容器 01:36 新建、迁移 `000034_app_network_mode` 上线、`healthz/deep` healthy）。
+
+**API 驱动 e2e（全绿，零 bug）**——真 Bearer token 登录（admin/dev1/gate1，admin123）驱动：
+
+1. **set-time 门禁 + routeOps 修复验证** ✅：admin `PUT /network-mode host` → **200** `{network_mode:host}` + DB=host。**关键**：final whole-branch review 发现 `PUT /network-mode` 未登记 `routeOps` → 生产 AutoRequire 不注入 roles → 全员 403（含 admin，set-time 门禁全瘫）；测试漏因是 newRouterWithRoles 直接注 roles 绕过 AutoRequire。修复（commit `3b26929`）：routeOps 登记 `"PUT .../network-mode":"app.net.host"`（静态 op，AutoRequire 注 roles+强制）+ `TestRouteOp_NetworkModeRegistered` 回归测试。**admin→200 即证明修复生效**（未修则 admin 403）。
+2. **角色特异性** ✅：dev1 PUT host → **403**「无权限执行「app.net.host」（用户 dev1，角色: dev）」（AutoRequire 中间件强制）；gate1 PUT host → **200**（gatekeeper 持 op，证明非 admin 直通、是 {gatekeeper,admin} 精确集合）。
+3. **deployer host 分支** ✅：admin deploy → `appdeploy-seedtest-p6-test-v2` `docker inspect` `NetworkMode=host` + `PortBindings=map[]`（无 `-p`）+ `host_port=8080`(=internalPort) + `url=http://10.10.0.28:8080`；`curl host:8080`=404（app 响应 → host 网络真通，非 conn refused）。
+4. **deploy-time 门禁** ✅：dev1 部署 host app → **403**「host 网络应用需 gatekeeper/admin 部署」（handler 层 host gate；deploy 路由走 placeholder op+handler 二次鉴权范式）。
+5. **revert** ✅：PUT bridge + redeploy → v3 `NetworkMode=default`(bridge) + `PortBindings=map[8080/tcp:[{ 9104}]]`（`-p` 恢复）+ `host_port=9104`（test 段 9100-9199）。cleanup admin→bridge，seedtest-p6 回归正常态。
+
+**偏离说明（§8）**：前端未做「非授权置灰」（applications 页无 roles 上下文，平台用 user-switcher/后端解析角色），改为保存时 **403 toast**。服务端 `app.net.host` 是安全真相，前置置灰仅 UX；YAGNI 不引入 roles plumbing。e2e dev1→403 已证明非授权被拦。
+
+**结论**：host 网络门禁端到端全链路闭合——set-time（PutNetworkMode，routeOps+AutoRequire 强制）+ deploy-time（Deploy/Promote/DeployCommit handler gate）双 RBAC 门禁 + deployer host 分支（`--network host`/跳 `-p`/`HostPort=internalPort`，复用 appgw `UpsertRoute`+URL 零改动）+ 前端选择器。final review 抓的 Critical 已修并验证。bridge 应用零回归。**PRD §7 中期-运行态 ④ 完成，中期-运行态里程碑（①opencode 适配 ②依赖注入 ③headless ④host 门禁）全部关闭。**
