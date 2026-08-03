@@ -419,18 +419,36 @@ func TestHandler_SetMwReconciler(t *testing.T) {
 	}
 }
 
-type fakeMWReconciler struct{}
+// fakeMWReconciler 替换 T4–T6 的空 stub 版，加记录字段供 deps handler 测 HTTP 契约
+// （diff 正确性在 mwsupply 包测；handler_http_test.go 是 package appdeploy，DTO 不加包限定词）。
+type fakeMWReconciler struct {
+	seeded      []string            // SeedFromManifest 调用的 appID
+	setDepsArgs []map[string]string // SetDeps 收到的 kind→strategy
+	listDeps    []DepDeclaration
+	catalog     DepsCatalog
+}
 
-func (f *fakeMWReconciler) Reconcile(_ context.Context, _, _ string) error           { return nil }
-func (f *fakeMWReconciler) Cleanup(_ context.Context, _ string) error                { return nil }
-func (f *fakeMWReconciler) SeedFromManifest(_ context.Context, _, _, _ string) error { return nil }
-func (f *fakeMWReconciler) ListDeps(_ context.Context, _ string) ([]DepDeclaration, error) {
-	return nil, nil
+func (f *fakeMWReconciler) Reconcile(ctx context.Context, appID, psID string) error { return nil }
+func (f *fakeMWReconciler) Cleanup(ctx context.Context, appID string) error         { return nil }
+func (f *fakeMWReconciler) SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error {
+	f.seeded = append(f.seeded, appID)
+	return nil
 }
-func (f *fakeMWReconciler) DepsCatalog(_ context.Context, _ string) (DepsCatalog, error) {
-	return DepsCatalog{}, nil
+func (f *fakeMWReconciler) ListDeps(ctx context.Context, appID string) ([]DepDeclaration, error) {
+	return f.listDeps, nil
 }
-func (f *fakeMWReconciler) SetDeps(_ context.Context, _, _ string, _ []DepDeclaration) error { return nil }
+func (f *fakeMWReconciler) SetDeps(ctx context.Context, appID, psID string, decls []DepDeclaration) error {
+	f.setDepsArgs = append(f.setDepsArgs, nil)
+	m := map[string]string{}
+	for _, d := range decls {
+		m[d.Kind] = d.Strategy
+	}
+	f.setDepsArgs[len(f.setDepsArgs)-1] = m
+	return nil
+}
+func (f *fakeMWReconciler) DepsCatalog(ctx context.Context, psID string) (DepsCatalog, error) {
+	return f.catalog, nil
+}
 
 // TestHandler_UpsertEnv_platformProtected 平台注入的 key 用户改不了（409）。
 func TestHandler_UpsertEnv_platformProtected(t *testing.T) {
@@ -1486,5 +1504,84 @@ func TestValidAppKind(t *testing.T) {
 		if validAppKind(bad) {
 			t.Fatalf("非法 app_kind %q 应 false", bad)
 		}
+	}
+}
+
+// --- Task 7: deps handler 测试（GetDeps/PutDeps/GetDepsCatalog）---
+
+// TestHandler_GetDeps_ok 返回声明列表。
+func TestHandler_GetDeps_ok(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	h.SetMwReconciler(&fakeMWReconciler{listDeps: []DepDeclaration{
+		{Kind: "redis", Strategy: "shared", Status: "bound"},
+	}})
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "d1", "/tmp/d1")
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps", nil)
+	if code != 200 {
+		t.Fatalf("状态码 %d", code)
+	}
+	data, _ := resp["data"].([]interface{})
+	if len(data) != 1 {
+		t.Fatalf("应 1 条声明，得 %v", data)
+	}
+}
+
+// TestHandler_PutDeps_ok 整体替换 → 调 SetDeps。
+func TestHandler_PutDeps_ok(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	fw := &fakeMWReconciler{}
+	h.SetMwReconciler(fw)
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "d2", "/tmp/d2")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps",
+		[]map[string]string{{"kind": "redis", "strategy": "shared"}})
+	if code != 200 {
+		t.Fatalf("状态码 %d", code)
+	}
+	if len(fw.setDepsArgs) != 1 || fw.setDepsArgs[0]["redis"] != "shared" {
+		t.Fatalf("应调 SetDeps(redis=shared)，得 %v", fw.setDepsArgs)
+	}
+}
+
+// TestHandler_PutDeps_badKind 非法 kind → 400。
+func TestHandler_PutDeps_badKind(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	h.SetMwReconciler(&fakeMWReconciler{})
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "d3", "/tmp/d3")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps",
+		[]map[string]string{{"kind": "mongodb", "strategy": "shared"}})
+	if code != 400 {
+		t.Fatalf("非法 kind 应 400，得 %d", code)
+	}
+}
+
+// TestHandler_PutDeps_badStrategy 非法 strategy → 400。
+func TestHandler_PutDeps_badStrategy(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	h.SetMwReconciler(&fakeMWReconciler{})
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "d4", "/tmp/d4")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps",
+		[]map[string]string{{"kind": "redis", "strategy": "magic"}})
+	if code != 400 {
+		t.Fatalf("非法 strategy 应 400，得 %d", code)
+	}
+}
+
+// TestHandler_GetDepsCatalog_ok 返回 catalog。
+func TestHandler_GetDepsCatalog_ok(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	h.SetMwReconciler(&fakeMWReconciler{catalog: DepsCatalog{Kinds: []string{"redis", "milvus"}}})
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/deps/catalog", nil)
+	if code != 200 {
+		t.Fatalf("状态码 %d", code)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	kinds, _ := data["kinds"].([]interface{})
+	if len(kinds) != 2 {
+		t.Fatalf("应 2 kinds，得 %v", kinds)
 	}
 }

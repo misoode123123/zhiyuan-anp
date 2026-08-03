@@ -143,6 +143,9 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)                           // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
+	r.GET("/project-spaces/:id/apps/:aid/deps", h.GetDeps)   // P6：依赖声明列表
+	r.PUT("/project-spaces/:id/apps/:aid/deps", h.PutDeps)   // P6：整体替换依赖声明
+	r.GET("/project-spaces/:id/deps/catalog", h.GetDepsCatalog) // P6：依赖目录（勾选器选项）
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
@@ -851,6 +854,100 @@ func (h *Handler) DeleteEnv(c *gin.Context) {
 	httpx.OK(c, gin.H{"app_id": c.Param("aid"), "key": c.Param("key"), "deleted": true})
 }
 
+// GetDeps 列应用依赖声明。
+//
+// @Summary      应用依赖声明列表
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Param        aid  path  string  true  "应用ID"
+// @Success      200  {object}  map[string]interface{}  "依赖声明列表"
+// @Failure      404  {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/deps [get]
+func (h *Handler) GetDeps(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	if a, _ := h.store.Get(c.Request.Context(), psID, aid); a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	decls, err := h.mwReconciler.ListDeps(c.Request.Context(), aid)
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, decls)
+}
+
+// PutDeps 整体替换应用依赖声明（校验 kind/strategy → SetDeps）。
+// 只调 SetDeps（声明落库），不调 Reconcile：声明与部署解耦，下次 deploy 由 buildAndDeploy 供给。
+//
+// @Summary      替换应用依赖声明
+// @Tags         appdeploy
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string  true  "项目空间ID"
+// @Param        aid   path  string  true  "应用ID"
+// @Param        body  body  []DepDeclaration  true  "依赖声明数组"
+// @Success      200   {object}  map[string]interface{}  "替换结果"
+// @Failure      400   {object}  map[string]interface{}  "kind/strategy 非法或重复"
+// @Failure      404   {object}  map[string]interface{}  "应用不存在"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/apps/{aid}/deps [put]
+func (h *Handler) PutDeps(c *gin.Context) {
+	psID, aid := c.Param("id"), c.Param("aid")
+	a, _ := h.store.Get(c.Request.Context(), psID, aid)
+	if a == nil || a.ID == "" {
+		httpx.Err(c, 404, 40420, "应用不存在")
+		return
+	}
+	var body []DepDeclaration
+	if err := c.ShouldBindJSON(&body); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	seen := map[string]bool{}
+	for _, d := range body {
+		if d.Kind != "redis" && d.Kind != "milvus" {
+			httpx.Err(c, 400, 40001, "kind 非法: "+d.Kind)
+			return
+		}
+		if d.Strategy != "bind_existing" && d.Strategy != "shared" && d.Strategy != "dedicated" {
+			httpx.Err(c, 400, 40001, "strategy 非法: "+d.Strategy)
+			return
+		}
+		if seen[d.Kind] {
+			httpx.Err(c, 400, 40001, "重复 kind: "+d.Kind)
+			return
+		}
+		seen[d.Kind] = true
+	}
+	if err := h.mwReconciler.SetDeps(c.Request.Context(), aid, a.ProjectSpaceID, body); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"ok": true})
+}
+
+// GetDepsCatalog 依赖勾选器选项（kinds/strategies/可见实例）。
+//
+// @Summary      依赖目录（勾选器选项）
+// @Tags         appdeploy
+// @Produce      json
+// @Param        id   path  string  true  "项目空间ID"
+// @Success      200  {object}  map[string]interface{}  "依赖目录"
+// @Security     BearerAuth
+// @Router       /project-spaces/{id}/deps/catalog [get]
+func (h *Handler) GetDepsCatalog(c *gin.Context) {
+	psID := c.Param("id")
+	cat, err := h.mwReconciler.DepsCatalog(c.Request.Context(), psID)
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, cat)
+}
+
 type createBody struct {
 	Name         string `json:"name" binding:"required"`
 	RepoDir      string `json:"repo_dir"`      // managed 可选；空=平台托管 git 仓库 /data/repos/<name>
@@ -1206,6 +1303,10 @@ func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, server
 		_ = h.store.SetStatus(ctx, psID, appID, "failed", msg, "")
 		return
 	}
+	// 导入种子：仓库 .anp/deps.yaml → declared binding（best-effort，不覆盖 UI 声明，失败不阻塞导入）。
+	if h.mwReconciler != nil {
+		_ = h.mwReconciler.SeedFromManifest(ctx, appID, psID, repoDir)
+	}
 	// 供给独立库（失败不阻塞导入，仅记 last_error）
 	if h.provisioner != nil {
 		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
@@ -1320,6 +1421,10 @@ func (h *Handler) runImportZip(appID, psID, name string, data []byte, size int64
 		_ = os.RemoveAll(ManagedRepoDir(name))
 		_ = h.store.SetStatus(ctx, psID, appID, "failed", e.Error(), "")
 		return
+	}
+	// 导入种子：仓库 .anp/deps.yaml → declared binding（best-effort，不覆盖 UI 声明，失败不阻塞导入）。
+	if h.mwReconciler != nil {
+		_ = h.mwReconciler.SeedFromManifest(ctx, appID, psID, repoDir)
 	}
 	if h.provisioner != nil {
 		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
