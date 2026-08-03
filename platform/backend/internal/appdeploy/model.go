@@ -29,6 +29,7 @@ type Application struct {
 	BuildLog       string        `json:"build_log,omitempty" db:"build_log"`     // 最近一次构建输出摘要
 	DeployMode     string        `json:"deploy_mode" db:"deploy_mode"`           // managed(A类) / external(B类纳管外部)
 	AppKind        string        `json:"app_kind" db:"app_kind"`                 // web/desktop/mobile/cli/service，默认 web
+	NetworkMode    string        `json:"network_mode" db:"network_mode"`         // bridge(默认) / host(需 gatekeeper/admin，op app.net.host)
 	ExternalURL    string        `json:"external_url" db:"external_url"`         // external 模式时外部应用访问地址
 	ImportSource   string        `json:"import_source" db:"import_source"`       // ''/git/dir
 	ImportRef      string        `json:"import_ref" db:"import_ref"`             // git=url / dir=来源标识

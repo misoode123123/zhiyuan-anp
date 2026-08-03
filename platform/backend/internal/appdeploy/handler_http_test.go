@@ -1585,3 +1585,24 @@ func TestHandler_GetDepsCatalog_ok(t *testing.T) {
 		t.Fatalf("应 2 kinds，得 %v", kinds)
 	}
 }
+
+// TestStore_UpdateNetworkMode 写 network_mode + 读回；新 app 默认 bridge。
+func TestStore_UpdateNetworkMode(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "nwm", "/tmp/nwm")
+
+	// 默认 bridge（列 DEFAULT 'bridge'，Create 不显式写 → DB 默认）
+	got, _ := h.store.Get(ctx, "ps_1", a.ID)
+	if got.NetworkMode != "bridge" {
+		t.Fatalf("默认应 bridge，得 %q", got.NetworkMode)
+	}
+	// 改 host → 读回
+	if err := h.store.UpdateNetworkMode(ctx, a.ID, "host"); err != nil {
+		t.Fatalf("UpdateNetworkMode: %v", err)
+	}
+	got2, _ := h.store.Get(ctx, "ps_1", a.ID)
+	if got2.NetworkMode != "host" {
+		t.Fatalf("应 host，得 %q", got2.NetworkMode)
+	}
+}

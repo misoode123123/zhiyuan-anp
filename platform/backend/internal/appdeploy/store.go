@@ -20,7 +20,7 @@ func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 func (s *Store) DB() *sqlx.DB { return s.db }
 
 func appCols() string {
-	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(app_kind,'web') AS app_kind, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
+	return `id, project_space_id, name, COALESCE(repo_dir,'') AS repo_dir, internal_port, COALESCE(image,'') AS image, COALESCE(container_name,'') AS container_name, host_port, COALESCE(url,'') AS url, version, status, COALESCE(last_error,'') AS last_error, COALESCE(build_log,'') AS build_log, COALESCE(deploy_mode,'managed') AS deploy_mode, COALESCE(app_kind,'web') AS app_kind, COALESCE(network_mode,'bridge') AS network_mode, COALESCE(external_url,'') AS external_url, COALESCE(import_source,'') AS import_source, COALESCE(import_ref,'') AS import_ref, imported_at, created_at, updated_at`
 }
 
 // Create 注册应用（默认 registered；导入流程传 StatusImporting）。
@@ -324,4 +324,12 @@ func (s *Store) GetEnvSource(ctx context.Context, appID, key string) (string, er
 		`SELECT COALESCE((SELECT source FROM appdeploy_env WHERE app_id=$1 AND key=$2),'user')`,
 		appID, key)
 	return src, err
+}
+
+// UpdateNetworkMode 更新应用网络模式（bridge/host）。set-time 角色门禁由 handler 校验。
+func (s *Store) UpdateNetworkMode(ctx context.Context, appID, mode string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_application SET network_mode=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2`,
+		mode, appID)
+	return err
 }
