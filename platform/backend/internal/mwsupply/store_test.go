@@ -50,6 +50,49 @@ func TestStore_LookupBindExisting_seed(t *testing.T) {
 	}
 }
 
+// TestStore_RegisterBindExisting 注册一个新实例后 Lookup 命中;幂等不重复。
+// 用平台级(ProjectSpaceID=nil)避开 project_space FK + kind=mongodb 避开 redis/milvus 种子。
+func TestStore_RegisterBindExisting(t *testing.T) {
+	s, _ := newTestStore(t)
+	inst := &ServiceInstance{Kind: "mongodb", Name: "my-mongo", Host: "10.10.0.99", Port: 27017}
+	if err := s.RegisterBindExisting(context.Background(), inst); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if inst.ID == "" {
+		t.Fatal("应自动生成 ID")
+	}
+	got, err := s.LookupBindExisting(context.Background(), "ps_1", "mongodb")
+	if err != nil || got == nil {
+		t.Fatalf("注册后应 Lookup 到(平台级): %v %v", got, err)
+	}
+	if got.Host != "10.10.0.99" || got.Port != 27017 {
+		t.Fatalf("应命中新注册实例,得 %+v", got)
+	}
+	// 幂等:同 kind+scope+host+port 再注不报错不重复
+	if err := s.RegisterBindExisting(context.Background(), &ServiceInstance{Kind: "mongodb", Host: "10.10.0.99", Port: 27017}); err != nil {
+		t.Fatalf("幂等注册应不报错: %v", err)
+	}
+}
+
+// TestStore_ListBindExisting 列出注册的实例(平台级 elasticsearch,避开种子)。
+func TestStore_ListBindExisting(t *testing.T) {
+	s, _ := newTestStore(t)
+	_ = s.RegisterBindExisting(context.Background(), &ServiceInstance{Kind: "elasticsearch", Host: "h2", Port: 9200})
+	list, err := s.ListBindExisting(context.Background(), "ps_list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, inst := range list {
+		if inst.Kind == "elasticsearch" && inst.Host == "h2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("ListBindExisting 应含刚注册的 elasticsearch")
+	}
+}
+
 // TestStore_UpsertBinding_upsert 绑定按 app+kind 幂等 upsert（ON CONFLICT 更新）。
 func TestStore_UpsertBinding_upsert(t *testing.T) {
 	s, db := newTestStore(t)

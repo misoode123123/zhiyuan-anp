@@ -130,6 +130,42 @@ func (s *Store) CreateInstance(ctx context.Context, inst *ServiceInstance) error
 	return err
 }
 
+// RegisterBindExisting 注册一个 bind_existing 实例(运维把部署机已有服务登记给 ANP)。
+// 幂等:同 kind + project_space_id + host + port 已存在则不重复插(spec ②)。
+// project_space_id 传 *string:NULL=平台全局,&psID=项目级。
+func (s *Store) RegisterBindExisting(ctx context.Context, inst *ServiceInstance) error {
+	var exist string
+	_ = s.db.GetContext(ctx, &exist,
+		`SELECT id FROM appdeploy_service_instance
+		 WHERE kind=$1 AND supply_mode='bind_existing' AND host=$2 AND port=$3
+		   AND (project_space_id IS NOT DISTINCT FROM $4)`,
+		inst.Kind, inst.Host, inst.Port, inst.ProjectSpaceID)
+	if exist != "" {
+		return nil
+	}
+	if inst.ID == "" {
+		inst.ID = "svinst-" + uuid.NewString()[:12]
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO appdeploy_service_instance
+		   (id, project_space_id, kind, name, supply_mode, host, port, auth_ref, status)
+		 VALUES ($1,$2,$3,$4,'bind_existing',$5,$6,NULLIF($7,''),'active')
+		 ON CONFLICT (id) DO NOTHING`,
+		inst.ID, inst.ProjectSpaceID, inst.Kind, inst.Name, inst.Host, inst.Port, inst.AuthRef)
+	return err
+}
+
+// ListBindExisting 列出某项目空间可见的 bind_existing 实例(项目级 + 平台级 NULL)。
+func (s *Store) ListBindExisting(ctx context.Context, psID string) ([]ServiceInstance, error) {
+	var out []ServiceInstance
+	err := s.db.SelectContext(ctx, &out,
+		`SELECT `+instCols+` FROM appdeploy_service_instance
+		 WHERE supply_mode='bind_existing' AND status='active'
+		   AND (project_space_id=$1 OR project_space_id IS NULL)
+		 ORDER BY (project_space_id IS NOT NULL) DESC, kind`, psID)
+	return out, err
+}
+
 // GetInstance 按 id 取实例。无则 nil,nil。
 func (s *Store) GetInstance(ctx context.Context, id string) (*ServiceInstance, error) {
 	var inst ServiceInstance
