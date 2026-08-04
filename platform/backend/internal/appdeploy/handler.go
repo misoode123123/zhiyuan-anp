@@ -81,6 +81,9 @@ type MWReconciler interface {
 	ListDeps(ctx context.Context, appID string) ([]DepDeclaration, error)    // P6：读 app 的依赖声明（binding → DTO）
 	DepsCatalog(ctx context.Context, psID string) (DepsCatalog, error)       // P6：读勾选器选项（kinds/strategies/instances）
 	SetDeps(ctx context.Context, appID, psID string, decls []DepDeclaration) error // P6：整体替换声明（diff 释放/声明）
+	RegisterBindExisting(ctx context.Context, psID string, m MWInstance) (*MWInstance, error) // 注册已有中间件实例(spec ②)
+	ListBindExisting(ctx context.Context, psID string) ([]MWInstance, error)                  // 列已注册实例
+	DeleteInstance(ctx context.Context, id string) error                                       // 删实例
 }
 
 // SetMwReconciler 注入中间件供给器（main.go 在 Register 后调）。
@@ -147,6 +150,9 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.PUT("/project-spaces/:id/apps/:aid/deps", h.PutDeps)   // P6：整体替换依赖声明
 	r.PUT("/project-spaces/:id/apps/:aid/network-mode", h.PutNetworkMode) // host 网络门禁：设网络模式（需 gatekeeper/admin）
 	r.GET("/project-spaces/:id/deps/catalog", h.GetDepsCatalog) // P6：依赖目录（勾选器选项）
+	r.POST("/project-spaces/:id/mw-instances", h.RegisterMwInstance)   // 注册已有中间件实例(spec ②)
+	r.GET("/project-spaces/:id/mw-instances", h.ListMwInstances)       // 列已注册实例
+	r.DELETE("/project-spaces/:id/mw-instances/:iid", h.DeleteMwInstance)
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
 	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
@@ -978,6 +984,65 @@ func (h *Handler) GetDepsCatalog(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, cat)
+}
+
+// RegisterMwInstance 注册一个已有中间件实例(运维把部署机服务登记给 ANP,部署时自动注入连接 env)。
+// 鉴权:复用 host 网络门禁的 admin op(app.net.host,仅 admin)——mw 实例是平台/项目级管理操作。
+func (h *Handler) RegisterMwInstance(c *gin.Context) {
+	if h.mwReconciler == nil {
+		httpx.Err(c, 503, 50301, "中间件供给未启用")
+		return
+	}
+	if !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限注册中间件实例(仅管理员)")
+		return
+	}
+	var in MWInstance
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if in.Kind == "" || in.Host == "" || in.Port == 0 {
+		httpx.Err(c, 400, 40001, "kind/host/port 必填")
+		return
+	}
+	out, err := h.mwReconciler.RegisterBindExisting(c.Request.Context(), c.Param("id"), in)
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, out)
+}
+
+// ListMwInstances 列出项目空间可见的已注册中间件实例(auth_ref 掩码)。
+func (h *Handler) ListMwInstances(c *gin.Context) {
+	if h.mwReconciler == nil {
+		httpx.OK(c, gin.H{"data": []MWInstance{}})
+		return
+	}
+	list, err := h.mwReconciler.ListBindExisting(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"data": list})
+}
+
+// DeleteMwInstance 删除已注册中间件实例(仅管理员)。
+func (h *Handler) DeleteMwInstance(c *gin.Context) {
+	if h.mwReconciler == nil {
+		httpx.Err(c, 503, 50301, "中间件供给未启用")
+		return
+	}
+	if !auth.Allowed("app.net.host", rolesFromCtx(c)) {
+		httpx.Err(c, 403, 40301, "无权限删除中间件实例(仅管理员)")
+		return
+	}
+	if err := h.mwReconciler.DeleteInstance(c.Request.Context(), c.Param("iid")); err != nil {
+		httpx.Err(c, 500, 50020, err.Error())
+		return
+	}
+	httpx.OK(c, gin.H{"deleted": c.Param("iid")})
 }
 
 type createBody struct {

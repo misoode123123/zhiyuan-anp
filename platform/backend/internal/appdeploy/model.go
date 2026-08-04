@@ -108,6 +108,17 @@ type AppInstance struct {
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// MWInstance mw-instances API 的 DTO(运维注册已有中间件实例,部署时自动注入连接 env)。
+type MWInstance struct {
+	ID      string `json:"id,omitempty"`
+	Kind    string `json:"kind"`                 // redis/milvus/mongodb/...
+	Name    string `json:"name,omitempty"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	AuthRef string `json:"auth_ref,omitempty"`   // 注册填;列表返回掩码
+	Scope   string `json:"scope,omitempty"`      // "project"=项目级(用 :id),空=平台级
+}
+
 // Artifact 一次构建产出的一个产物文件（如一个 exe 或 apk）。与 Application 一对多。
 type Artifact struct {
 	ID            string    `json:"id" db:"id"` // art_xxx

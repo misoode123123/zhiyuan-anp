@@ -460,6 +460,45 @@ func (r *Reconciler) ListDeps(ctx context.Context, appID string) ([]appdeploy.De
 	return out, nil
 }
 
+// RegisterBindExisting 注册一个已有中间件实例(运维登记部署机服务)。
+// scope="project" 挂项目空间 psID;否则平台级(NULL)。转 ServiceInstance 委托 store。
+func (r *Reconciler) RegisterBindExisting(ctx context.Context, psID string, m appdeploy.MWInstance) (*appdeploy.MWInstance, error) {
+	inst := &ServiceInstance{Kind: m.Kind, Name: m.Name, Host: m.Host, Port: m.Port, AuthRef: m.AuthRef}
+	if m.Scope == "project" && psID != "" {
+		inst.ProjectSpaceID = &psID
+	}
+	if err := r.store.RegisterBindExisting(ctx, inst); err != nil {
+		return nil, err
+	}
+	return &appdeploy.MWInstance{ID: inst.ID, Kind: inst.Kind, Name: inst.Name, Host: inst.Host, Port: inst.Port, Scope: m.Scope}, nil
+}
+
+// ListBindExisting 列出项目空间可见的已注册实例(转 MWInstance,auth_ref 掩码返回)。
+func (r *Reconciler) ListBindExisting(ctx context.Context, psID string) ([]appdeploy.MWInstance, error) {
+	list, err := r.store.ListBindExisting(ctx, psID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]appdeploy.MWInstance, 0, len(list))
+	for _, s := range list {
+		scope := "platform"
+		if s.ProjectSpaceID != nil {
+			scope = "project"
+		}
+		auth := ""
+		if s.AuthRef != "" {
+			auth = "***" // 掩码
+		}
+		out = append(out, appdeploy.MWInstance{ID: s.ID, Kind: s.Kind, Name: s.Name, Host: s.Host, Port: s.Port, AuthRef: auth, Scope: scope})
+	}
+	return out, nil
+}
+
+// DeleteInstance 删除已注册实例(委托 store)。
+func (r *Reconciler) DeleteInstance(ctx context.Context, id string) error {
+	return r.store.DeleteInstance(ctx, id)
+}
+
 // DepsCatalog 勾选器选项：固定 kinds/strategies + 可见 active 实例。
 func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.DepsCatalog, error) {
 	insts, err := r.store.ListActiveInstances(ctx, psID)

@@ -439,6 +439,13 @@ type fakeMWReconciler struct {
 
 func (f *fakeMWReconciler) Reconcile(ctx context.Context, appID, psID string) error { return nil }
 func (f *fakeMWReconciler) Cleanup(ctx context.Context, appID string) error         { return nil }
+func (f *fakeMWReconciler) RegisterBindExisting(ctx context.Context, psID string, m MWInstance) (*MWInstance, error) {
+	return &m, nil
+}
+func (f *fakeMWReconciler) ListBindExisting(ctx context.Context, psID string) ([]MWInstance, error) {
+	return nil, nil
+}
+func (f *fakeMWReconciler) DeleteInstance(ctx context.Context, id string) error { return nil }
 func (f *fakeMWReconciler) SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error {
 	f.seeded = append(f.seeded, appID)
 	return nil
@@ -653,6 +660,16 @@ func TestHandler_Delete_keepsRepoOutsideBase(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repoDir, "README.md")); err != nil {
 		t.Fatalf("非托管 RepoDir 不应被删,但已消失: %s", repoDir)
+	}
+}
+
+// TestHandler_ListMwInstances_nil mw-instances 路由可达 + mwReconciler nil 时返回空列表(200)。
+func TestHandler_ListMwInstances_nil(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/mw-instances", nil)
+	if code != 200 || resp["data"] == nil {
+		t.Fatalf("List(mwReconciler nil) 应 200 + data,得 %d %v", code, resp)
 	}
 }
 
