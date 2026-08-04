@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+func TestDetectConfigPath(t *testing.T) {
+	dir, _ := os.MkdirTemp("", "cfg")
+	defer os.RemoveAll(dir)
+	if got := detectConfigPath(dir); got != "" {
+		t.Fatalf("无 config.yaml 应返回空,得 %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("k: v"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := detectConfigPath(dir)
+	want := filepath.Join(dir, "config.yaml")
+	if got != want {
+		t.Fatalf("有 config.yaml 应返回 %s,得 %s", want, got)
+	}
+	// config.yaml 是目录 → 不算(返回空)
+	dir2, _ := os.MkdirTemp("", "cfg2")
+	defer os.RemoveAll(dir2)
+	_ = os.MkdirAll(filepath.Join(dir2, "config.yaml"), 0o755)
+	if got := detectConfigPath(dir2); got != "" {
+		t.Fatalf("config.yaml 是目录应返回空,得 %s", got)
+	}
+}
+
 func TestEnsureDockerfile_GeneratesForGo(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "bp-go")
 	defer os.RemoveAll(dir)

@@ -141,3 +141,14 @@ CMD ["nginx", "-g", "daemon off;"]`, port, port)
 	}
 	return head + body
 }
+
+// detectConfigPath 仓库根有 config.yaml(非目录) 则返回其路径(部署挂载用),否则空。
+// 兑现 opencode adapt 的 secret 挂载假设:仓库自带 config.yaml 就挂到 /app/config.yaml(ro),
+// 不打进镜像(密钥不进镜像层)。调用方据此注入 CONFIG_PATH env + Deploy 的 configPath。
+func detectConfigPath(repoDir string) string {
+	p := filepath.Join(repoDir, "config.yaml")
+	if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+		return p
+	}
+	return ""
+}

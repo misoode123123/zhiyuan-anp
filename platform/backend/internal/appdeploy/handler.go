@@ -1792,7 +1792,12 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
 	// docker run 限 3 分钟：镜像已构建，run 卡住通常是端口/挂载问题，无需长等；超时同走 failed。
 	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
-	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, "") // configPath:Task 2 检测 config.yaml 后传值
+	// config.yaml 挂载(spec ①):仓库根有 config.yaml 则挂到 /app/config.yaml(ro) + 注入 CONFIG_PATH。
+	configPath := detectConfigPath(a.RepoDir)
+	if configPath != "" {
+		envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
+	}
+	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, configPath)
 	deployCancel()
 	if dErr != nil {
 		ins.Status = "failed"
