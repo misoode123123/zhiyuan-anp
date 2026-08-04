@@ -53,8 +53,13 @@ func TestStore_LookupBindExisting_seed(t *testing.T) {
 // TestStore_RegisterBindExisting 注册一个新实例后 Lookup 命中;幂等不重复。
 // 用平台级(ProjectSpaceID=nil)避开 project_space FK + kind=mongodb 避开 redis/milvus 种子。
 func TestStore_RegisterBindExisting(t *testing.T) {
-	s, _ := newTestStore(t)
+	s, db := newTestStore(t)
 	inst := &ServiceInstance{Kind: "mongodb", Name: "my-mongo", Host: "10.10.0.99", Port: 27017}
+	// t.Cleanup 删本用例插入的 mongodb 行：newTestStore 不 truncate service_instance（保 .28 种子），
+	// 不清理会污染后续 LookupBindExisting_seed / Reconcile_missingInstanceKind 的「未注册 kind」断言。
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM appdeploy_service_instance WHERE kind='mongodb' AND host='10.10.0.99' AND port=27017`)
+	})
 	if err := s.RegisterBindExisting(context.Background(), inst); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
