@@ -30,7 +30,7 @@ type KindSpec struct {
 	PortRange        func() (int, int)                                                          // 端口池上下界
 	ContainerName    func(short string) string                                                 // dedicated 容器名
 	LaunchDedicated  func(ctx context.Context, name string, port int) (authRef string, err error)
-	ReadyDedicated   func(ctx context.Context, name string, port int, authRef string) error
+	ReadyDedicated   func(ctx context.Context, host, name string, port int, authRef string) error // host=r.host（redis 拨号用；milvus 经 docker 探针忽略）
 	CleanupDedicated func(ctx context.Context, name string) error
 
 	// shared：为某实例分配一个隔离 token（per-kind 策略；redis=db 号池 / milvus=随机前缀）。
