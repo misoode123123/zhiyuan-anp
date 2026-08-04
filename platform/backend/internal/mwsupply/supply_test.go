@@ -88,7 +88,7 @@ func newReconcilerTest(t *testing.T) (*Reconciler, *appdeploy.Store, *sqlx.DB, *
 	appStore := appdeploy.NewStore(db)
 	f := &fakeFlusher{}                                       // 同时作 DBFlusher + ReadyChecker
 	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
-	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy"), appStore, db, f, dk
+	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy", nil), appStore, db, f, dk
 }
 
 // ensureSeed 确保 .28 redis/milvus bind_existing 种子 + shared redis 种子在（Truncate 不动 service_instance；幂等再插）。
@@ -841,8 +841,8 @@ func TestDepsCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DepsCatalog: %v", err)
 	}
-	if len(cat.Kinds) != 2 || cat.Kinds[0] != "redis" || cat.Kinds[1] != "milvus" {
-		t.Fatalf("kinds 应 [redis,milvus]，得 %v", cat.Kinds)
+	if len(cat.Kinds) != 3 || cat.Kinds[0] != "redis" || cat.Kinds[1] != "milvus" || cat.Kinds[2] != "pg" {
+		t.Fatalf("kinds 应 [redis,milvus,pg]，得 %v", cat.Kinds)
 	}
 	if len(cat.Strategies) != 3 {
 		t.Fatalf("strategies 应 3 个，得 %d", len(cat.Strategies))

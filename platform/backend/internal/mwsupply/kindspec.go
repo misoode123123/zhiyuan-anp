@@ -6,9 +6,10 @@ import "context"
 type TokenSemantics string
 
 const (
-	TokenDBNumber         TokenSemantics = "db-number"         // redis：db 号池
+	TokenDBNumber      TokenSemantics = "db-number"      // redis：db 号池
 	TokenCollectionPrefix TokenSemantics = "collection-prefix" // milvus：collection 前缀
-	// 未来：TokenDatabaseName(pg) / TokenTopicPrefix(kafka) ...
+	TokenDatabaseName  TokenSemantics = "database-name" // pg：应用库名（自管 SupplyShared 路径，token=库名）
+	// 未来：TokenTopicPrefix(kafka) ...
 )
 
 // EnvKV 单条注入 env（source=platform）。

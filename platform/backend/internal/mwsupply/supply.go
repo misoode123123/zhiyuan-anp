@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
+	"zhiyuan-anp/platform/backend/internal/pgsupply"
 )
 
 // EnvWriter 写/删应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
@@ -31,9 +32,9 @@ type Reconciler struct {
 //   env 传 appdeploy.Store（满足 EnvWriter）；
 //   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
 //   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
-func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string) *Reconciler {
+func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner) *Reconciler {
 	r := &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
-	BuildSpecs(store, flusher, ready, docker)
+	BuildSpecs(store, flusher, ready, docker, pgProv)
 	return r
 }
 
@@ -108,6 +109,12 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 
 	if !ok {
 		mkBind(StatusFailed, "", "", "未注册 kind "+dep.Kind+"（无 KindSpec）")
+		return
+	}
+	// pg-style 自管 kind（SupplyShared 非 nil，如 pg）P2a 仅支持 shared：bind_existing/dedicated
+	// 会撞 nil PortRange/LaunchDedicated panic 或空 LookupBindExisting——在此给明确失败，不 panic。
+	if spec.SupplyShared != nil && strategy != ModeShared {
+		mkBind(StatusFailed, "", "", dep.Kind+" 仅支持 shared（bind_existing/dedicated 见 P2b）")
 		return
 	}
 	if strategy == ModeShared {
@@ -425,7 +432,7 @@ func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.De
 		})
 	}
 	return appdeploy.DepsCatalog{
-		Kinds: []string{"redis", "milvus"},
+		Kinds: []string{"redis", "milvus", "pg"},
 		Strategies: []appdeploy.StrategyOption{
 			{Name: ModeBindExisting, Desc: "绑定部署机已运行的服务（最省，导入最常见）"},
 			{Name: ModeShared, Desc: "ANP 共享实例 + 每 app 隔离 token（db号/前缀）"},
