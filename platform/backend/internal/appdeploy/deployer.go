@@ -147,12 +147,17 @@ func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, 
 // Deploy 运行容器。headless:无端口/无 URL；web/service:bridge 分配宿主端口 + -p，host 直接绑宿主 internalPort（无 -p）。
 // network_mode 与 app_kind 正交：host flag 对所有 app_kind 生效（headless+host 也共享宿主网络）。
 // dockerHost 非空时远程部署（host = 该远程节点的 host 网络）。
-func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost string) error {
+func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost, configPath string) error {
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	args := []string{"run", "-d", "--name", name, "--restart", "unless-stopped"}
 	isHost := a.NetworkMode == "host"
 	if isHost {
 		args = append(args, "--network", "host")
+	}
+	// config.yaml 挂载(spec ①):configPath 非空则 ro 挂到 /app/config.yaml,兑现 adapt secret 挂载假设。
+	// 调用方保证 configPath=<RepoDir>/config.yaml(buildAndDeploy 检测),防 -v 逃逸挂载宿主敏感文件。
+	if configPath != "" {
+		args = append(args, "-v", configPath+":/app/config.yaml:ro")
 	}
 
 	if a.AppKind == AppKindHeadless {

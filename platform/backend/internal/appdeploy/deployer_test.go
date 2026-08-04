@@ -239,7 +239,7 @@ func TestDeploy_Headless_NoPortNoURL(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "bot", AppKind: AppKindHeadless, InternalPort: 0}
-	if err := d.Deploy(context.Background(), a, ins, []string{"FOO=bar"}, ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, []string{"FOO=bar"}, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, arg := range got {
@@ -274,7 +274,7 @@ func TestDeploy_Web_StillMapsPort(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "webapp", AppKind: AppKindWeb, InternalPort: 3000}
-	if err := d.Deploy(context.Background(), a, ins, nil, ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	hasP := false
@@ -307,7 +307,7 @@ func TestDeploy_Host_NoPortMap_NetworkHost(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "hostapp", AppKind: AppKindWeb, InternalPort: 18080, NetworkMode: "host"}
-	if err := d.Deploy(context.Background(), a, ins, nil, ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	hasNet, hasP, hasPort := false, false, false
@@ -336,5 +336,42 @@ func TestDeploy_Host_NoPortMap_NetworkHost(t *testing.T) {
 	}
 	if ins.URL == "" || !strings.HasSuffix(ins.URL, ":18080") {
 		t.Fatalf("URL 应以 :18080 结尾，得 %q", ins.URL)
+	}
+}
+
+// TestDeploy_mountsConfigYaml configPath 非空 → docker run args 含 -v <cfg>:/app/config.yaml:ro。
+func TestDeploy_mountsConfigYaml(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) { got = args; return "cid", nil }
+	defer func() { dockerRun = orig }()
+	d := NewDeployer("h")
+	a := &Application{Name: "demo", AppKind: AppKindWeb, InternalPort: 8080}
+	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9100}
+	cfg := "/data/repos/demo/config.yaml"
+	if err := d.Deploy(context.Background(), a, ins, nil, "", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(got, " "), "-v "+cfg+":/app/config.yaml:ro") {
+		t.Fatalf("应挂载 config.yaml,得 %v", got)
+	}
+}
+
+// TestDeploy_noConfigNoMount configPath 空 → args 不得含 -v。
+func TestDeploy_noConfigNoMount(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) { got = args; return "cid", nil }
+	defer func() { dockerRun = orig }()
+	d := NewDeployer("h")
+	a := &Application{Name: "demo2", AppKind: AppKindWeb, InternalPort: 8080}
+	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9101}
+	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, arg := range got {
+		if arg == "-v" || strings.HasPrefix(arg, "-v=") {
+			t.Fatalf("空 configPath 不应挂载,得 %v", got)
+		}
 	}
 }
