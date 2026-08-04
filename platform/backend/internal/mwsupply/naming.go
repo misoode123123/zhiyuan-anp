@@ -31,14 +31,6 @@ const (
 	readyAlpineImage   = "alpine:3.19"      // 就绪探针镜像（.28 已缓存）
 )
 
-// portRange 按 kind 给 dedicated 端口池上下界。
-func portRange(kind string) (int, int) {
-	if kind == "milvus" {
-		return milvusPortMin, milvusPortMax
-	}
-	return mwPortMin, mwPortMax
-}
-
 // genShortID 生成 12 位 hex 短 ID（crypto/rand）。
 func genShortID() string {
 	b := make([]byte, 6)
@@ -72,15 +64,6 @@ func allocPort(used map[int]struct{}, min, max int) int {
 		}
 	}
 	return 0
-}
-
-// dedicatedContainerName 按 kind 前缀拼 dedicated 容器名：redis→mwredis-<short> / milvus→mwmilvus-<short>。
-// redis 调用点传 kind="redis"，输出仍是 mwredis-<short>（零回归）。
-func dedicatedContainerName(kind, short string) string {
-	if kind == "milvus" {
-		return "mwmilvus-" + short
-	}
-	return "mwredis-" + short
 }
 
 // milvus 栈命名：从 base（=container_name）确定性派生 sidecar 容器名与网络名。

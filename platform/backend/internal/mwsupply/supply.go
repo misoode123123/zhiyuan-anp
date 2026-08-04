@@ -20,9 +20,9 @@ type EnvWriter interface {
 type Reconciler struct {
 	store   *Store
 	env     EnvWriter
-	flusher DBFlusher     // shared 重分配时清空 redis db（Task 3）
-	ready   ReadyChecker  // dedicated 起容器后轮询 AUTH+PING 至就绪（P3）
-	docker  MWDockerRunner // dedicated 容器管理（run/rm）（P3）
+	flusher DBFlusher     // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	ready   ReadyChecker  // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	docker  MWDockerRunner // dedicated 容器管理（run/rm）
 	host    string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
 	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
@@ -275,16 +275,31 @@ func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
 	return nil
 }
 
-// injectedEnvKeys 某 kind 供给时注入的全部 env 键（ReleaseDep 删除用）。
-func injectedEnvKeys(kind string) []string {
-	switch kind {
-	case "redis":
-		return []string{"REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD"}
-	case "milvus":
-		return []string{"MILVUS_ADDR", "MILVUS_COLLECTION_PREFIX"}
-	default:
-		return []string{strings.ToUpper(kind) + "_ADDR"}
+// injectedEnvKeysFromSpec 从 KindSpec 派生该 kind 供给时注入的全部 env 键（ReleaseDep 删除用）。
+// 合并 AddrEnv + SharedEnv(占位 token/inst 取全集键) + DedicatedEnv(占位 authRef) 的键，去重保序。
+// 单一真源：新增 kind 的 env 键随 spec 自动更新，无须在此维护 switch。
+func injectedEnvKeysFromSpec(spec KindSpec) []string {
+	seen := map[string]bool{}
+	keys := []string{}
+	add := func(k string) {
+		if k != "" && !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
 	}
+	add(spec.AddrEnv)
+	// 占位 inst 带 AuthRef 以触发 SharedEnv 的条件键（如 redis 的 REDIS_PASSWORD）。
+	if spec.SharedEnv != nil {
+		for _, e := range spec.SharedEnv("__token__", &ServiceInstance{Kind: spec.Kind, AuthRef: "__auth__"}) {
+			add(e.Key)
+		}
+	}
+	if spec.DedicatedEnv != nil {
+		for _, e := range spec.DedicatedEnv("__auth__") {
+			add(e.Key)
+		}
+	}
+	return keys
 }
 
 // ReleaseDep 释放单个依赖的资源（声明移除/变更时；best-effort，不报错）：
@@ -303,8 +318,14 @@ func (r *Reconciler) ReleaseDep(ctx context.Context, b *ServiceBinding) {
 			dedInstID = inst.ID
 		}
 	}
-	// 删注入的 platform env 键
-	for _, key := range injectedEnvKeys(b.ServiceKind) {
+	// 删注入的 platform env 键（spec 驱动：注册 kind 从 spec 派生全集键；未注册回退 <KIND>_ADDR）。
+	var envKeys []string
+	if spec, ok := LookupKind(b.ServiceKind); ok {
+		envKeys = injectedEnvKeysFromSpec(spec)
+	} else {
+		envKeys = []string{strings.ToUpper(b.ServiceKind) + "_ADDR"}
+	}
+	for _, key := range envKeys {
 		_ = r.env.DeleteEnv(ctx, b.AppID, key)
 	}
 	// 先删 binding 解 FK 引用（binding.service_instance_id RESTRICT instance 删除），再删 instance。

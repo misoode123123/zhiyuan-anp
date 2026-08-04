@@ -6,6 +6,9 @@ import (
 	"strconv"
 )
 
+// redisAddrEnv redis 主连接 env 键（AddrEnv 与 ClaimSharedToken 共用，消除字面量重复）。
+const redisAddrEnv = "REDIS_ADDR"
+
 // redisSpec 构造 redis 的 KindSpec。
 //   - AllocSharedToken 逐字搬自原 supply.go:allocRedisDB + claimWithRetry（db 号池 + flush + 撞号重试），
 //     闭包捕获 st/flusher；
@@ -14,7 +17,7 @@ import (
 // 零行为变化：函数体与重构前 supply.go 的对应段一致。
 func redisSpec(st *Store, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner) KindSpec {
 	return KindSpec{
-		Kind: "redis", DisplayName: "Redis", AddrEnv: "REDIS_ADDR", Token: TokenDBNumber,
+		Kind: "redis", DisplayName: "Redis", AddrEnv: redisAddrEnv, Token: TokenDBNumber,
 		PortRange:     func() (int, int) { return mwPortMin, mwPortMax },
 		ContainerName: func(short string) string { return "mwredis-" + short },
 		LaunchDedicated: func(ctx context.Context, name string, port int) (string, error) {
@@ -70,7 +73,7 @@ func redisClaimWithRetry(ctx context.Context, st *Store, flusher DBFlusher,
 		dbNum, _ := strconv.Atoi(token)
 		// flush best-effort：失败静默继续 claim（首次分配的 db 号本就干净；重分配卫生留给 prod 网络可达性）。
 		_ = flusher.FlushDB(ctx, inst.Host, inst.Port, inst.AuthRef, dbNum)
-		err := st.ClaimSharedToken(ctx, appID, psID, "redis", inst.ID, token, "REDIS_ADDR")
+		err := st.ClaimSharedToken(ctx, appID, psID, "redis", inst.ID, token, redisAddrEnv)
 		if err == nil {
 			return token, nil
 		}

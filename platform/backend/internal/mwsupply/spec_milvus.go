@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// milvusAddrEnv milvus 主连接 env 键（AddrEnv 与 ClaimSharedToken 共用，消除字面量重复）。
+const milvusAddrEnv = "MILVUS_ADDR"
+
 // milvusSpec 构造 milvus 的 KindSpec。
 //   - AllocSharedToken 逐字搬自原 supply.go:allocMilvusPrefix（随机前缀 + ClaimSharedToken + 撞号重生）；
 //   - dedicated 三件套接 docker。ReadyDedicated 经 docker 探针（alpine wget /healthz），不依赖 host。
@@ -12,7 +15,7 @@ import (
 // 零行为变化：函数体与重构前 supply.go 的对应段一致。
 func milvusSpec(st *Store, docker MWDockerRunner) KindSpec {
 	return KindSpec{
-		Kind: "milvus", DisplayName: "Milvus", AddrEnv: "MILVUS_ADDR", Token: TokenCollectionPrefix,
+		Kind: "milvus", DisplayName: "Milvus", AddrEnv: milvusAddrEnv, Token: TokenCollectionPrefix,
 		PortRange:     func() (int, int) { return milvusPortMin, milvusPortMax },
 		ContainerName: func(short string) string { return "mwmilvus-" + short },
 		LaunchDedicated: func(ctx context.Context, base string, port int) (string, error) {
@@ -39,7 +42,7 @@ func milvusSpec(st *Store, docker MWDockerRunner) KindSpec {
 				if taken[token] {
 					continue
 				}
-				err := st.ClaimSharedToken(ctx, appID, psID, "milvus", instID, token, "MILVUS_ADDR")
+				err := st.ClaimSharedToken(ctx, appID, psID, "milvus", instID, token, milvusAddrEnv)
 				if err == nil {
 					return token, nil
 				}
