@@ -49,6 +49,12 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 			return nil, err
 		}
 	}
+	// 幂等：同 app 已有 ready 库 → 复用，不重建（auto-provision 与 declared pg=shared 共存期安全）。
+	// provisioning（并发中）也返回既有，避免重复建；其余状态（failed/deleted）继续走新建流程。
+	if existing, err := p.store.GetAppDBByApp(ctx, appID); err == nil && existing != nil &&
+		(existing.Status == StatusReady || existing.Status == StatusProvisioning) {
+		return existing, nil
+	}
 	ins, err := p.instances.GetOrCreate(ctx, psID)
 	if err != nil {
 		return nil, fmt.Errorf("取/建项目 PG 实例: %w", err)
