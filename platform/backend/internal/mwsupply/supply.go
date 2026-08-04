@@ -138,10 +138,31 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 	mkBind(StatusBound, inst.ID, "", "")
 }
 
-// supplyShared shared 供给（spec 驱动）：复用判定（幂等不换 token 不 flush）/ 新分配（spec.AllocSharedToken → env）。
+// supplyShared shared 供给（spec 驱动）：
+//  1. spec.SupplyShared != nil → 自管路径（pg：实例+库+role+env+明细自管；不走 LookupShared/ConnStr）。含 reuse 判定。
+//  2. 否则默认路径：LookupShared 实例 → reuse 判定（幂等不换 token 不 flush）/ 新分配 spec.AllocSharedToken → env。
+//
 // redis：db 号池；milvus：随机 collection 前缀。token 分配逻辑封装在 spec 闭包内（见 spec_redis.go/spec_milvus.go）。
 func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep DepService, spec KindSpec,
 	mkBind func(status, instID, token, lastErr string)) {
+	// pg-style 自管供给（spec.SupplyShared 自管全套：实例+库+role+env+明细；不走 LookupShared/ConnStr）。
+	if spec.SupplyShared != nil {
+		// reuse：binding 已 bound 且 IsolationToken 非空 → 不重复供给（pgsupply.Provision 虽幂等，仍避免无谓调用）。
+		// 用 IsolationToken != "" 判已供给：兼容 pg 的空 instID（binding 不存 service_instance_id）与
+		// redis/milvus 的非空 instID（此分支仅 SupplyShared kind 进入，redis/milvus 走下方默认路径不受影响）。
+		if existing, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && existing != nil &&
+			existing.Status == StatusBound && existing.IsolationToken != "" {
+			mkBind(StatusBound, existing.ServiceInstanceID, existing.IsolationToken, "")
+			return
+		}
+		instID, token, err := spec.SupplyShared(ctx, appID, psID)
+		if err != nil {
+			mkBind(StatusFailed, "", "", err.Error())
+			return
+		}
+		mkBind(StatusBound, instID, token, "")
+		return
+	}
 	inst, err := r.store.LookupShared(ctx, dep.Kind)
 	if err != nil || inst == nil {
 		mkBind(StatusFailed, "", "", "无 shared "+dep.Kind+" 实例")

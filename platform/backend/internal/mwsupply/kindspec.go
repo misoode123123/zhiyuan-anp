@@ -37,6 +37,11 @@ type KindSpec struct {
 	// 实现内部用 store.ClaimSharedToken 写库；返回 token + nil。
 	AllocSharedToken func(ctx context.Context, appID, psID, instID string, inst *ServiceInstance) (string, error)
 
+	// SupplyShared（可选）：自管全套 shared 供给的 kind（如 pg：实例+库+role+写 env+写明细记录）。
+	// 非 nil 时 supplyShared 走此分支（含 reuse 判定），跳过默认 LookupShared+AllocSharedToken+writeSpecEnv 路径。
+	// 返回 (instanceID, token)；env 由实现内部写。instanceID 可空（如 pg 实例在它表，binding 不存）。
+	SupplyShared func(ctx context.Context, appID, psID string) (instanceID, token string, err error)
+
 	// env 派生（主连接 env 由调用方写 spec.AddrEnv，这里只给 token/authRef 派生项）
 	SharedEnv    func(token string, inst *ServiceInstance) []EnvKV // redis→[REDIS_DB(,+REDIS_PASSWORD)]；milvus→[MILVUS_COLLECTION_PREFIX]
 	DedicatedEnv func(authRef string) []EnvKV                       // redis→[REDIS_PASSWORD]；milvus→[]
