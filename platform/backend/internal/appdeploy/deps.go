@@ -32,3 +32,8 @@ type DepsCatalog struct {
 	Strategies []StrategyOption  `json:"strategies"`
 	Instances  []CatalogInstance `json:"instances"`
 }
+
+// validDepKinds 平台支持的依赖 kind（PutDeps 校验用）。
+// 须与 mwsupply KindSpec 注册表 + DepsCatalog 的 Kinds 列表保持一致（redis/milvus/pg）。
+// 新增 kind 时三处同步：此处、mwsupply BuildSpecs 注册、DepsCatalog 返回。
+var validDepKinds = map[string]bool{"redis": true, "milvus": true, "pg": true}

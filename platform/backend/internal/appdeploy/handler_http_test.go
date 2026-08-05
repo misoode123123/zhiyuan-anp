@@ -1639,6 +1639,23 @@ func TestHandler_PutDeps_badStrategy(t *testing.T) {
 	}
 }
 
+// TestHandler_PutDeps_pgAccepted pg kind 合法（P3：PG 切纯声明驱动，PutDeps 须接受 pg）。
+func TestHandler_PutDeps_pgAccepted(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	fw := &fakeMWReconciler{}
+	h.SetMwReconciler(fw)
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "dpg", "/tmp/dpg")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps",
+		[]map[string]string{{"kind": "pg", "strategy": "shared"}})
+	if code != 200 {
+		t.Fatalf("pg kind 应合法(200)，得 %d", code)
+	}
+	if len(fw.setDepsArgs) != 1 || fw.setDepsArgs[0]["pg"] != "shared" {
+		t.Fatalf("应调 SetDeps(pg=shared)，得 %v", fw.setDepsArgs)
+	}
+}
+
 // TestHandler_GetDepsCatalog_ok 返回 catalog。
 func TestHandler_GetDepsCatalog_ok(t *testing.T) {
 	h, _ := newHTTPHandler(t)

@@ -931,7 +931,7 @@ func (h *Handler) PutDeps(c *gin.Context) {
 	}
 	seen := map[string]bool{}
 	for _, d := range body {
-		if d.Kind != "redis" && d.Kind != "milvus" {
+		if !validDepKinds[d.Kind] {
 			httpx.Err(c, 400, 40001, "kind 非法: "+d.Kind)
 			return
 		}
