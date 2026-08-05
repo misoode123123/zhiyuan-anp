@@ -39,7 +39,7 @@ func (h *Handler) Register(r gin.IRouter) {
 // @Tags         quota
 // @Produce      json
 // @Param        id   path  string  true  "项目空间ID"
-// @Success      200  {object}  map[string]interface{}  "配额 + 4 维度用量"
+// @Success      200  {object}  map[string]interface{}  "配额 + 5 维度用量"
 // @Failure      500  {object}  map[string]interface{}  "内部错误"
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/quota [get]

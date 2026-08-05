@@ -22,7 +22,7 @@ type PGSizeChecker interface {
 	DatabaseSizes(ctx context.Context, adminURL string, dbNames []string) (map[string]int64, error)
 }
 
-// Service 配额业务逻辑：4 个 Check + Usage 查询。
+// Service 配额业务逻辑：5 个 Check + Usage 查询。
 type Service struct {
 	store    *Store
 	instances InstanceLookup
@@ -34,7 +34,7 @@ func NewService(store *Store, instances InstanceLookup, pg PGSizeChecker) *Servi
 	return &Service{store: store, instances: instances, pg: pg}
 }
 
-// ---------------- 4 个 Check ----------------
+// ---------------- 5 个 Check ----------------
 
 // CheckApps 应用数 check：超限返回 *QuotaExceededError。
 func (s *Service) CheckApps(ctx context.Context, psID string) error {
@@ -125,7 +125,7 @@ func (s *Service) CheckDedicatedInstances(ctx context.Context, psID string) erro
 
 // ---------------- Usage ----------------
 
-// Usage 取配额 + 4 维度当前用量（管理 UI / 看板用）。
+// Usage 取配额 + 5 维度当前用量（管理 UI / 看板用）。
 func (s *Service) Usage(ctx context.Context, psID string) (*Usage, error) {
 	q, err := s.store.GetOrCreate(ctx, psID)
 	if err != nil {

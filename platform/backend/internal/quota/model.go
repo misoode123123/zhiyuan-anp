@@ -1,5 +1,5 @@
 // Package quota 是「项目配额」限界上下文 ——
-// 4 维度强制（应用数 / 库数 / 库总大小 / 每日 AI 调用），建资源前 check，超限返回友好错误。
+// 5 维度强制（应用数 / 库数 / 库总大小 / 每日 AI 调用 / 专属实例数），建资源前 check，超限返回友好错误。
 //
 // 设计：独立模块，不导入 appdeploy/pgsupply/capability（避免循环依赖）。
 // 通过 InstanceLookup / PGSizeChecker 接口注入 pgsupply 的能力（取实例 admin_url + 查库大小）。
@@ -77,7 +77,7 @@ type UsageTrend struct {
 	APITrend        []APITrendPoint    `json:"api_trend"`
 	DBSizeTrend     []DBSizeTrendPoint `json:"db_size_trend"`
 	DBSizeCurrentMB int                `json:"db_size_current_mb"` // 当前总大小（MB）
-	Usage           *Usage             `json:"usage"`              // 复用 3a 当前用量（4 维度）
+	Usage           *Usage             `json:"usage"`              // 复用 3a 当前用量（5 维度）
 }
 
 // 配额维度常量（ErrQuotaExceeded.Dimension 用）。
