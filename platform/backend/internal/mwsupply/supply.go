@@ -111,12 +111,6 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 		mkBind(StatusFailed, "", "", "未注册 kind "+dep.Kind+"（无 KindSpec）")
 		return
 	}
-	// pg-style 自管 kind（SupplyShared 非 nil，如 pg）P2a 仅支持 shared：bind_existing/dedicated
-	// 会撞 nil PortRange/LaunchDedicated panic 或空 LookupBindExisting——在此给明确失败，不 panic。
-	if spec.SupplyShared != nil && strategy != ModeShared {
-		mkBind(StatusFailed, "", "", dep.Kind+" 仅支持 shared（bind_existing/dedicated 见 P2b）")
-		return
-	}
 	if strategy == ModeShared {
 		r.supplyShared(ctx, appID, psID, dep, spec, mkBind)
 		return
@@ -136,9 +130,13 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 		mkBind(StatusFailed, "", "", "无可绑定的 "+dep.Kind+" 实例")
 		return
 	}
-	connStr := ConnStr(inst)
+	// 默认 ConnStr(inst)=host:port（redis/milvus）；spec.ConnValue 非 nil 时用自管值（pg=AuthRef 完整 DSN）。
+	connVal := ConnStr(inst)
+	if spec.ConnValue != nil {
+		connVal = spec.ConnValue(inst)
+	}
 	isSecret := inst.AuthRef != ""
-	if err := r.env.UpsertEnv(ctx, appID, spec.AddrEnv, connStr, isSecret, "platform"); err != nil {
+	if err := r.env.UpsertEnv(ctx, appID, spec.AddrEnv, connVal, isSecret, "platform"); err != nil {
 		mkBind(StatusFailed, inst.ID, "", err.Error())
 		return
 	}
@@ -214,7 +212,18 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 			return
 		}
 	}
-	// 新供给
+	// spec.SupplyDedicated 自管路径（pg：起 per-app 容器+建库/role+写 env+登记 service_instance）。
+	// 非 nil 时跳过默认 PortRange/LaunchDedicated；env/登记由实现内部自管，此处只取 (instID, token) 写 binding。
+	if spec.SupplyDedicated != nil {
+		instID, token, err := spec.SupplyDedicated(ctx, appID, psID, r.host)
+		if err != nil {
+			mkBind(StatusFailed, "", "", "起 "+dep.Kind+" 容器: "+err.Error())
+			return
+		}
+		mkBind(StatusBound, instID, token, "")
+		return
+	}
+	// 新供给（默认 dedicated 路径：端口池 → launch → ready → 登记 → env）
 	lo, hi := spec.PortRange()
 	port := allocPort(r.docker.UsedPorts(ctx), lo, hi)
 	if port == 0 {

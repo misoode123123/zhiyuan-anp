@@ -43,6 +43,15 @@ type KindSpec struct {
 	// 返回 (instanceID, token)；env 由实现内部写。instanceID 可空（如 pg 实例在它表，binding 不存）。
 	SupplyShared func(ctx context.Context, appID, psID string) (instanceID, token string, err error)
 
+	// ConnValue（可选）：bind_existing 注入 spec.AddrEnv 的连接值。nil→默认 ConnStr(inst)=host:port。
+	// pg 设为 inst.AuthRef（运维登记的完整 DSN）。redis/milvus 不设 → 继续 host:port。
+	ConnValue func(inst *ServiceInstance) string
+
+	// SupplyDedicated（可选）：自管 dedicated 供给的 kind（pg：起 per-app 容器+建库/role+写 env+登记 service_instance）。
+	// 非 nil 时 supplyDedicated 走此分支（含 reuse 判定），跳过默认 PortRange/LaunchDedicated/ReadyDedicated 路径。
+	// 返回 (instanceID, token)；env 由实现内部写。redis/milvus 不设 → 走默认端口池起容器路径。
+	SupplyDedicated func(ctx context.Context, appID, psID, host string) (instanceID, token string, err error)
+
 	// env 派生（主连接 env 由调用方写 spec.AddrEnv，这里只给 token/authRef 派生项）
 	SharedEnv    func(token string, inst *ServiceInstance) []EnvKV // redis→[REDIS_DB(,+REDIS_PASSWORD)]；milvus→[MILVUS_COLLECTION_PREFIX]
 	DedicatedEnv func(authRef string) []EnvKV                       // redis→[REDIS_PASSWORD]；milvus→[]
