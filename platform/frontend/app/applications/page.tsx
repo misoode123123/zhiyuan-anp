@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
+import type { CatalogInstance, Dep, DepsCatalog } from "@/lib/deps-ui";
+import { groupInstancesByKind } from "@/lib/deps-ui";
 import type { Artifact } from "@/lib/api-types";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
@@ -50,28 +52,6 @@ type App = {
   imported_at?: string; // 导入完成时间，进行中空
   updated_at: string;
   instances?: Instance[]; // 各环境部署实例（test/prod）
-};
-// 中间件依赖声明（后端 appdeploy.DepDeclaration）：kind/strategy 用户编，status/instance/token 供给结果。
-type Dep = {
-  kind: string;
-  strategy: string;
-  status: string;
-  instance?: string;
-  token?: string;
-  error?: string;
-};
-// 依赖勾选器选项（后端 appdeploy.DepsCatalog）：kinds/strategies 固定，instances 为可见 active 实例。
-type DepsCatalog = {
-  kinds: string[];
-  strategies: { name: string; desc: string }[];
-  instances: {
-    id: string;
-    kind: string;
-    name: string;
-    supply_mode: string;
-    host: string;
-    port: number;
-  }[];
 };
 type Req = { id: string; title: string; status: string; application_id: string };
 type Detail = {
@@ -261,6 +241,50 @@ function ArtifactSection({
   );
 }
 
+// 可绑定实例面板（只读）：渲染 catalog.instances，按 kind 分组（含 pg）。
+// 编辑态 highlightKinds 收集 strategy=bind_existing 的 kind → 命中组高亮提示「将绑定此类实例」。
+// 只读展示：后端声明无 instance 字段，bind_existing 供给时按 kind 隐式匹配——故标记不裁剪。
+function InstancesPanel({
+  instances,
+  highlightKinds,
+}: {
+  instances: CatalogInstance[];
+  highlightKinds: Set<string>;
+}) {
+  const groups = groupInstancesByKind(instances);
+  return (
+    <div className="mt-2 rounded border border-border bg-bg p-2 text-xs">
+      <div className="mb-1 text-text-muted">
+        可绑定实例（部署机已运行的中间件；bind_existing 将按 kind 绑定）
+      </div>
+      <div className="space-y-1">
+        {[...groups.entries()].map(([kind, insts]) => {
+          const on = highlightKinds.has(kind);
+          return (
+            <div
+              key={kind}
+              className={`rounded px-1.5 py-1 ${on ? "border border-accent/60 bg-accent/10" : ""}`}
+            >
+              <div className="flex items-center gap-1">
+                <code className="text-text">{kind}</code>
+                <span className="text-text-muted">· {insts.length} 个</span>
+                {on && <span className="text-accent">← 将绑定此类</span>}
+              </div>
+              <div className="mt-0.5 space-y-0.5 pl-2">
+                {insts.map((i) => (
+                  <div key={i.id} className="text-text-muted">
+                    {i.name} · {i.host}:{i.port} · {i.supply_mode}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // 依赖声明区：列当前 deps（kind/strategy/status/token），编辑态增删改（catalog 驱动下拉），PUT 整体替换保存。
 // 声明与部署解耦：保存只落库，下次部署/重新部署时由 mwsupply 供给 env（REDIS_ADDR/MILVUS_ADDR）注入。
 // 自包含组件（同 ArtifactSection 范式）：props 取 psID/appID，mount 时 Promise.all 拉 deps+catalog。
@@ -304,6 +328,11 @@ function DepsSection({ psID, appID }: { psID: string; appID: string }) {
   }
 
   const list = editingDeps ?? deps;
+  // 编辑态收集所有 strategy=bind_existing 的 kind（可能多个），命中组在面板高亮。
+  // 非编辑态（editingDeps=null）→ 空 Set，全不高亮。
+  const highlightKinds = new Set(
+    (editingDeps ?? []).filter((d) => d.strategy === "bind_existing").map((d) => d.kind)
+  );
   return (
     <div className="mt-3 rounded border border-border p-3">
       <div className="mb-1 flex items-center justify-between">
@@ -400,6 +429,9 @@ function DepsSection({ psID, appID }: { psID: string; appID: string }) {
             </div>
           );
         })
+      )}
+      {catalog && catalog.instances.length > 0 && (
+        <InstancesPanel instances={catalog.instances} highlightKinds={highlightKinds} />
       )}
       {editingDeps && (
         <button
