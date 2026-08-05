@@ -8,10 +8,11 @@ import (
 
 // PgDedicatedRunner 起 per-app 独立 PG 容器 + 建库/role（pg dedicated 专用）。
 // 由 *pgsupply.InstanceManager 实现（持 docker+admin+host）。抽接口便于 mwsupply 单测用 fake
-// （InstanceManager 需 docker 无法单测）。返回 container/dbName/dsn/adminURL/port（不写 env、不登记实例）。
+// （InstanceManager 需 docker 无法单测）。返回 container/dbName/dsn/adminURL/host/port（不写 env、不登记实例）。
 type PgDedicatedRunner interface {
-	// ProvisionDedicated 起 per-app 独立 PG 容器 + 建库/role，返回 container/dbName/dsn/adminURL/port。
-	ProvisionDedicated(ctx context.Context, appID, psID string) (container, dbName, dsn, adminURL string, port int, err error)
+	// ProvisionDedicated 起 per-app 独立 PG 容器 + 建库/role，返回 container/dbName/dsn/adminURL/host/port。
+	// host = 实际起容器用的宿主地址（InstanceManager.host），供 mwsupply 登记到 service_instance.Host（单源）。
+	ProvisionDedicated(ctx context.Context, appID, psID string) (container, dbName, dsn, adminURL, host string, port int, err error)
 	// CleanupDedicated docker rm per-app 独立容器。
 	CleanupDedicated(ctx context.Context, container string) error
 }
@@ -38,9 +39,9 @@ func pgSpec(prov *pgsupply.Provisioner, ded PgDedicatedRunner, store *Store, env
 			return "", appDB.DBName, nil // instanceID 空（pg binding 不存）；token=库名
 		},
 		// dedicated：起 per-app 独立 PG 容器 + 建库/role → 写 DATABASE_URL → 登记 service_instance。
-		// host 由 supplyDedicated 闭包传入（=r.host）；ProvisionDedicated 内部用 InstanceManager.host 起容器，二者同值。
+		// host 取 ProvisionDedicated 返回值（实际起容器用的 InstanceManager.host），不再依赖 r.host，消除双 host 耦合。
 		SupplyDedicated: func(ctx context.Context, appID, psID, host string) (string, string, error) {
-			container, dbName, dsn, adminURL, port, err := ded.ProvisionDedicated(ctx, appID, psID)
+			container, dbName, dsn, adminURL, dedHost, port, err := ded.ProvisionDedicated(ctx, appID, psID)
 			if err != nil {
 				return "", "", err
 			}
@@ -55,7 +56,7 @@ func pgSpec(prov *pgsupply.Provisioner, ded PgDedicatedRunner, store *Store, env
 				Kind:          "pg",
 				Name:          container,
 				SupplyMode:    ModeDedicated,
-				Host:          host,
+				Host:          dedHost,
 				Port:          port,
 				AuthRef:       adminURL,
 				ContainerName: container,

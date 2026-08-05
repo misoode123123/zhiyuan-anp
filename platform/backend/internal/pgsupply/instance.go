@@ -79,7 +79,7 @@ func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstan
 	return ins, nil
 }
 
-// ProvisionDedicated 起 per-app 独立 PG 容器 + 建库/role，返回 container/dbName/dsn/adminURL/port。
+// ProvisionDedicated 起 per-app 独立 PG 容器 + 建库/role，返回 container/dbName/dsn/adminURL/host/port。
 //
 // 与 provision()（per-project）的区别：本方法建 per-app 容器，**不**登记 pg_instance 表
 // （避免与 per-project partial unique index 交互），也**不**写 env、**不**登记 service_instance
@@ -87,42 +87,46 @@ func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstan
 // 复用 InstanceManager 已有的 docker（RunPGContainer/RmForce）+ admin（CreateDatabase/Role/GrantAll）
 // + waitForReady，端口段同 per-project（9500-9599）。
 //
+// 返回的 host = m.host（实际起容器用的 AppDeployHost），供 mwsupply 登记到 service_instance.Host
+// 作为单一来源（消除 r.host 与 m.host 双 host 耦合）。
+//
 // 失败回滚：RunPGContainer 成功后任何失败（waitForReady/建库/建 role/授权）都 RmForce 容器后返错 ——
 // dedicated 容器无 pg_instance 记录（mwsupply 出错时不登记 service_instance），若不回收则泄漏宿主端口+内存。
-func (m *InstanceManager) ProvisionDedicated(ctx context.Context, appID, psID string) (container, dbName, dsn, adminURL string, port int, err error) {
+func (m *InstanceManager) ProvisionDedicated(ctx context.Context, appID, psID string) (container, dbName, dsn, adminURL, host string, port int, err error) {
 	container = InstanceName(psID) + "-ded-" + genShortID()
 	pwd := genPassword()
 	port = allocPort(m.docker.UsedPorts(ctx), pgPortMin, pgPortMax)
 	if port == 0 {
-		return "", "", "", "", 0, fmt.Errorf("无可用 PG 端口（%d-%d 已满）", pgPortMin, pgPortMax)
+		return "", "", "", "", "", 0, fmt.Errorf("无可用 PG 端口（%d-%d 已满）", pgPortMin, pgPortMax)
 	}
 	if err := m.docker.RunPGContainer(ctx, container, pwd, port); err != nil {
-		return "", "", "", "", 0, fmt.Errorf("起 PG 容器: %w", err)
+		return "", "", "", "", "", 0, fmt.Errorf("起 PG 容器: %w", err)
 	}
 	adminURL = DSN(m.host, port, "postgres", pwd, "postgres")
 	if err := waitForReady(ctx, m.admin, adminURL); err != nil {
 		_ = m.docker.RmForce(ctx, container) // 清理半成品容器
-		return "", "", "", "", 0, fmt.Errorf("PG 未就绪: %w", err)
+		return "", "", "", "", "", 0, fmt.Errorf("PG 未就绪: %w", err)
 	}
 	dbName = DBName(appID)
 	role := RoleName(dbName)
 	if err := m.admin.CreateDatabase(ctx, adminURL, dbName); err != nil {
 		_ = m.docker.RmForce(ctx, container) // 建库失败回收容器（无实例记录，不回收则泄漏）
-		return "", "", "", "", 0, fmt.Errorf("建库 %s: %w", dbName, err)
+		return "", "", "", "", "", 0, fmt.Errorf("建库 %s: %w", dbName, err)
 	}
 	if err := m.admin.CreateRole(ctx, adminURL, role, pwd); err != nil {
 		_ = m.admin.DropDatabase(ctx, adminURL, dbName)
 		_ = m.docker.RmForce(ctx, container)
-		return "", "", "", "", 0, fmt.Errorf("建 role %s: %w", role, err)
+		return "", "", "", "", "", 0, fmt.Errorf("建 role %s: %w", role, err)
 	}
 	if err := m.admin.GrantAll(ctx, adminURL, dbName, role); err != nil {
 		_ = m.admin.DropDatabase(ctx, adminURL, dbName)
 		_ = m.admin.DropRole(ctx, adminURL, role)
 		_ = m.docker.RmForce(ctx, container)
-		return "", "", "", "", 0, fmt.Errorf("授权 %s/%s: %w", dbName, role, err)
+		return "", "", "", "", "", 0, fmt.Errorf("授权 %s/%s: %w", dbName, role, err)
 	}
 	dsn = DSN(m.host, port, role, pwd, dbName)
-	return container, dbName, dsn, adminURL, port, nil
+	host = m.host
+	return container, dbName, dsn, adminURL, host, port, nil
 }
 
 // CleanupDedicated docker rm per-app 独立容器（mwsupply Cleanup/ReleaseDedicated 调）。

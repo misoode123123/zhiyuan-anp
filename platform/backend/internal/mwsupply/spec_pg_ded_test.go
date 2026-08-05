@@ -26,15 +26,16 @@ type fakePgDedicated struct {
 	dbName     string
 	dsn        string
 	adminURL   string
+	host       string // ProvisionDedicated 返回的 host（模拟 InstanceManager.host）
 	port       int
 	err        error
 	provCalls  int
 	cleanCalls []string
 }
 
-func (f *fakePgDedicated) ProvisionDedicated(_ context.Context, _, _ string) (container, dbName, dsn, adminURL string, port int, err error) {
+func (f *fakePgDedicated) ProvisionDedicated(_ context.Context, _, _ string) (container, dbName, dsn, adminURL, host string, port int, err error) {
 	f.provCalls++
-	return f.container, f.dbName, f.dsn, f.adminURL, f.port, f.err
+	return f.container, f.dbName, f.dsn, f.adminURL, f.host, f.port, f.err
 }
 
 func (f *fakePgDedicated) CleanupDedicated(_ context.Context, container string) error {
@@ -51,9 +52,10 @@ func TestPgDedicated(t *testing.T) {
 		dbName:    "app_deadbeef",
 		dsn:       "postgres://app_role:secret@testdeploy:9550/app_deadbeef?sslmode=disable",
 		adminURL:  "postgres://postgres:pw@testdeploy:9550/postgres",
+		host:      "ded-real-host", // M-2：模拟 InstanceManager.host，≠ r.host(testdeploy)
 		port:      9550,
 	}
-	r, appStore, _, _, _ := newReconcilerTestWithPgDed(t, ded)
+	r, appStore, db, _, _ := newReconcilerTestWithPgDed(t, ded)
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "pgdedapp", RepoDir: "/x", InternalPort: 8080}
 	if err := appStore.Create(ctx, a); err != nil {
@@ -105,6 +107,14 @@ func TestPgDedicated(t *testing.T) {
 	}
 	if inst.Status != "active" {
 		t.Fatalf("status 应 active，得 %q", inst.Status)
+	}
+
+	// M-2：service_instance.Host 应 = ProvisionDedicated 返回的 host（单源），而非 r.host(testdeploy)。
+	// 按 id 查（不按 name：跨用例 service_instance 不在 Truncate 列表，name 重复行会污染查询）。
+	var instHost string
+	_ = db.Get(&instHost, `SELECT host FROM appdeploy_service_instance WHERE id=$1`, b.ServiceInstanceID)
+	if instHost != "ded-real-host" {
+		t.Fatalf("service_instance.Host 应为 ProvisionDedicated 返回的 ded-real-host，得 %q", instHost)
 	}
 
 	// ReleaseDep → CleanupDedicated 以 container 被调（docker rm per-app 容器）
