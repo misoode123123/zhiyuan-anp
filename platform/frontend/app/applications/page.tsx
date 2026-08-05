@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import type { CatalogInstance, Dep, DepsCatalog } from "@/lib/deps-ui";
 import { groupInstancesByKind } from "@/lib/deps-ui";
-import { appBoxes, buildDepBoxes } from "@/lib/topology";
+import { buildAppBoxes, buildDepBoxes } from "@/lib/topology";
 import type { Artifact } from "@/lib/api-types";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
@@ -304,7 +304,7 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
       .catch(() => {});
   }, [psID, appID]);
 
-  const boxes = appBoxes(app.instances);
+  const boxes = buildAppBoxes(app);
   const depBoxes = buildDepBoxes(deps, catalog?.instances ?? []);
   if (boxes.length === 0) return null;
 
@@ -321,57 +321,102 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
       ? "border-success/60 bg-success/10"
       : s === "failed"
         ? "border-danger/60 bg-danger/10"
-        : "border-warn/60 bg-warn/10"; // declared
+        : "border-warn/60 bg-warn/10";
 
   return (
     <div className="mt-3 rounded border border-border p-3">
-      <div className="mb-2 text-sm font-semibold">🕸️ 部署拓扑</div>
-      {/* 应用容器层 */}
+      <div className="mb-2 text-sm font-semibold">🕸️ 部署拓扑（应用内部结构）</div>
+
+      {/* 应用容器层（富参数：image/container/端口映射/network/kind，hover title 显完整 dump） */}
       <div className="mb-1 text-xs text-text-muted">应用容器</div>
       <div className="flex flex-wrap gap-2">
         {boxes.map((b) => (
-          <div key={b.env} className={`rounded border px-2 py-1 text-xs ${appBoxCls(b.status)}`}>
+          <div
+            key={b.env}
+            className={`min-w-[12rem] flex-1 rounded border px-2 py-1.5 text-xs ${appBoxCls(b.status)}`}
+            title={[
+              `${b.appName} · ${b.env} · ${b.status}`,
+              `image: ${b.image || "-"}`,
+              `container: ${b.containerName || "-"}`,
+              `端口 内部 ${b.internalPort || "?"} → 宿主 ${b.port > 0 ? ":" + b.port : "-"}`,
+              `network: ${b.networkMode}`,
+              `host: ${b.host || "-"}`,
+              `version: v${b.version}`,
+              b.appKind ? `kind: ${b.appKind}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n")}
+          >
             <div className="font-medium">
-              {app.name} · {b.env}
+              📦 {b.appName} · {b.env} · {b.status}
+            </div>
+            <div className="truncate text-text-muted">image: {b.image || "-"}</div>
+            <div className="text-text-muted">
+              端口 内部 {b.internalPort || "?"}
+              {b.port > 0 ? ` → 宿主 :${b.port}` : ""}
             </div>
             <div className="text-text-muted">
-              {b.port > 0 ? `:${b.port} · ` : ""}v{b.version} · {b.status}
+              {b.networkMode}
+              {b.appKind ? ` · ${b.appKind}` : ""} · v{b.version}
             </div>
-            {app.app_kind && (
-              <div className="text-text-muted">
-                {app.app_kind}
-                {app.network_mode === "host" ? " · host 网络" : ""}
+            {b.containerName && (
+              <div className="truncate text-text-muted" title={b.containerName}>
+                container: {b.containerName}
               </div>
             )}
           </div>
         ))}
       </div>
-      {/* env 注入边标签 */}
-      {depBoxes.length > 0 && (
-        <div className="my-2 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-          <span>↓ 注入环境变量</span>
-          {depBoxes.map((d) => (
-            <span key={d.kind} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono">
-              {d.envLabel}
-            </span>
-          ))}
-        </div>
-      )}
-      {/* 中间件实例层 */}
-      <div className="mb-1 text-xs text-text-muted">中间件依赖</div>
-      {depBoxes.length === 0 ? (
-        <div className="text-xs text-text-muted">无中间件依赖</div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {depBoxes.map((d) => (
-            <div key={d.kind} className={`rounded border px-2 py-1 text-xs ${depBoxCls(d.status)}`}>
-              <div className="font-medium">{d.kind}</div>
-              <div className="text-text-muted">
-                {d.host ? `${d.host}:${d.port}` : "(未供给)"} · {d.strategy} · {d.status}
+
+      {/* 连接关系：应用容器 → 经环境变量注入 → 中间件（每条边标 ENV=值） */}
+      {depBoxes.length > 0 ? (
+        <>
+          <div className="my-2 text-center text-xs text-text-muted">↓ 经环境变量注入连接 ↓</div>
+          <div className="flex flex-wrap gap-2">
+            {depBoxes.map((d) => (
+              <div key={d.kind} className="flex min-w-[10rem] flex-1 flex-col items-center">
+                {/* 边标签 ENV=值 */}
+                <div className="mb-0.5 rounded bg-surface-2 px-1.5 py-0.5 text-center font-mono text-[11px]">
+                  <span className="text-text">{d.envLabel}</span>
+                  <span className="text-text-muted">={d.envValue || "(未供给)"}</span>
+                </div>
+                <div className="text-text-muted">│</div>
+                {/* 依赖盒（富参数：连接地址/strategy/status/token/error） */}
+                <div
+                  className={`w-full rounded border px-2 py-1.5 text-xs ${depBoxCls(d.status)}`}
+                  title={[
+                    `${d.kind} · ${d.strategy} · ${d.status}`,
+                    d.envValue ? `${d.envLabel}=${d.envValue}` : `${d.envLabel} 未供给`,
+                    d.name ? `实例: ${d.name}` : "",
+                    d.token ? `token: ${d.token}` : "",
+                    d.error ? `错误: ${d.error}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n")}
+                >
+                  <div className="font-medium">{d.kind}</div>
+                  <div className="text-text-muted">
+                    {d.envValue || "(未供给)"} · {d.strategy}
+                  </div>
+                  <div className="text-text-muted">{d.status}</div>
+                  {d.token && (
+                    <div className="truncate text-text-muted" title={d.token}>
+                      token {d.token}
+                    </div>
+                  )}
+                  {d.error && (
+                    <div className="truncate text-danger" title={d.error}>
+                      {d.error}
+                    </div>
+                  )}
+                </div>
               </div>
-              {d.error && <div className="truncate text-danger">{d.error}</div>}
-            </div>
-          ))}
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="mt-2 text-xs text-text-muted">
+          无中间件依赖（该应用未声明 redis/milvus/pg）
         </div>
       )}
     </div>
