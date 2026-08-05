@@ -335,7 +335,7 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
               {app.name} · {b.env}
             </div>
             <div className="text-text-muted">
-              :{b.port} · v{b.version} · {b.status}
+              {b.port > 0 ? `:${b.port} · ` : ""}v{b.version} · {b.status}
             </div>
             {app.app_kind && (
               <div className="text-text-muted">
