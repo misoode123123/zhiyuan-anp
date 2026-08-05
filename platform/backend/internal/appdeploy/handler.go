@@ -55,7 +55,7 @@ type Handler struct {
 	changes     *change.Store           // 变更闸门（期2）；nil=未启用
 	cfg         *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
 	reqRepo     *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
-	provisioner pgAutoProvisioner        // 应用库供给（Create 建库 / Delete 删库）；P3 后仅负向测试缝
+	provisioner pgAutoProvisioner        // 应用库清理（Delete 删库）；P3 后 Create/Import 不再供给，字段保留为负向测试缝
 	routeWriter appgw.RouteWriter       // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
 	standards   *standard.Store         // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
 	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
