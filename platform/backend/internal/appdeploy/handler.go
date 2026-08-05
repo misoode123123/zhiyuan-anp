@@ -37,6 +37,16 @@ type AppQuotaChecker interface {
 	CheckApps(ctx context.Context, psID string) error
 }
 
+// pgAutoProvisioner 是 handler PG 供给的抽象（建/删应用库）。
+// P3 移除自动供给后 Create/Import 不再调 Provision——保留为接口字段：
+// ① Delete 仍调 Cleanup 回收应用库（DropDatabase/Role）；
+// ② 同时作为负向测试缝，spy 注入验证「Create 不再触发 Provision」。
+// （生产仍传 *pgsupply.Provisioner，满足此接口；pg shared 供给走 mwsupply.Reconcile，不经此字段。）
+type pgAutoProvisioner interface {
+	Provision(ctx context.Context, psID, appID string) (*pgsupply.AppDatabase, error)
+	Cleanup(ctx context.Context, appID string) error
+}
+
 // Handler 应用部署 HTTP 接口。
 type Handler struct {
 	store       *Store
@@ -45,7 +55,7 @@ type Handler struct {
 	changes     *change.Store           // 变更闸门（期2）；nil=未启用
 	cfg         *config.Store           // 系统配置(取 zhipuai_api_key 做 AI 总结)；nil=不总结
 	reqRepo     *requirement.Repository // 需求-代码核对门禁:读 requirement 的验收标准
-	provisioner *pgsupply.Provisioner   // 应用库供给（Create 建库 / Delete 删库）
+	provisioner pgAutoProvisioner        // 应用库供给（Create 建库 / Delete 删库）；P3 后仅负向测试缝
 	routeWriter appgw.RouteWriter       // appgw 路由表写入（Deploy 后写 / Delete 时清）；nil=不写路由
 	standards   *standard.Store         // 编码规范（启动 opencode 前刷新应用 AGENTS.md）；nil=不刷新
 	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
@@ -105,7 +115,13 @@ func NewHandler(store *Store, deployer *Deployer, codeWS *codews.Manager, change
 	if store != nil {
 		nodeStore = NewNodeStore(store.db)
 	}
-	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, provisioner: provisioner, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, monitor: monitor, metricStore: metricStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage, scaffoldsBase: scaffoldsBase}
+	h := &Handler{store: store, deployer: deployer, codeWS: codeWS, changes: changes, cfg: cfg, reqRepo: reqRepo, routeWriter: routeWriter, standards: standards, quota: quota, nodeStore: nodeStore, monitor: monitor, metricStore: metricStore, buildCfgStore: buildCfgStore, artifactStore: artifactStore, artifactStorage: artifactStorage, scaffoldsBase: scaffoldsBase}
+	// provisioner 字段为接口类型：须防 typed-nil（nil *pgsupply.Provisioner 直接装箱成接口会得到
+	// 非 nil 接口裹 nil 值，致 h.provisioner != nil 误判 → 运行期 nil receiver panic）。
+	// 故仅当具体指针非 nil 才装箱赋值；nil 时留空接口（零值），保持原「nil=不启用」语义。
+	if provisioner != nil {
+		h.provisioner = provisioner
+	}
 	h.checkFn = checkRequirement
 	return h
 }
@@ -1227,14 +1243,8 @@ func (h *Handler) Create(c *gin.Context) {
 		in.AppKind != AppKindWeb && in.AppKind != AppKindService {
 		h.cloneScaffold(c.Request.Context(), a, in.AppKind)
 	}
-	// 供给独立库 + 注入 DATABASE_URL（失败不阻塞应用创建，仅记录；DATABASE_URL 缺失时应用自处理）
-	// 配额超限（库数/库大小）→ Provision 在最前拦（不建任何库记录）；
-	// 此处把配额错误写到 application.last_error，前端应用列表能显示「库供给失败：配额超限」。
-	if h.provisioner != nil {
-		if _, perr := h.provisioner.Provision(c.Request.Context(), a.ProjectSpaceID, a.ID); perr != nil {
-			_ = h.store.SetStatus(c.Request.Context(), a.ProjectSpaceID, a.ID, a.Status, perr.Error(), "")
-		}
-	}
+	// P3：PG 切纯声明驱动——Create 不再无条件供给独立库；要库须 PutDeps 声明 pg=shared
+	// （部署时 mwReconciler.Reconcile 经 mwsupply spec_pg SupplyShared → prov.Provision 供给）。
 	httpx.Created(c, a)
 }
 
@@ -1404,12 +1414,7 @@ func (h *Handler) runImport(appID, psID, name, source, gitURL, authToken, server
 	if h.mwReconciler != nil {
 		_ = h.mwReconciler.SeedFromManifest(ctx, appID, psID, repoDir)
 	}
-	// 供给独立库（失败不阻塞导入，仅记 last_error）
-	if h.provisioner != nil {
-		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
-			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
-		}
-	}
+	// P3：PG 切纯声明驱动——导入不再无条件供给；声明的 pg 走 SeedFromManifest → Reconcile。
 	// 导入后触发 opencode 适配（改应用代码 to ANP；best-effort，失败不阻塞导入）。
 	if h.adaptSubmitter != nil {
 		if h.standards != nil {
@@ -1523,11 +1528,7 @@ func (h *Handler) runImportZip(appID, psID, name string, data []byte, size int64
 	if h.mwReconciler != nil {
 		_ = h.mwReconciler.SeedFromManifest(ctx, appID, psID, repoDir)
 	}
-	if h.provisioner != nil {
-		if _, pe := h.provisioner.Provision(ctx, psID, appID); pe != nil {
-			_ = h.store.SetStatus(ctx, psID, appID, "registered", pe.Error(), "")
-		}
-	}
+	// P3：PG 切纯声明驱动——导入不再无条件供给；声明的 pg 走 SeedFromManifest → Reconcile。
 	// 导入后触发 opencode 适配（改应用代码 to ANP；best-effort，失败不阻塞导入）。
 	if h.adaptSubmitter != nil {
 		if h.standards != nil {
