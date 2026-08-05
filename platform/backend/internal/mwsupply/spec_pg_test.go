@@ -118,3 +118,49 @@ func TestSupplyOne_pgBindExisting_InjectsDSN(t *testing.T) {
 		t.Fatalf("bind_existing 不应建 appdeploy_database 行（用现成库），得 %d", n)
 	}
 }
+
+// TestSupplyOne_pgBindExisting_EmptyAuthRefFails 验证登记的 pg bind_existing 实例 AuthRef(DSN) 为空时
+// 不静默写空 DATABASE_URL，而是 binding failed（M-3 守卫）。通用：任何 kind connVal 空 → failed。
+//
+// 偏离 brief 逐字代码两处（为保证用例可独立运行 / 不污染共享 .28 库）：
+//   - 实例挂项目空间 ps_1（ProjectSpaceID）：与 InjectsDSN 的平台级(NULL) pg 实例区分 RegisterBindExisting
+//     幂等键 (kind,host,port,ps)，避免登记被幂等吞掉；LookupBindExisting 项目级优先于平台级，
+//     确保取回本例空 AuthRef 实例（不受 InjectsDSN 残留的平台级非空 AuthRef 实例干扰）。
+//   - 清理先删引用该实例的 binding（FK RESTRICT）再删实例：InjectsDSN 的 t.Cleanup 仅删实例，
+//     会被自身 supplyOne 建的 binding FK 拦截而静默失败（残留根因）；本例修正之以免污染后续运行。
+func TestSupplyOne_pgBindExisting_EmptyAuthRefFails(t *testing.T) {
+	r, appStore, db, _, _ := newReconcilerTest(t)
+	ctx := context.Background()
+
+	// 项目级挂 ps_1（idempotency 键与平台级 InjectsDSN 区分；Lookup 项目级优先）。
+	psID := "ps_1"
+	inst := &ServiceInstance{Kind: "pg", Name: "pg-noauth", Host: "10.10.0.28", Port: 5432, AuthRef: "", ProjectSpaceID: &psID}
+	if err := r.store.RegisterBindExisting(ctx, inst); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	got, lookErr := r.store.LookupBindExisting(ctx, "ps_1", "pg")
+	if lookErr != nil || got == nil {
+		t.Fatalf("登记后 LookupBindExisting 取不到 pg 实例: %v", lookErr)
+	}
+	instID := got.ID
+	// FK 安全清理：先删引用该实例的 binding（binding.service_instance_id RESTRICT instance 删除），再删实例。
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM appdeploy_service_binding WHERE service_instance_id=$1`, instID)
+		_, _ = db.Exec(`DELETE FROM appdeploy_service_instance WHERE id=$1`, instID)
+	})
+
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "pgemptyapp", RepoDir: "/x", InternalPort: 8080}
+	if err := appStore.Create(ctx, a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	r.supplyOne(ctx, a.ID, "ps_1", DepService{Kind: "pg", Strategy: ModeBindExisting})
+
+	b, _ := NewStore(db).GetBinding(ctx, a.ID, "pg")
+	if b == nil || b.Status != StatusFailed {
+		t.Fatalf("空 AuthRef 应 binding failed，得 %+v", b)
+	}
+	if v, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL"); v != "" {
+		t.Fatalf("空 AuthRef 不应写 DATABASE_URL，得 %q", v)
+	}
+}

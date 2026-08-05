@@ -136,6 +136,12 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 	if spec.ConnValue != nil {
 		connVal = spec.ConnValue(inst)
 	}
+	// 通用空连接值守卫（M-3）：ConnStr/ConnValue 派生值为空（如 pg 登记实例 AuthRef 空）→
+	// 不写空 env、binding failed，避免静默注入空 DATABASE_URL/地址。
+	if connVal == "" {
+		mkBind(StatusFailed, inst.ID, "", "无可绑定的 "+dep.Kind+" 实例连接信息（AuthRef 空）")
+		return
+	}
 	isSecret := inst.AuthRef != ""
 	if err := r.env.UpsertEnv(ctx, appID, spec.AddrEnv, connVal, isSecret, "platform"); err != nil {
 		mkBind(StatusFailed, inst.ID, "", err.Error())
