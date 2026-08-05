@@ -28,13 +28,14 @@ type Reconciler struct {
 	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
 
-// NewReconciler 构造。末尾调 BuildSpecs 注册 redis/milvus 的 KindSpec（闭包捕获 store/flusher/ready/docker）。
+// NewReconciler 构造。末尾调 BuildSpecs 注册 redis/milvus/pg 的 KindSpec（闭包捕获 store/env/flusher/ready/docker/pgProv/pgDed）。
 //   env 传 appdeploy.Store（满足 EnvWriter）；
 //   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
-//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
-func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner) *Reconciler {
+//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost；
+//   pgProv 给 pg shared 自管供给；pgDed 给 pg dedicated（*pgsupply.InstanceManager 满足 PgDedicatedRunner）。
+func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner, pgDed PgDedicatedRunner) *Reconciler {
 	r := &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
-	BuildSpecs(store, flusher, ready, docker, pgProv)
+	BuildSpecs(store, env, flusher, ready, docker, pgProv, pgDed)
 	return r
 }
 

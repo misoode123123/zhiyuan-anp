@@ -79,6 +79,58 @@ func (m *InstanceManager) provision(ctx context.Context, psID string) (*PGInstan
 	return ins, nil
 }
 
+// ProvisionDedicated 起 per-app 独立 PG 容器 + 建库/role，返回 container/dbName/dsn/adminURL/port。
+//
+// 与 provision()（per-project）的区别：本方法建 per-app 容器，**不**登记 pg_instance 表
+// （避免与 per-project partial unique index 交互），也**不**写 env、**不**登记 service_instance
+// （由 mwsupply 闭包做：写 DATABASE_URL + 登记 service_instance 带 container_name 供清理）。
+// 复用 InstanceManager 已有的 docker（RunPGContainer/RmForce）+ admin（CreateDatabase/Role/GrantAll）
+// + waitForReady，端口段同 per-project（9500-9599）。
+//
+// 失败回滚：RunPGContainer 成功后任何失败（waitForReady/建库/建 role/授权）都 RmForce 容器后返错 ——
+// dedicated 容器无 pg_instance 记录（mwsupply 出错时不登记 service_instance），若不回收则泄漏宿主端口+内存。
+func (m *InstanceManager) ProvisionDedicated(ctx context.Context, appID, psID string) (container, dbName, dsn, adminURL string, port int, err error) {
+	container = InstanceName(psID) + "-ded-" + genShortID()
+	pwd := genPassword()
+	port = allocPort(m.docker.UsedPorts(ctx), pgPortMin, pgPortMax)
+	if port == 0 {
+		return "", "", "", "", 0, fmt.Errorf("无可用 PG 端口（%d-%d 已满）", pgPortMin, pgPortMax)
+	}
+	if err := m.docker.RunPGContainer(ctx, container, pwd, port); err != nil {
+		return "", "", "", "", 0, fmt.Errorf("起 PG 容器: %w", err)
+	}
+	adminURL = DSN(m.host, port, "postgres", pwd, "postgres")
+	if err := waitForReady(ctx, m.admin, adminURL); err != nil {
+		_ = m.docker.RmForce(ctx, container) // 清理半成品容器
+		return "", "", "", "", 0, fmt.Errorf("PG 未就绪: %w", err)
+	}
+	dbName = DBName(appID)
+	role := RoleName(dbName)
+	if err := m.admin.CreateDatabase(ctx, adminURL, dbName); err != nil {
+		_ = m.docker.RmForce(ctx, container) // 建库失败回收容器（无实例记录，不回收则泄漏）
+		return "", "", "", "", 0, fmt.Errorf("建库 %s: %w", dbName, err)
+	}
+	if err := m.admin.CreateRole(ctx, adminURL, role, pwd); err != nil {
+		_ = m.admin.DropDatabase(ctx, adminURL, dbName)
+		_ = m.docker.RmForce(ctx, container)
+		return "", "", "", "", 0, fmt.Errorf("建 role %s: %w", role, err)
+	}
+	if err := m.admin.GrantAll(ctx, adminURL, dbName, role); err != nil {
+		_ = m.admin.DropDatabase(ctx, adminURL, dbName)
+		_ = m.admin.DropRole(ctx, adminURL, role)
+		_ = m.docker.RmForce(ctx, container)
+		return "", "", "", "", 0, fmt.Errorf("授权 %s/%s: %w", dbName, role, err)
+	}
+	dsn = DSN(m.host, port, role, pwd, dbName)
+	return container, dbName, dsn, adminURL, port, nil
+}
+
+// CleanupDedicated docker rm per-app 独立容器（mwsupply Cleanup/ReleaseDedicated 调）。
+// 与 per-project TeardownForProject 区别：per-app 容器无 pg_instance 记录，仅 docker rm。
+func (m *InstanceManager) CleanupDedicated(ctx context.Context, container string) error {
+	return m.docker.RmForce(ctx, container)
+}
+
 // isUniqueViolation 判断是否 PG 唯一约束冲突（错误码 23505）。
 // 用于 provision 并发兜底：partial unique index 命中时重查复用先到者建的实例。
 func isUniqueViolation(err error) bool {

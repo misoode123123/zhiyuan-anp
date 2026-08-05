@@ -8,7 +8,7 @@ import (
 )
 
 func TestPgSpec_Fields(t *testing.T) {
-	s := pgSpec(nil) // provisioner 传 nil（本测只验静态字段）
+	s := pgSpec(nil, nil, nil, nil) // provisioner/ded/store/env 传 nil（本测只验静态字段）
 	if s.Kind != "pg" || s.AddrEnv != "DATABASE_URL" {
 		t.Fatalf("pg 基本字段错: %+v", s)
 	}
@@ -37,7 +37,7 @@ func TestPgSpec_Fields(t *testing.T) {
 // TestPgSpec_ConnValue_returnsAuthRef 验证 pg ConnValue 闭包返回 inst.AuthRef（登记的完整 DSN），
 // 而非 host:port —— bind_existing 据此注入 DATABASE_URL。
 func TestPgSpec_ConnValue_returnsAuthRef(t *testing.T) {
-	s := pgSpec(nil)
+	s := pgSpec(nil, nil, nil, nil)
 	inst := &ServiceInstance{Host: "10.10.0.28", Port: 5432, AuthRef: "postgres://u:p@h:5432/db"}
 	if got := s.ConnValue(inst); got != inst.AuthRef {
 		t.Fatalf("ConnValue 应返回 inst.AuthRef %q，得 %q", inst.AuthRef, got)

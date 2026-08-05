@@ -183,7 +183,7 @@ func main() {
 	// ---- 中间件依赖供给（mwsupply）：适配回写 .anp/deps.yaml → 部署注入 REDIS_ADDR/MILVUS_ADDR 等 ----
 	mwStore := mwsupply.NewStore(database)
 	mwProbe := mwsupply.NewRedisFlusher()                                                                 // *redisFlusher 同时满足 DBFlusher+ReadyChecker
-	mwReconciler := mwsupply.NewReconciler(mwStore, appDeployStore, mwProbe, mwProbe, mwsupply.NewOSDocker(), cfg.AppDeployHost, pgProvisioner) // appDeployStore 满足 mwsupply.EnvWriter；pgProvisioner 给 pg shared 自管供给
+	mwReconciler := mwsupply.NewReconciler(mwStore, appDeployStore, mwProbe, mwProbe, mwsupply.NewOSDocker(), cfg.AppDeployHost, pgProvisioner, instanceMgr) // appDeployStore 满足 mwsupply.EnvWriter；pgProvisioner 给 pg shared 自管供给；instanceMgr 给 pg dedicated（满足 PgDedicatedRunner）
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	// 每应用保留最近 N 份（BACKUP_RETAIN 默认 7，0=不清理）—— Dump 成功后自动 prune 该 app 旧备份。
 	backuper := pgsupply.NewBackuper(pgsupplyStore, "/data/backups", parseBackupRetain(os.Getenv("BACKUP_RETAIN"), 7))

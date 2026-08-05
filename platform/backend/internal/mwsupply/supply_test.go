@@ -80,15 +80,21 @@ func (f *fakeDocker) RmMilvusStack(_ context.Context, base string) error {
 
 // newReconcilerTest 起 Reconciler（env 用真实 appdeploy.Store；flusher+ready 用同一 fakeFlusher；
 // docker 用 fakeDocker）+ 清表 + 保 .28 种子（含 shared）。host=testdeploy（REDIS_ADDR 测试值）。
+// pgDed 传 nil（pg dedicated 用例用 newReconcilerTestWithPgDed 注入 fake）。
 func newReconcilerTest(t *testing.T) (*Reconciler, *appdeploy.Store, *sqlx.DB, *fakeFlusher, *fakeDocker) {
+	return newReconcilerTestWithPgDed(t, nil)
+}
+
+// newReconcilerTestWithPgDed 同 newReconcilerTest 但注入自定义 pgDed（fake 专用；nil=沿用默认 nil）。
+func newReconcilerTestWithPgDed(t *testing.T, pgDed PgDedicatedRunner) (*Reconciler, *appdeploy.Store, *sqlx.DB, *fakeFlusher, *fakeDocker) {
 	t.Helper()
 	db := testutil.TestDB(t)
 	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
 	ensureSeed(t, db)
 	appStore := appdeploy.NewStore(db)
-	f := &fakeFlusher{}                                       // 同时作 DBFlusher + ReadyChecker
+	f := &fakeFlusher{} // 同时作 DBFlusher + ReadyChecker
 	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
-	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy", nil), appStore, db, f, dk
+	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy", nil, pgDed), appStore, db, f, dk
 }
 
 // ensureSeed 确保 .28 redis/milvus bind_existing 种子 + shared redis 种子在（Truncate 不动 service_instance；幂等再插）。
