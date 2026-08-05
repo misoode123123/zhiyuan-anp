@@ -2,7 +2,11 @@ package pgsupply
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // QuotaChecker 配额检查接口（由 quota.Service 实现）。
@@ -49,10 +53,10 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 			return nil, err
 		}
 	}
-	// 幂等：同 app 已有 ready 库 → 复用，不重建（auto-provision 与 declared pg=shared 共存期安全）。
-	// provisioning（并发中）也返回既有，避免重复建；其余状态（failed/deleted）继续走新建流程。
-	if existing, err := p.store.GetAppDBByApp(ctx, appID); err == nil && existing != nil &&
-		(existing.Status == StatusReady || existing.Status == StatusProvisioning) {
+	// 幂等：同 app 已有 Ready 库 → 复用，不重建。
+	// 只复用 Ready（保证 DATABASE_URL env 已写）；Provisioning/Failed 不早返回，落续供路径推进到 Ready
+	// （修 P2a #2：Provisioning 行 env 未写，早返回会造成 binding bound 但无 DATABASE_URL 的 lag）。
+	if existing, err := p.store.GetAppDBByApp(ctx, appID); err == nil && existing != nil && existing.Status == StatusReady {
 		return existing, nil
 	}
 	ins, err := p.instances.GetOrCreate(ctx, psID)
@@ -63,27 +67,41 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 	role := RoleName(dbName)
 	pwd := genPassword()
 
-	ad := &AppDatabase{
-		ID: "apdb_" + genShortID(), AppID: appID, ProjectSpaceID: psID,
-		DBName: dbName, DBRole: role, PGInstanceID: ins.ID,
-		DBHost: ins.Host, DBPort: ins.Port, Status: StatusProvisioning, BackupEnabled: true,
-	}
-	if err := p.store.CreateAppDB(ctx, ad); err != nil {
-		return nil, fmt.Errorf("登记库记录: %w", err)
+	var ad *AppDatabase
+	if existing, err := p.store.GetAppDBByApp(ctx, appID); err == nil && existing != nil {
+		// 续供：复用既有 Provisioning/Failed 行（不新建，避免 UNIQUE 冲突），推进到 Ready。
+		ad = existing
+		_ = p.store.SetAppDBStatus(ctx, ad.ID, StatusProvisioning, "")
+		ad.Status = StatusProvisioning
+		// 复用既有 DBName/DBRole：库早按此名建过（续供 CreateDatabase 撞 already-exists 被吞），
+		// 重建 role/DSN 也用此名，避免新建另一个库名造成孤儿库 + DSN 与行记录不一致。
+		dbName = ad.DBName
+		role = ad.DBRole
+	} else {
+		ad = &AppDatabase{
+			ID: "apdb_" + genShortID(), AppID: appID, ProjectSpaceID: psID,
+			DBName: dbName, DBRole: role, PGInstanceID: ins.ID,
+			DBHost: ins.Host, DBPort: ins.Port, Status: StatusProvisioning, BackupEnabled: true,
+		}
+		if err := p.store.CreateAppDB(ctx, ad); err != nil {
+			return nil, fmt.Errorf("登记库记录: %w", err)
+		}
 	}
 
-	// 建库 + role + 授权（失败回滚）
+	// 建库（续供时库可能已存在 → 吞 already-exists；其余失败回滚）。
 	if err := p.admin.CreateDatabase(ctx, ins.AdminURLRef, dbName); err != nil {
-		p.markFailed(ctx, ad, err)
-		return nil, err
+		if !isDuplicateDB(err) {
+			p.markFailed(ctx, ad, err)
+			return nil, err
+		}
 	}
+	// role：Drop(IF EXISTS) + Create。续供时 role 可能半建 → 重建以新密码；全新则 Drop 为 no-op。
+	_ = p.admin.DropRole(ctx, ins.AdminURLRef, role)
 	if err := p.admin.CreateRole(ctx, ins.AdminURLRef, role, pwd); err != nil {
-		_ = p.admin.DropDatabase(ctx, ins.AdminURLRef, dbName)
 		p.markFailed(ctx, ad, err)
 		return nil, err
 	}
 	if err := p.admin.GrantAll(ctx, ins.AdminURLRef, dbName, role); err != nil {
-		_ = p.admin.DropDatabase(ctx, ins.AdminURLRef, dbName)
 		_ = p.admin.DropRole(ctx, ins.AdminURLRef, role)
 		p.markFailed(ctx, ad, err)
 		return nil, err
@@ -91,7 +109,6 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 
 	dsn := DSN(ins.Host, ins.Port, role, pwd, dbName)
 	if err := p.env.UpsertEnv(ctx, appID, "DATABASE_URL", dsn, true, "platform"); err != nil {
-		_ = p.admin.DropDatabase(ctx, ins.AdminURLRef, dbName)
 		_ = p.admin.DropRole(ctx, ins.AdminURLRef, role)
 		p.markFailed(ctx, ad, err)
 		return nil, fmt.Errorf("写 DATABASE_URL env: %w", err)
@@ -100,6 +117,19 @@ func (p *Provisioner) Provision(ctx context.Context, psID, appID string) (*AppDa
 	_ = p.store.SetAppDBStatus(ctx, ad.ID, StatusReady, "")
 	ad.Status = StatusReady
 	return ad, nil
+}
+
+// isDuplicateDB 判 CreateDatabase 错误是否"库已存在"（续供容忍）。
+// PG duplicate_database 错误码 42P04；pgx 字符串化含 "already exists"。
+func isDuplicateDB(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "42P04" {
+		return true
+	}
+	return strings.Contains(err.Error(), "already exists")
 }
 
 // Cleanup 删库 + role（保留 PG 实例，项目可能还有其他应用）。
