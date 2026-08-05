@@ -204,10 +204,17 @@ func (r *Reconciler) writeSpecEnv(ctx context.Context, appID string, spec KindSp
 // redis：1 容器 + AUTH+PING；milvus：专属网络 + milvus/etcd/minio 三容器 + /healthz 探针。
 func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, dep DepService, spec KindSpec,
 	mkBind func(status, instID, token, lastErr string)) {
-	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据，重写 env。
+	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据。
 	if b, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && b != nil &&
 		b.Status == StatusBound && b.ServiceInstanceID != "" {
 		if inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID); ie == nil && inst != nil && inst.Status == "active" {
+			// spec.SupplyDedicated 自管 kind（pg）：env 由首次供给正确写入，无法从 ConnStr/AuthRef 重建
+			// （ConnStr=host:port 会覆盖有效 app-role DSN）→ 跳过 env 重写，仅续 binding（保 token）。
+			// 镜像 SupplyShared reuse 分支：自管 env kind 同样不重写 env。
+			if spec.SupplyDedicated != nil {
+				mkBind(StatusBound, inst.ID, b.IsolationToken, "")
+				return
+			}
 			r.writeDedicatedEnvSpec(ctx, appID, spec, inst)
 			mkBind(StatusBound, inst.ID, "", "")
 			return

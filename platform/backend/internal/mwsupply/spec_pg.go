@@ -44,7 +44,12 @@ func pgSpec(prov *pgsupply.Provisioner, ded PgDedicatedRunner, store *Store, env
 			if err != nil {
 				return "", "", err
 			}
-			_ = env.UpsertEnv(ctx, appID, "DATABASE_URL", dsn, true, "platform")
+			// env 写失败：容器在跑但无 DATABASE_URL 不可用 → 回收容器，返回错让 binding failed（不登记实例）。
+			// 同 pgsupply shared 路径视 env 写失败为硬失败。
+			if err := env.UpsertEnv(ctx, appID, "DATABASE_URL", dsn, true, "platform"); err != nil {
+				_ = ded.CleanupDedicated(ctx, container)
+				return "", "", err
+			}
 			inst := &ServiceInstance{
 				ID:            "svinst-pg-ded-" + genShortID(),
 				Kind:          "pg",

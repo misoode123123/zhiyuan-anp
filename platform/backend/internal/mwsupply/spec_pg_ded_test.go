@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
 // —— P2b Task 3: pg dedicated（独立 pgvector 容器 + 库/role）——
@@ -134,5 +135,140 @@ func TestPgDedicated_provisionError(t *testing.T) {
 	}
 	if v, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL"); v != "" {
 		t.Fatalf("失败不应写 DATABASE_URL，得 %q", v)
+	}
+}
+
+// TestPgDedicated_reReconcilePreservesDSN C1 回归：pg dedicated 二次供给（reuse 分支）不重写 DATABASE_URL。
+// spec.SupplyDedicated != nil 时 reuse 分支须跳过 writeDedicatedEnvSpec——否则 ConnStr(inst)=host:port
+// 会覆盖首次供给写入的有效 app-role DSN。同时验证 token（dbName）不被清空、不再起容器。
+func TestPgDedicated_reReconcilePreservesDSN(t *testing.T) {
+	ded := &fakePgDedicated{
+		container: "pg-ded-reuse-1",
+		dbName:    "app_reuse",
+		dsn:       "postgres://app_role:secret@testdeploy:9550/app_reuse?sslmode=disable",
+		adminURL:  "postgres://postgres:pw@testdeploy:9550/postgres",
+		port:      9550,
+	}
+	r, appStore, _, _, _ := newReconcilerTestWithPgDed(t, ded)
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "pgdedreuse", RepoDir: "/x", InternalPort: 8080}
+	if err := appStore.Create(ctx, a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	deps := []DepService{{Kind: "pg", Strategy: ModeDedicated}}
+	// 第一次供给：DATABASE_URL=dsn，token=dbName
+	r.supplyAll(ctx, a.ID, "ps_1", deps)
+	firstDSN, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL")
+	if firstDSN != ded.dsn {
+		t.Fatalf("首次 DATABASE_URL 应 %q，得 %q", ded.dsn, firstDSN)
+	}
+	b1, _ := r.store.GetBinding(ctx, a.ID, "pg")
+	if b1 == nil || b1.IsolationToken != ded.dbName {
+		t.Fatalf("首次 token 应 %q，得 %+v", ded.dbName, b1)
+	}
+
+	// 第二次供给（走 reuse 分支）
+	ded.provCalls = 0 // 重置；reuse 不应再调 ProvisionDedicated
+	r.supplyAll(ctx, a.ID, "ps_1", deps)
+
+	// DATABASE_URL 不变（仍是 dsn，非 host:port）
+	secondDSN, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL")
+	if secondDSN != ded.dsn {
+		t.Fatalf("二次供给 DATABASE_URL 应不变 %q，得 %q", ded.dsn, secondDSN)
+	}
+	if secondDSN == "testdeploy:9550" {
+		t.Fatalf("DATABASE_URL 被降级为 host:port（C1 回归）：%q", secondDSN)
+	}
+	// reuse 不应再起容器
+	if ded.provCalls != 0 {
+		t.Fatalf("reuse 不应再调 ProvisionDedicated，得 %d 次", ded.provCalls)
+	}
+	// token 保留（不被清空）
+	b2, _ := r.store.GetBinding(ctx, a.ID, "pg")
+	if b2 == nil || b2.Status != StatusBound {
+		t.Fatalf("二次应仍 bound，得 %+v", b2)
+	}
+	if b2.IsolationToken != ded.dbName {
+		t.Fatalf("二次 token 应保留 %q，得 %q", ded.dbName, b2.IsolationToken)
+	}
+}
+
+// fakeEnvWriter 记录 UpsertEnv/DeleteEnv 调用；upsertErr 非 nil 时 UpsertEnv 返错（测 env 写失败路径）。
+// 满足 EnvWriter 接口，用于 I1 测试注入（harness 默认用真实 appdeploy.Store 无法模拟写失败）。
+type fakeEnvWriter struct {
+	upsertErr   error
+	upsertCalls []fakeEnvUpsert
+	deleteCalls []fakeEnvDelete
+}
+
+type fakeEnvUpsert struct {
+	appID, key, value string
+	isSecret          bool
+	source            string
+}
+type fakeEnvDelete struct {
+	appID, key string
+}
+
+func (f *fakeEnvWriter) UpsertEnv(_ context.Context, appID, key, value string, isSecret bool, source string) error {
+	f.upsertCalls = append(f.upsertCalls, fakeEnvUpsert{appID, key, value, isSecret, source})
+	return f.upsertErr
+}
+func (f *fakeEnvWriter) DeleteEnv(_ context.Context, appID, key string) error {
+	f.deleteCalls = append(f.deleteCalls, fakeEnvDelete{appID, key})
+	return nil
+}
+
+// TestPgDedicated_envWriteFail I1：env 写失败 → CleanupDedicated 回收容器 + binding failed + 不登记 service_instance。
+// 构造 Reconciler 注入 fakeEnvWriter（UpsertEnv 返错）：ProvisionDedicated 成功后写 DATABASE_URL 失败 →
+// 回收容器（ded.CleanupDedicated）→ 返错 → supplyDedicated mkBind(failed)。容器不留、实例不登记。
+func TestPgDedicated_envWriteFail(t *testing.T) {
+	ded := &fakePgDedicated{
+		container: "pg-ded-envfail-1",
+		dbName:    "app_envfail",
+		dsn:       "postgres://app_role:secret@testdeploy:9551/app_envfail?sslmode=disable",
+		adminURL:  "postgres://postgres:pw@testdeploy:9551/postgres",
+		port:      9551,
+	}
+	// 构造 Reconciler：env 用 fakeEnvWriter（UpsertEnv 返错），store/docker/flusher 同 harness。
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
+	ensureSeed(t, db)
+	store := NewStore(db)
+	appStore := appdeploy.NewStore(db)
+	fl := &fakeFlusher{}
+	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
+	failEnv := &fakeEnvWriter{upsertErr: errStr("env 写失败")}
+	r := NewReconciler(store, failEnv, fl, fl, dk, "testdeploy", nil, ded)
+
+	ctx := context.Background()
+	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "pgenvfail", RepoDir: "/x", InternalPort: 8080}
+	if err := appStore.Create(ctx, a); err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "pg", Strategy: ModeDedicated}})
+
+	// ProvisionDedicated 被调（容器确实起了）
+	if ded.provCalls != 1 {
+		t.Fatalf("ProvisionDedicated 应调 1 次，得 %d", ded.provCalls)
+	}
+	// CleanupDedicated 被调（容器回收）
+	if len(ded.cleanCalls) != 1 || ded.cleanCalls[0] != ded.container {
+		t.Fatalf("CleanupDedicated 应以 %q 调一次，得 %v", ded.container, ded.cleanCalls)
+	}
+	// binding failed（非 bound）
+	b, _ := store.GetBinding(ctx, a.ID, "pg")
+	if b == nil || b.Status != StatusFailed {
+		t.Fatalf("env 写失败应 binding failed，得 %+v", b)
+	}
+	// 不登记 service_instance（binding 无 instance id）
+	if b.ServiceInstanceID != "" {
+		t.Fatalf("env 写失败不应登记 service_instance，得 %q", b.ServiceInstanceID)
+	}
+	// DATABASE_URL 未落库（fake env 不写真 DB）
+	if v, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL"); v != "" {
+		t.Fatalf("env 写失败不应落 DATABASE_URL，得 %q", v)
 	}
 }
