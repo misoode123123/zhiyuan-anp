@@ -3,12 +3,12 @@ package mwsupply
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
+	"zhiyuan-anp/platform/backend/internal/pgsupply"
 )
 
 // EnvWriter 写/删应用 env（由 appdeploy.Store 实现，避免 mwsupply→appdeploy 循环依赖）。
@@ -17,23 +17,34 @@ type EnvWriter interface {
 	DeleteEnv(ctx context.Context, appID, key string) error // P6：声明移除时删注入的 platform env
 }
 
-// Reconciler 中间件依赖供给。best-effort：失败记 binding，不阻塞部署。
-type Reconciler struct {
-	store   *Store
-	env     EnvWriter
-	flusher DBFlusher     // shared 重分配时清空 redis db（Task 3）
-	ready   ReadyChecker  // dedicated 起容器后轮询 AUTH+PING 至就绪（P3）
-	docker  MWDockerRunner // dedicated 容器管理（run/rm）（P3）
-	host    string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
-	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
+// DedicatedQuotaChecker 专属实例数配额检查（quota.Service 实现）。
+// nil=不强制（开发/测试或未注入 quota）。
+type DedicatedQuotaChecker interface {
+	CheckDedicatedInstances(ctx context.Context, psID string) error
 }
 
-// NewReconciler 构造。
+// Reconciler 中间件依赖供给。best-effort：失败记 binding，不阻塞部署。
+type Reconciler struct {
+	store    *Store
+	env      EnvWriter
+	flusher  DBFlusher     // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	ready    ReadyChecker  // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	docker   MWDockerRunner // dedicated 容器管理（run/rm）
+	host     string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
+	dedQuota DedicatedQuotaChecker // P4：dedicated 起容器前查配额；nil=不强制
+	log      *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
+}
+
+// NewReconciler 构造。末尾调 BuildSpecs 注册 redis/milvus/pg 的 KindSpec（闭包捕获 store/env/flusher/ready/docker/pgProv/pgDed）。
 //   env 传 appdeploy.Store（满足 EnvWriter）；
 //   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
-//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
-func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string) *Reconciler {
-	return &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
+//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost；
+//   pgProv 给 pg shared 自管供给；pgDed 给 pg dedicated（*pgsupply.InstanceManager 满足 PgDedicatedRunner）；
+//   dedQuota 给 dedicated 配额检查（*quota.Service 满足 DedicatedQuotaChecker；nil=不强制）。
+func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner, pgDed PgDedicatedRunner, dedQuota DedicatedQuotaChecker) *Reconciler {
+	r := &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host, dedQuota: dedQuota}
+	BuildSpecs(store, env, flusher, ready, docker, pgProv, pgDed)
+	return r
 }
 
 // SetLogger 注入 logger（可选；main 装配时调，测试不调则 flush 失败静默）。
@@ -83,13 +94,19 @@ func (r *Reconciler) supplyAll(ctx context.Context, appID, psID string, deps []D
 	}
 }
 
-// supplyOne 供给单个依赖。bind_existing（P1）/ shared（P2 redis）；dedicated 暂 failed（P3）。
+// supplyOne 供给单个依赖。spec 驱动分派：bind_existing / shared / dedicated。
+// 未注册 kind（无 KindSpec）→ mkBind failed。bind_existing 的 env 键取 spec.AddrEnv（= EnvKeyFor 旧值）。
 func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepService) {
 	strategy := dep.Strategy
 	if strategy == "" {
 		strategy = ModeBindExisting
 	}
+	spec, ok := LookupKind(dep.Kind)
+	// binding 行 env_key：注册 kind 用 spec.AddrEnv；未注册回退 EnvKeyFor（保持 binding 行可读）。
 	envKey := EnvKeyFor(dep.Kind)
+	if ok {
+		envKey = spec.AddrEnv
+	}
 	// mkBind 幂等 upsert binding（token：bind_existing 空；shared 填分配号）。
 	mkBind := func(status, instID, token, lastErr string) {
 		_ = r.store.UpsertBinding(ctx, &ServiceBinding{
@@ -99,12 +116,16 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 		})
 	}
 
+	if !ok {
+		mkBind(StatusFailed, "", "", "未注册 kind "+dep.Kind+"（无 KindSpec）")
+		return
+	}
 	if strategy == ModeShared {
-		r.supplyShared(ctx, appID, psID, dep, mkBind)
+		r.supplyShared(ctx, appID, psID, dep, spec, mkBind)
 		return
 	}
 	if strategy == ModeDedicated {
-		r.supplyDedicated(ctx, appID, psID, dep, mkBind)
+		r.supplyDedicated(ctx, appID, psID, dep, spec, mkBind)
 		return
 	}
 	if strategy != ModeBindExisting {
@@ -112,26 +133,56 @@ func (r *Reconciler) supplyOne(ctx context.Context, appID, psID string, dep DepS
 		return
 	}
 
-	// —— bind_existing（P1，不动）——
+	// —— bind_existing ——
 	inst, err := r.store.LookupBindExisting(ctx, psID, dep.Kind)
 	if err != nil || inst == nil {
 		mkBind(StatusFailed, "", "", "无可绑定的 "+dep.Kind+" 实例")
 		return
 	}
-	connStr := ConnStr(inst)
+	// 默认 ConnStr(inst)=host:port（redis/milvus）；spec.ConnValue 非 nil 时用自管值（pg=AuthRef 完整 DSN）。
+	connVal := ConnStr(inst)
+	if spec.ConnValue != nil {
+		connVal = spec.ConnValue(inst)
+	}
+	// 通用空连接值守卫（M-3）：ConnStr/ConnValue 派生值为空（如 pg 登记实例 AuthRef 空）→
+	// 不写空 env、binding failed，避免静默注入空 DATABASE_URL/地址。
+	if connVal == "" {
+		mkBind(StatusFailed, inst.ID, "", "无可绑定的 "+dep.Kind+" 实例连接信息（AuthRef 空）")
+		return
+	}
 	isSecret := inst.AuthRef != ""
-	if err := r.env.UpsertEnv(ctx, appID, envKey, connStr, isSecret, "platform"); err != nil {
+	if err := r.env.UpsertEnv(ctx, appID, spec.AddrEnv, connVal, isSecret, "platform"); err != nil {
 		mkBind(StatusFailed, inst.ID, "", err.Error())
 		return
 	}
 	mkBind(StatusBound, inst.ID, "", "")
 }
 
-// supplyShared shared 供给（按 kind 分派）：复用判定（幂等不换 token 不 flush）/ 新分配（按 kind 选 token → claim → env）。
-// redis：db 号池（ParseDBRange + pickLowestFree + claimWithRetry 的 flush+重试）。
-// milvus：随机 collection 前缀（无 flush、无池；极罕见撞号重生）。
-func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep DepService,
+// supplyShared shared 供给（spec 驱动）：
+//  1. spec.SupplyShared != nil → 自管路径（pg：实例+库+role+env+明细自管；不走 LookupShared/ConnStr）。含 reuse 判定。
+//  2. 否则默认路径：LookupShared 实例 → reuse 判定（幂等不换 token 不 flush）/ 新分配 spec.AllocSharedToken → env。
+//
+// redis：db 号池；milvus：随机 collection 前缀。token 分配逻辑封装在 spec 闭包内（见 spec_redis.go/spec_milvus.go）。
+func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep DepService, spec KindSpec,
 	mkBind func(status, instID, token, lastErr string)) {
+	// pg-style 自管供给（spec.SupplyShared 自管全套：实例+库+role+env+明细；不走 LookupShared/ConnStr）。
+	if spec.SupplyShared != nil {
+		// reuse：binding 已 bound 且 IsolationToken 非空 → 不重复供给（pgsupply.Provision 虽幂等，仍避免无谓调用）。
+		// 用 IsolationToken != "" 判已供给：兼容 pg 的空 instID（binding 不存 service_instance_id）与
+		// redis/milvus 的非空 instID（此分支仅 SupplyShared kind 进入，redis/milvus 走下方默认路径不受影响）。
+		if existing, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && existing != nil &&
+			existing.Status == StatusBound && existing.IsolationToken != "" {
+			mkBind(StatusBound, existing.ServiceInstanceID, existing.IsolationToken, "")
+			return
+		}
+		instID, token, err := spec.SupplyShared(ctx, appID, psID)
+		if err != nil {
+			mkBind(StatusFailed, "", "", err.Error())
+			return
+		}
+		mkBind(StatusBound, instID, token, "")
+		return
+	}
 	inst, err := r.store.LookupShared(ctx, dep.Kind)
 	if err != nil || inst == nil {
 		mkBind(StatusFailed, "", "", "无 shared "+dep.Kind+" 实例")
@@ -140,145 +191,78 @@ func (r *Reconciler) supplyShared(ctx context.Context, appID, psID string, dep D
 	// 复用：同 app 已 bound 同实例同 token → 不换 token、不 flush（保数据）、重写 env。
 	if existing, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && existing != nil &&
 		existing.Status == StatusBound && existing.IsolationToken != "" && existing.ServiceInstanceID == inst.ID {
-		r.writeSharedEnv(ctx, appID, inst, existing.IsolationToken)
+		r.writeSpecEnv(ctx, appID, spec, inst, existing.IsolationToken)
 		mkBind(StatusBound, inst.ID, existing.IsolationToken, "")
 		return
 	}
-	// 新分配 + claim（按 kind 分派）
-	token, err := r.allocAndClaimShared(ctx, appID, psID, dep.Kind, inst)
+	// 新分配 + claim（spec 驱动）
+	token, err := spec.AllocSharedToken(ctx, appID, psID, inst.ID, inst)
 	if err != nil {
 		mkBind(StatusFailed, inst.ID, "", err.Error())
 		return
 	}
-	r.writeSharedEnv(ctx, appID, inst, token)
+	r.writeSpecEnv(ctx, appID, spec, inst, token)
 	mkBind(StatusBound, inst.ID, token, "")
 }
 
-// allocAndClaimShared 按 kind 分派 shared token 分配 + claim。
-// redis：db 号池；milvus：随机 collection 前缀。
-func (r *Reconciler) allocAndClaimShared(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
-	if kind == "milvus" {
-		return r.allocMilvusPrefix(ctx, appID, psID, kind, inst)
-	}
-	return r.allocRedisDB(ctx, appID, psID, kind, inst)
-}
-
-// allocRedisDB redis shared db 号分配：ParseDBRange + pickLowestFree + claimWithRetry（flush + 有界重试）。
-// 逐字=重构前 supplyShared 的新分配段（零回归）。
-func (r *Reconciler) allocRedisDB(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
-	lo, hi, ok := ParseDBRange(inst.Isolation)
-	if !ok {
-		return "", fmt.Errorf("shared 实例 isolation 缺 db_range")
-	}
-	allocated, _ := r.store.AllocatedTokens(ctx, inst.ID)
-	first, found := pickLowestFree(lo, hi, allocated)
-	if !found {
-		return "", fmt.Errorf("shared redis db 号耗尽（池 %d-%d）", lo, hi)
-	}
-	return r.claimWithRetry(ctx, appID, psID, kind, inst, lo, hi, first, allocated)
-}
-
-// allocMilvusPrefix milvus shared collection 前缀分配：生成随机唯一前缀 + 单次 claim。
-// 无 flush（无前缀级原语）、无有限池（前缀随机生成）；极罕见并发撞号（uq_svbind_inst_token 抛 23505）换号重生，有界 ≤4。
-func (r *Reconciler) allocMilvusPrefix(ctx context.Context, appID, psID, kind string, inst *ServiceInstance) (string, error) {
-	allocated, _ := r.store.AllocatedTokens(ctx, inst.ID)
-	taken := make(map[string]bool, len(allocated))
-	for _, t := range allocated {
-		taken[t] = true
-	}
-	for attempts := 0; attempts < 4; attempts++ {
-		token := genMilvusPrefix()
-		if taken[token] {
-			continue
-		}
-		err := r.store.ClaimSharedToken(ctx, appID, psID, kind, inst.ID, token, EnvKeyFor(kind))
-		if err == nil {
-			return token, nil
-		}
-		if !isUniqueViolation(err) {
-			return "", err
-		}
-		taken[token] = true
-	}
-	return "", fmt.Errorf("milvus 前缀分配重试用尽（并发撞号）")
-}
-
-// claimWithRetry flush 后原子 claim；撞唯一索引（并发抢同号）→ 刷新占用集换号重试，有界 ≤ 池大小。
-// 返回最终 claim 到的 token。
-func (r *Reconciler) claimWithRetry(ctx context.Context, appID, psID, kind string, inst *ServiceInstance,
-	lo, hi int, first string, allocated []string) (string, error) {
-	token := first
-	seen := append([]string{}, allocated...)
-	for attempts := 0; attempts <= (hi - lo + 1); attempts++ {
-		dbNum, _ := strconv.Atoi(token)
-		if ferr := r.flusher.FlushDB(ctx, inst.Host, inst.Port, inst.AuthRef, dbNum); ferr != nil {
-			// flush 是数据卫生(best-effort)，非首次分配正确性所需：首次分配的 db 号本就干净。
-			// 后端可能无 redis 网络访问（如 .28：backend 与 redis 分属不同 docker 网络，拨 host LAN IP 超时）。
-			// 记 Warn 后继续 claim——重分配的卫生保证留给「部署侧确保 backend↔redis 可达」的 prod。
-			if r.log != nil {
-				r.log.Warn("shared redis flush failed (best-effort, proceed to claim)",
-					zap.String("app", appID), zap.String("kind", kind),
-					zap.String("db", token), zap.Error(ferr))
-			}
-		}
-		err := r.store.ClaimSharedToken(ctx, appID, psID, kind, inst.ID, token, EnvKeyFor(kind))
-		if err == nil {
-			return token, nil
-		}
-		if !isUniqueViolation(err) {
-			return "", err // 非冲突，真错
-		}
-		seen = append(seen, token)
-		next, found := pickLowestFree(lo, hi, seen)
-		if !found {
-			return "", fmt.Errorf("shared redis db 号耗尽（并发重试）")
-		}
-		token = next
-	}
-	return "", fmt.Errorf("claim 重试用尽")
-}
-
-// writeSharedEnv 写 shared env（按 kind 分派），均 source=platform。
-// redis：REDIS_ADDR + REDIS_DB（+ REDIS_PASSWORD 若鉴权）。
-// milvus：MILVUS_ADDR + MILVUS_COLLECTION_PREFIX（无 password，v1 无 auth；无 db token）。
-func (r *Reconciler) writeSharedEnv(ctx context.Context, appID string, inst *ServiceInstance, token string) {
-	if inst.Kind == "milvus" {
-		_ = r.env.UpsertEnv(ctx, appID, "MILVUS_ADDR", ConnStr(inst), false, "platform")
-		_ = r.env.UpsertEnv(ctx, appID, "MILVUS_COLLECTION_PREFIX", token, false, "platform")
-		return
-	}
-	kindUp := strings.ToUpper(inst.Kind) // redis→REDIS
-	_ = r.env.UpsertEnv(ctx, appID, kindUp+"_ADDR", ConnStr(inst), false, "platform")
-	_ = r.env.UpsertEnv(ctx, appID, kindUp+"_DB", token, false, "platform")
-	if inst.AuthRef != "" {
-		_ = r.env.UpsertEnv(ctx, appID, kindUp+"_PASSWORD", inst.AuthRef, true, "platform")
+// writeSpecEnv 写 shared env（spec 驱动），均 source=platform。
+// 写 spec.AddrEnv=ConnStr + 遍历 spec.SharedEnv(token,inst)（redis→[REDIS_DB(,+REDIS_PASSWORD)] / milvus→[MILVUS_COLLECTION_PREFIX]）。
+func (r *Reconciler) writeSpecEnv(ctx context.Context, appID string, spec KindSpec, inst *ServiceInstance, token string) {
+	_ = r.env.UpsertEnv(ctx, appID, spec.AddrEnv, ConnStr(inst), false, "platform")
+	for _, e := range spec.SharedEnv(token, inst) {
+		_ = r.env.UpsertEnv(ctx, appID, e.Key, e.Value, e.IsSecret, "platform")
 	}
 }
 
-// supplyDedicated dedicated 供给（按 kind 分派）：复用判定（幂等）/ 新供给（端口→launch→ready→登记→env）。
+// supplyDedicated dedicated 供给（spec 驱动）：复用判定（幂等）/ 新供给（端口→launch→ready→登记→env）。
 // redis：1 容器 + AUTH+PING；milvus：专属网络 + milvus/etcd/minio 三容器 + /healthz 探针。
-func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, dep DepService,
+func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, dep DepService, spec KindSpec,
 	mkBind func(status, instID, token, lastErr string)) {
-	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据，重写 env。
+	// 复用：同 app 已 bound dedicated 实例 → 不重启、不换端口、保数据。
 	if b, e := r.store.GetBinding(ctx, appID, dep.Kind); e == nil && b != nil &&
 		b.Status == StatusBound && b.ServiceInstanceID != "" {
 		if inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID); ie == nil && inst != nil && inst.Status == "active" {
-			r.writeDedicatedEnv(ctx, appID, inst)
+			// spec.SupplyDedicated 自管 kind（pg）：env 由首次供给正确写入，无法从 ConnStr/AuthRef 重建
+			// （ConnStr=host:port 会覆盖有效 app-role DSN）→ 跳过 env 重写，仅续 binding（保 token）。
+			// 镜像 SupplyShared reuse 分支：自管 env kind 同样不重写 env。
+			if spec.SupplyDedicated != nil {
+				mkBind(StatusBound, inst.ID, b.IsolationToken, "")
+				return
+			}
+			r.writeDedicatedEnvSpec(ctx, appID, spec, inst)
 			mkBind(StatusBound, inst.ID, "", "")
 			return
 		}
 	}
-	// 新供给
-	lo, hi := portRange(dep.Kind)
+	// P4 配额：起容器前查 dedicated 实例数（reuse 已 bound 不耗新配额，故在 reuse 之后）。
+	if r.dedQuota != nil {
+		if err := r.dedQuota.CheckDedicatedInstances(ctx, psID); err != nil {
+			mkBind(StatusFailed, "", "", "专属中间件实例数已达上限: "+err.Error())
+			return
+		}
+	}
+	// spec.SupplyDedicated 自管路径（pg：起 per-app 容器+建库/role+写 env+登记 service_instance）。
+	// 非 nil 时跳过默认 PortRange/LaunchDedicated；env/登记由实现内部自管，此处只取 (instID, token) 写 binding。
+	if spec.SupplyDedicated != nil {
+		instID, token, err := spec.SupplyDedicated(ctx, appID, psID, r.host)
+		if err != nil {
+			mkBind(StatusFailed, "", "", "起 "+dep.Kind+" 容器: "+err.Error())
+			return
+		}
+		mkBind(StatusBound, instID, token, "")
+		return
+	}
+	// 新供给（默认 dedicated 路径：端口池 → launch → ready → 登记 → env）
+	lo, hi := spec.PortRange()
 	port := allocPort(r.docker.UsedPorts(ctx), lo, hi)
 	if port == 0 {
 		mkBind(StatusFailed, "", "", fmt.Sprintf("%s 端口池 %d-%d 已满", dep.Kind, lo, hi))
 		return
 	}
 	short := genShortID()
-	base := dedicatedContainerName(dep.Kind, short)
-	// launch（按 kind）：redis 起 1 容器（返密码）；milvus 起三容器栈（返空 auth）。
-	authRef, launchErr := r.launchDedicated(ctx, dep.Kind, base, port)
+	base := spec.ContainerName(short)
+	// launch：redis 起 1 容器（返密码）；milvus 起三容器栈（返空 auth）。
+	authRef, launchErr := spec.LaunchDedicated(ctx, base, port)
 	if launchErr != nil {
 		mkBind(StatusFailed, "", "", "起 "+dep.Kind+" 容器: "+launchErr.Error())
 		return
@@ -286,7 +270,7 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 	// 就绪检测（best-effort，失败不阻塞）：redis AUTH+PING(5s) / milvus /healthz 探针(120s)。
 	// 失败仅记 Warn 后继续 claim→bound（容器/栈保留，app 经 host LAN IP:port 使用）——
 	// .28 上 backend(deploy_default 网) 可能拨不到 host 发布端口（同 P2 flush 的 cross-network 形状），但 app 能到。
-	if err := r.waitDedicatedReady(ctx, dep.Kind, base, port, authRef); err != nil {
+	if err := spec.ReadyDedicated(ctx, r.host, base, port, authRef); err != nil {
 		if r.log != nil {
 			r.log.Warn("dedicated 就绪检测失败 (best-effort, proceed to bound)",
 				zap.String("app", appID), zap.String("kind", dep.Kind),
@@ -306,59 +290,20 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 		Status:         "active",
 	}
 	if err := r.store.CreateInstance(ctx, inst); err != nil {
-		r.rmDedicated(ctx, dep.Kind, base) // 登记失败回收（redis RmForce / milvus RmMilvusStack）
+		_ = spec.CleanupDedicated(ctx, base) // 登记失败回收（best-effort：redis RmForce / milvus RmMilvusStack）
 		mkBind(StatusFailed, "", "", "登记实例: "+err.Error())
 		return
 	}
-	r.writeDedicatedEnv(ctx, appID, inst)
+	r.writeDedicatedEnvSpec(ctx, appID, spec, inst)
 	mkBind(StatusBound, inst.ID, "", "")
 }
 
-// launchDedicated 起 dedicated 容器/栈，返回 authRef（redis=密码 / milvus=""）。
-func (r *Reconciler) launchDedicated(ctx context.Context, kind, base string, port int) (string, error) {
-	switch kind {
-	case "redis":
-		pwd := genPassword()
-		return pwd, r.docker.RunRedisContainer(ctx, base, pwd, port)
-	case "milvus":
-		return "", r.docker.RunMilvusStack(ctx, base, port)
-	default:
-		return "", fmt.Errorf("dedicated 不支持 kind %q", kind)
-	}
-}
-
-// waitDedicatedReady 就绪检测（best-effort 由调用方处理）：redis AUTH+PING / milvus /healthz 探针。
-func (r *Reconciler) waitDedicatedReady(ctx context.Context, kind, base string, port int, authRef string) error {
-	switch kind {
-	case "redis":
-		readyCtx, cancel := context.WithTimeout(ctx, readyPingTimeout)
-		defer cancel()
-		return r.ready.Ping(readyCtx, r.host, port, authRef)
-	case "milvus":
-		return r.docker.MilvusReady(ctx, base, milvusReadyTimeout)
-	default:
-		return nil
-	}
-}
-
-// rmDedicated 回收半成品/失败容器栈（best-effort）：redis RmForce / milvus RmMilvusStack。
-func (r *Reconciler) rmDedicated(ctx context.Context, kind, base string) {
-	switch kind {
-	case "redis":
-		_ = r.docker.RmForce(ctx, base)
-	case "milvus":
-		_ = r.docker.RmMilvusStack(ctx, base)
-	}
-}
-
-// writeDedicatedEnv 写 <KIND>_ADDR（+ redis 专 _PASSWORD），均 source=platform。
-// redis：REDIS_ADDR + REDIS_PASSWORD（不写 REDIS_DB，用默认 db 0）。
-// milvus v1 无 auth：只写 MILVUS_ADDR（不写 password、不写 db token）。
-func (r *Reconciler) writeDedicatedEnv(ctx context.Context, appID string, inst *ServiceInstance) {
-	_ = r.env.UpsertEnv(ctx, appID, EnvKeyFor(inst.Kind), ConnStr(inst), false, "platform") // REDIS_ADDR / MILVUS_ADDR
-	if inst.Kind == "redis" {
-		pwdKey := strings.ToUpper(inst.Kind) + "_PASSWORD" // REDIS_PASSWORD
-		_ = r.env.UpsertEnv(ctx, appID, pwdKey, inst.AuthRef, true, "platform")
+// writeDedicatedEnvSpec 写 dedicated env（spec 驱动），均 source=platform。
+// 写 spec.AddrEnv=ConnStr + 遍历 spec.DedicatedEnv(inst.AuthRef)（redis→[REDIS_PASSWORD] / milvus→[]）。
+func (r *Reconciler) writeDedicatedEnvSpec(ctx context.Context, appID string, spec KindSpec, inst *ServiceInstance) {
+	_ = r.env.UpsertEnv(ctx, appID, spec.AddrEnv, ConnStr(inst), false, "platform")
+	for _, e := range spec.DedicatedEnv(inst.AuthRef) {
+		_ = r.env.UpsertEnv(ctx, appID, e.Key, e.Value, e.IsSecret, "platform")
 	}
 }
 
@@ -380,16 +325,11 @@ func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
 			continue
 		}
 		if inst.ContainerName != "" {
-			switch inst.Kind {
-			case "milvus":
-				if err := r.docker.RmMilvusStack(ctx, inst.ContainerName); err != nil && r.log != nil {
-					r.log.Warn("dedicated milvus 栈清理失败 (best-effort)",
-						zap.String("app", appID), zap.String("base", inst.ContainerName), zap.Error(err))
-				}
-			default: // redis
-				if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
-					r.log.Warn("dedicated 容器清理失败 (best-effort)",
-						zap.String("app", appID), zap.String("container", inst.ContainerName), zap.Error(err))
+			if spec, ok := LookupKind(inst.Kind); ok {
+				if err := spec.CleanupDedicated(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("dedicated 清理失败 (best-effort)",
+						zap.String("app", appID), zap.String("kind", inst.Kind),
+						zap.String("container", inst.ContainerName), zap.Error(err))
 				}
 			}
 		}
@@ -401,40 +341,57 @@ func (r *Reconciler) Cleanup(ctx context.Context, appID string) error {
 	return nil
 }
 
-// injectedEnvKeys 某 kind 供给时注入的全部 env 键（ReleaseDep 删除用）。
-func injectedEnvKeys(kind string) []string {
-	switch kind {
-	case "redis":
-		return []string{"REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD"}
-	case "milvus":
-		return []string{"MILVUS_ADDR", "MILVUS_COLLECTION_PREFIX"}
-	default:
-		return []string{strings.ToUpper(kind) + "_ADDR"}
+// injectedEnvKeysFromSpec 从 KindSpec 派生该 kind 供给时注入的全部 env 键（ReleaseDep 删除用）。
+// 合并 AddrEnv + SharedEnv(占位 token/inst 取全集键) + DedicatedEnv(占位 authRef) 的键，去重保序。
+// 单一真源：新增 kind 的 env 键随 spec 自动更新，无须在此维护 switch。
+func injectedEnvKeysFromSpec(spec KindSpec) []string {
+	seen := map[string]bool{}
+	keys := []string{}
+	add := func(k string) {
+		if k != "" && !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
 	}
+	add(spec.AddrEnv)
+	// 占位 inst 带 AuthRef 以触发 SharedEnv 的条件键（如 redis 的 REDIS_PASSWORD）。
+	if spec.SharedEnv != nil {
+		for _, e := range spec.SharedEnv("__token__", &ServiceInstance{Kind: spec.Kind, AuthRef: "__auth__"}) {
+			add(e.Key)
+		}
+	}
+	if spec.DedicatedEnv != nil {
+		for _, e := range spec.DedicatedEnv("__auth__") {
+			add(e.Key)
+		}
+	}
+	return keys
 }
 
 // ReleaseDep 释放单个依赖的资源（声明移除/变更时；best-effort，不报错）：
 // dedicated → docker rm 容器/栈 + 删 instance 行；三类都删注入的 platform env 键 + 删 binding 行。
 func (r *Reconciler) ReleaseDep(ctx context.Context, b *ServiceBinding) {
-	// dedicated：docker rm（复用 Cleanup 的 per-binding rm 逻辑）。instance 行须在 binding 删后再删（FK RESTRICT）。
+	// dedicated：docker rm（spec.CleanupDedicated 统一 redis/milvus）。instance 行须在 binding 删后再删（FK RESTRICT）。
 	var dedInstID string
 	if b.Strategy == ModeDedicated && b.ServiceInstanceID != "" {
 		if inst, ie := r.store.GetInstance(ctx, b.ServiceInstanceID); ie == nil && inst != nil && inst.ContainerName != "" {
-			switch inst.Kind {
-			case "milvus":
-				if err := r.docker.RmMilvusStack(ctx, inst.ContainerName); err != nil && r.log != nil {
-					r.log.Warn("ReleaseDep milvus 栈清理失败 (best-effort)", zap.String("app", b.AppID), zap.Error(err))
-				}
-			default:
-				if err := r.docker.RmForce(ctx, inst.ContainerName); err != nil && r.log != nil {
-					r.log.Warn("ReleaseDep 容器清理失败 (best-effort)", zap.String("app", b.AppID), zap.Error(err))
+			if spec, ok := LookupKind(inst.Kind); ok {
+				if err := spec.CleanupDedicated(ctx, inst.ContainerName); err != nil && r.log != nil {
+					r.log.Warn("ReleaseDep 清理失败 (best-effort)",
+						zap.String("app", b.AppID), zap.String("kind", inst.Kind), zap.Error(err))
 				}
 			}
 			dedInstID = inst.ID
 		}
 	}
-	// 删注入的 platform env 键
-	for _, key := range injectedEnvKeys(b.ServiceKind) {
+	// 删注入的 platform env 键（spec 驱动：注册 kind 从 spec 派生全集键；未注册回退 <KIND>_ADDR）。
+	var envKeys []string
+	if spec, ok := LookupKind(b.ServiceKind); ok {
+		envKeys = injectedEnvKeysFromSpec(spec)
+	} else {
+		envKeys = []string{strings.ToUpper(b.ServiceKind) + "_ADDR"}
+	}
+	for _, key := range envKeys {
 		_ = r.env.DeleteEnv(ctx, b.AppID, key)
 	}
 	// 先删 binding 解 FK 引用（binding.service_instance_id RESTRICT instance 删除），再删 instance。
@@ -513,7 +470,7 @@ func (r *Reconciler) DepsCatalog(ctx context.Context, psID string) (appdeploy.De
 		})
 	}
 	return appdeploy.DepsCatalog{
-		Kinds: []string{"redis", "milvus"},
+		Kinds: []string{"redis", "milvus", "pg"},
 		Strategies: []appdeploy.StrategyOption{
 			{Name: ModeBindExisting, Desc: "绑定部署机已运行的服务（最省，导入最常见）"},
 			{Name: ModeShared, Desc: "ANP 共享实例 + 每 app 隔离 token（db号/前缀）"},

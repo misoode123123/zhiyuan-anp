@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -56,7 +57,7 @@ func TestService_CheckApps_WithinLimit(t *testing.T) {
 func TestService_CheckApps_Exceeded(t *testing.T) {
 	psID, svc := setupPS(t)
 	// 调小上限到 0（已用 0 ≥ 0 → 拦截）
-	if _, err := svc.Set(context.Background(), psID, 0, 20, 10240, 10000); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 0, 20, 10240, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svc.CheckApps(context.Background(), psID)
@@ -86,7 +87,7 @@ func TestService_CheckApps_Exceeded(t *testing.T) {
 
 func TestService_CheckDatabases_Exceeded(t *testing.T) {
 	psID, svc := setupPS(t)
-	if _, err := svc.Set(context.Background(), psID, 20, 0, 10240, 10000); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 20, 0, 10240, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svc.CheckDatabases(context.Background(), psID)
@@ -112,7 +113,7 @@ func TestService_CheckCapabilityToday_Exceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed usage: %v", err)
 	}
-	if _, err := svc.Set(context.Background(), psID, 20, 20, 10240, 0); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 20, 20, 10240, 0, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err = svc.CheckCapabilityToday(context.Background(), psID)
@@ -214,14 +215,14 @@ func TestService_CheckDBSize(t *testing.T) {
 		sizes: map[string]int64{dbName: 5 * 1024 * 1024},
 	})
 	// 上限 10MB，已用 5MB → 通过
-	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 10, 10000); err != nil {
+	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 10, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	if err := svcWithFakes.CheckDBSize(context.Background(), psID); err != nil {
 		t.Errorf("5/10MB 应通过: %v", err)
 	}
 	// 上限 5MB，已用 5MB → 拦截（>=）
-	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 5, 10000); err != nil {
+	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 5, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svcWithFakes.CheckDBSize(context.Background(), psID)
@@ -280,6 +281,22 @@ func TestService_Usage_WithDBSize(t *testing.T) {
 	}
 }
 
+// TestService_Set_Dedicated Set 能改 max_dedicated_instances，store.Get 读回。
+func TestService_Set_Dedicated(t *testing.T) {
+	psID, svc := setupPS(t)
+	ctx := context.Background()
+	if _, err := svc.store.GetOrCreate(ctx, psID); err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	if _, err := svc.Set(ctx, psID, 20, 20, 10240, 10000, 8); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	q, _ := svc.store.Get(ctx, psID)
+	if q.MaxDedicatedInstances != 8 {
+		t.Fatalf("Set 后应 8，得 %d", q.MaxDedicatedInstances)
+	}
+}
+
 func TestQuotaExceededError_Message(t *testing.T) {
 	cases := []struct {
 		e    *QuotaExceededError
@@ -319,5 +336,61 @@ func TestIsQuotaExceeded(t *testing.T) {
 	// wrap 后仍能识别
 	if !IsQuotaExceeded(fmt.Errorf("wrap: %w", qe)) {
 		t.Error("wrapped 应识别")
+	}
+}
+
+// insertDedicated 建 1 个 active dedicated service_instance + app + binding（binding→app→ps 归属 psID）。
+// 自清理：binding.service_instance_id RESTRICT instance → 先删 binding 再删 instance。
+// 注：appdeploy_service_binding.project_space_id / env_key 为 NOT NULL（000028），
+// 需显式给值（brief 原文漏列 → NOT NULL 违规；本处补正，语义不变）。
+func insertDedicated(t *testing.T, psID, kind string) {
+	t.Helper()
+	db := testutil.TestDB(t)
+	insID := "svinst-ded-" + uuid.NewString()[:14]
+	appID := "app_" + uuid.NewString()[:18]
+	bndID := "bnd_" + uuid.NewString()[:14]
+	envKey := strings.ToUpper(kind) + "_ADDR"
+	must := func(q string, args ...any) {
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	must(`INSERT INTO appdeploy_service_instance (id, kind, name, supply_mode, host, port, status) VALUES ($1,$2,$3,'dedicated','h',0,'active')`, insID, kind, insID)
+	must(`INSERT INTO appdeploy_application (id, project_space_id, name, internal_port, status) VALUES ($1,$2,$3,8080,'running')`, appID, psID, appID)
+	must(`INSERT INTO appdeploy_service_binding (id, app_id, project_space_id, service_kind, strategy, service_instance_id, env_key, status) VALUES ($1,$2,$3,$4,'dedicated',$5,$6,'bound')`, bndID, appID, psID, kind, insID, envKey)
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM appdeploy_service_binding WHERE id=$1`, bndID)
+		db.Exec(`DELETE FROM appdeploy_service_instance WHERE id=$1`, insID)
+		db.Exec(`DELETE FROM appdeploy_application WHERE id=$1`, appID)
+	})
+}
+
+// TestService_CheckDedicatedInstances 边界：N<5 通过；N=5 超限（默认上限 5）。
+// 跨 kind 合计；非 active 不算。qe.Limit==5 亦验证 GetOrCreate 默认值。
+func TestService_CheckDedicatedInstances(t *testing.T) {
+	psID, svc := setupPS(t)
+	ctx := context.Background()
+	for _, k := range []string{"redis", "milvus", "pg", "redis"} {
+		insertDedicated(t, psID, k)
+	}
+	if err := svc.CheckDedicatedInstances(ctx, psID); err != nil {
+		t.Fatalf("4 active dedicated 应通过（默认上限 5）: %v", err)
+	}
+	insertDedicated(t, psID, "milvus") // 第 5 个 → used=5 >= 5
+	err := svc.CheckDedicatedInstances(ctx, psID)
+	qe, ok := err.(*QuotaExceededError)
+	if !ok {
+		t.Fatalf("5 active dedicated 应 *QuotaExceededError，得 %v", err)
+	}
+	if qe.Dimension != DimensionDedicated || qe.Limit != 5 {
+		t.Fatalf("维度/上限不符: %+v", qe)
+	}
+	// 非 active 不算：把一个转 draining → 计数回 4
+	db := testutil.TestDB(t)
+	if _, err := db.Exec(`UPDATE appdeploy_service_instance SET status='draining' WHERE id IN (SELECT b.service_instance_id FROM appdeploy_service_binding b JOIN appdeploy_application a ON a.id=b.app_id WHERE a.project_space_id=$1 LIMIT 1)`, psID); err != nil {
+		t.Fatalf("转 draining: %v", err)
+	}
+	if n, _ := svc.countDedicatedInstances(ctx, psID); n != 4 {
+		t.Fatalf("1 个转 draining 后应计 4，得 %d", n)
 	}
 }

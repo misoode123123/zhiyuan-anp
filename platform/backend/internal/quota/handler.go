@@ -39,7 +39,7 @@ func (h *Handler) Register(r gin.IRouter) {
 // @Tags         quota
 // @Produce      json
 // @Param        id   path  string  true  "项目空间ID"
-// @Success      200  {object}  map[string]interface{}  "配额 + 4 维度用量"
+// @Success      200  {object}  map[string]interface{}  "配额 + 5 维度用量"
 // @Failure      500  {object}  map[string]interface{}  "内部错误"
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/quota [get]
@@ -81,23 +81,24 @@ func (h *Handler) GetUsageTrend(c *gin.Context) {
 	httpx.OK(c, t)
 }
 
-// updateBody 配额更新入参。4 个 max_* 都可选（min=0 允许设为 0 拦截全部）；
+// updateBody 配额更新入参。5 个 max_* 都可选（min=0 允许设为 0 拦截全部）；
 // 未传字段保持原值（用 *int 区分「未传」与「传 0」）。
 type updateBody struct {
 	MaxApps                  *int `json:"max_apps" validate:"omitempty,min=0,max=10000"`
 	MaxDatabases             *int `json:"max_databases" validate:"omitempty,min=0,max=10000"`
 	MaxTotalDBMb             *int `json:"max_total_db_mb" validate:"omitempty,min=0,max=1048576"` // 上限 1TB
 	MaxCapabilityCallsPerDay *int `json:"max_capability_calls_per_day" validate:"omitempty,min=0,max=10000000"`
+	MaxDedicatedInstances    *int `json:"max_dedicated_instances" validate:"omitempty,min=0,max=1000"`
 }
 
-// UpdateQuota 修改配额（admin）。4 字段都可选；未传保留原值。
+// UpdateQuota 修改配额（admin）。5 字段都可选；未传保留原值。
 //
 // @Summary      修改项目配额
 // @Tags         quota
 // @Accept       json
 // @Produce      json
 // @Param        id    path  string       true  "项目空间ID"
-// @Param        body  body  updateBody   true  "4 个 max_*（可选，未传保留原值）"
+// @Param        body  body  updateBody   true  "5 个 max_*（可选，未传保留原值）"
 // @Success      200   {object}  map[string]interface{}  "更新后的配额"
 // @Failure      400   {object}  map[string]interface{}  "invalid body / 越界"
 // @Failure      500   {object}  map[string]interface{}  "内部错误"
@@ -124,6 +125,7 @@ func (h *Handler) UpdateQuota(c *gin.Context) {
 	maxDatabases := cur.MaxDatabases
 	maxTotalDBMb := cur.MaxTotalDBMb
 	maxCap := cur.MaxCapabilityCallsPerDay
+	maxDed := cur.MaxDedicatedInstances
 	if in.MaxApps != nil {
 		maxApps = *in.MaxApps
 	}
@@ -136,7 +138,10 @@ func (h *Handler) UpdateQuota(c *gin.Context) {
 	if in.MaxCapabilityCallsPerDay != nil {
 		maxCap = *in.MaxCapabilityCallsPerDay
 	}
-	q, err := h.svc.Set(c.Request.Context(), psID, maxApps, maxDatabases, maxTotalDBMb, maxCap)
+	if in.MaxDedicatedInstances != nil {
+		maxDed = *in.MaxDedicatedInstances
+	}
+	q, err := h.svc.Set(c.Request.Context(), psID, maxApps, maxDatabases, maxTotalDBMb, maxCap, maxDed)
 	if err != nil {
 		if errors.Is(err, ErrNotExists) {
 			httpx.Err(c, 404, 40460, "项目空间配额不存在")

@@ -22,7 +22,7 @@ type PGSizeChecker interface {
 	DatabaseSizes(ctx context.Context, adminURL string, dbNames []string) (map[string]int64, error)
 }
 
-// Service 配额业务逻辑：4 个 Check + Usage 查询。
+// Service 配额业务逻辑：5 个 Check + Usage 查询。
 type Service struct {
 	store    *Store
 	instances InstanceLookup
@@ -34,7 +34,7 @@ func NewService(store *Store, instances InstanceLookup, pg PGSizeChecker) *Servi
 	return &Service{store: store, instances: instances, pg: pg}
 }
 
-// ---------------- 4 个 Check ----------------
+// ---------------- 5 个 Check ----------------
 
 // CheckApps 应用数 check：超限返回 *QuotaExceededError。
 func (s *Service) CheckApps(ctx context.Context, psID string) error {
@@ -106,9 +106,26 @@ func (s *Service) CheckDBSize(ctx context.Context, psID string) error {
 	return nil
 }
 
+// CheckDedicatedInstances 专属实例数 check（redis/milvus/pg dedicated 容器合计，per 项目空间）。
+// 超限返回 *QuotaExceededError（mwsupply.supplyDedicated 起容器前调）。
+func (s *Service) CheckDedicatedInstances(ctx context.Context, psID string) error {
+	q, err := s.store.GetOrCreate(ctx, psID)
+	if err != nil {
+		return err
+	}
+	used, err := s.countDedicatedInstances(ctx, psID)
+	if err != nil {
+		return err
+	}
+	if used >= q.MaxDedicatedInstances {
+		return &QuotaExceededError{Dimension: DimensionDedicated, Used: used, Limit: q.MaxDedicatedInstances, Unit: "个"}
+	}
+	return nil
+}
+
 // ---------------- Usage ----------------
 
-// Usage 取配额 + 4 维度当前用量（管理 UI / 看板用）。
+// Usage 取配额 + 5 维度当前用量（管理 UI / 看板用）。
 func (s *Service) Usage(ctx context.Context, psID string) (*Usage, error) {
 	q, err := s.store.GetOrCreate(ctx, psID)
 	if err != nil {
@@ -122,6 +139,9 @@ func (s *Service) Usage(ctx context.Context, psID string) (*Usage, error) {
 		return nil, err
 	}
 	if u.UsedCapabilityToday, err = s.countCapabilityToday(ctx, psID); err != nil {
+		return nil, err
+	}
+	if u.UsedDedicatedInstances, err = s.countDedicatedInstances(ctx, psID); err != nil {
 		return nil, err
 	}
 	if u.UsedDBSizeMb, err = s.calcTotalDBSizeMb(ctx, psID); err != nil {
@@ -216,12 +236,12 @@ func (s *Service) UsageTrend(ctx context.Context, psID string, days int) (*Usage
 }
 
 // Set 更新配额（admin 通过管理 UI 调；不存在则 GetOrCreate 后再 Set）。
-func (s *Service) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay int) (*Quota, error) {
+func (s *Service) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances int) (*Quota, error) {
 	// 不存在则先建默认（再覆盖；保证 admin PUT 不报错）
 	if _, err := s.store.GetOrCreate(ctx, psID); err != nil {
 		return nil, err
 	}
-	if err := s.store.Set(ctx, psID, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay); err != nil {
+	if err := s.store.Set(ctx, psID, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances); err != nil {
 		return nil, err
 	}
 	return s.store.Get(ctx, psID)
@@ -240,6 +260,19 @@ func (s *Service) countDatabases(ctx context.Context, psID string) (int, error) 
 	var n int
 	err := s.store.db.GetContext(ctx, &n,
 		`SELECT COUNT(*) FROM appdeploy_database WHERE project_space_id=$1 AND status<>'deleted'`, psID)
+	return n, err
+}
+
+// countDedicatedInstances 该 ps 下 active dedicated 实例数（distinct；
+// dedicated 实例 project_space_id=NULL，经 binding→app 归属 ps）。
+func (s *Service) countDedicatedInstances(ctx context.Context, psID string) (int, error) {
+	var n int
+	err := s.store.db.GetContext(ctx, &n,
+		`SELECT COUNT(DISTINCT si.id)
+		   FROM appdeploy_service_instance si
+		   JOIN appdeploy_service_binding b ON b.service_instance_id = si.id
+		   JOIN appdeploy_application a ON a.id = b.app_id
+		  WHERE si.supply_mode='dedicated' AND si.status='active' AND a.project_space_id=$1`, psID)
 	return n, err
 }
 

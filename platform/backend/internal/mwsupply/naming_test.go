@@ -48,26 +48,8 @@ func TestAllocPort(t *testing.T) {
 	}
 }
 
-func TestDedicatedContainerName(t *testing.T) {
-	if n := dedicatedContainerName("redis", "abc123"); n != "mwredis-abc123" {
-		t.Fatalf("redis 容器名应 mwredis-abc123，得 %q", n)
-	}
-	if n := dedicatedContainerName("milvus", "abc123"); n != "mwmilvus-abc123" {
-		t.Fatalf("milvus 容器名应 mwmilvus-abc123，得 %q", n)
-	}
-}
-
-func TestPortRange(t *testing.T) {
-	if lo, hi := portRange("redis"); lo != mwPortMin || hi != mwPortMax {
-		t.Fatalf("redis 端口池应 %d-%d，得 %d-%d", mwPortMin, mwPortMax, lo, hi)
-	}
-	if lo, hi := portRange("milvus"); lo != milvusPortMin || hi != milvusPortMax {
-		t.Fatalf("milvus 端口池应 %d-%d，得 %d-%d", milvusPortMin, milvusPortMax, lo, hi)
-	}
-}
-
 func TestMilvusStackNames(t *testing.T) {
-	base := dedicatedContainerName("milvus", "abc123") // mwmilvus-abc123
+	base := "mwmilvus-abc123"
 	if milvusEtcdName(base) != "mwmilvus-abc123-etcd" {
 		t.Fatalf("etcd 名错: %q", milvusEtcdName(base))
 	}

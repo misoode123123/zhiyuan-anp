@@ -18,6 +18,7 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/pgsupply"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
@@ -1638,6 +1639,23 @@ func TestHandler_PutDeps_badStrategy(t *testing.T) {
 	}
 }
 
+// TestHandler_PutDeps_pgAccepted pg kind 合法（P3：PG 切纯声明驱动，PutDeps 须接受 pg）。
+func TestHandler_PutDeps_pgAccepted(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	fw := &fakeMWReconciler{}
+	h.SetMwReconciler(fw)
+	r := newRouterWith(h)
+	a := seedApp(t, h, "ps_1", "dpg", "/tmp/dpg")
+	code, _ := doReq(t, r, http.MethodPut, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/deps",
+		[]map[string]string{{"kind": "pg", "strategy": "shared"}})
+	if code != 200 {
+		t.Fatalf("pg kind 应合法(200)，得 %d", code)
+	}
+	if len(fw.setDepsArgs) != 1 || fw.setDepsArgs[0]["pg"] != "shared" {
+		t.Fatalf("应调 SetDeps(pg=shared)，得 %v", fw.setDepsArgs)
+	}
+}
+
 // TestHandler_GetDepsCatalog_ok 返回 catalog。
 func TestHandler_GetDepsCatalog_ok(t *testing.T) {
 	h, _ := newHTTPHandler(t)
@@ -1752,5 +1770,34 @@ func TestHandler_DeployCommit_HostApp_Dev_Forbidden(t *testing.T) {
 		map[string]string{"env": "test", "sha": "deadbeef"})
 	if code != 403 {
 		t.Fatalf("dev deploy-commit host 应用应 403，得 %d", code)
+	}
+}
+
+// countingProv 计数 Provision 调用（spy）。Cleanup 满足接口签名（Delete 路径用，本测不关心）。
+type countingProv struct{ calls int }
+
+func (c *countingProv) Provision(context.Context, string, string) (*pgsupply.AppDatabase, error) {
+	c.calls++
+	return nil, nil
+}
+
+func (c *countingProv) Cleanup(context.Context, string) error { return nil }
+
+// TestHandler_Create_NoAutoPGProvision 验证 P3 后建应用不再无条件触发 PG 供给。
+// 注入 spy 到 h.provisioner（接口字段），POST 建一 managed 应用 → spy.calls 应 0。
+func TestHandler_Create_NoAutoPGProvision(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	prov := &countingProv{}
+	h.provisioner = prov // 注入 spy（接口字段；newHTTPHandler 默认 nil）
+	r := newRouterWith(h)
+
+	repo := filepath.Join(t.TempDir(), "repo")
+	code, _ := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps",
+		map[string]any{"name": "nopgapp", "app_kind": "service", "internal_port": 8080, "repo_dir": repo})
+	if code != 201 && code != 200 {
+		t.Fatalf("建应用应成功，状态码 %d", code)
+	}
+	if prov.calls != 0 {
+		t.Fatalf("P3 后建应用不应触发自动 PG 供给，spy 被调 %d 次", prov.calls)
 	}
 }

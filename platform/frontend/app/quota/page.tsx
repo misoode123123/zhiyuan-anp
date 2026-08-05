@@ -12,6 +12,7 @@ type Quota = {
   max_databases: number;
   max_total_db_mb: number;
   max_capability_calls_per_day: number;
+  max_dedicated_instances: number;
   updated_at?: string;
 };
 type Usage = {
@@ -20,6 +21,7 @@ type Usage = {
   used_databases: number;
   used_db_size_mb: number;
   used_capability_today: number;
+  used_dedicated_instances: number;
 };
 
 // ---- 3c 趋势响应（与后端 quota.UsageTrend 对齐） ----
@@ -52,14 +54,22 @@ type UsageTrend = {
 type Dim = {
   key: keyof Pick<
     Quota,
-    "max_apps" | "max_databases" | "max_total_db_mb" | "max_capability_calls_per_day"
+    | "max_apps"
+    | "max_databases"
+    | "max_total_db_mb"
+    | "max_capability_calls_per_day"
+    | "max_dedicated_instances"
   >;
   label: string;
   unit: string;
   icon: string;
   usedKey: keyof Pick<
     Usage,
-    "used_apps" | "used_databases" | "used_db_size_mb" | "used_capability_today"
+    | "used_apps"
+    | "used_databases"
+    | "used_db_size_mb"
+    | "used_capability_today"
+    | "used_dedicated_instances"
   >;
 };
 
@@ -74,6 +84,13 @@ const DIMENSIONS: Dim[] = [
     icon: "🤖",
     usedKey: "used_capability_today",
   },
+  {
+    key: "max_dedicated_instances",
+    label: "专属实例数",
+    unit: "个",
+    icon: "🖥️",
+    usedKey: "used_dedicated_instances",
+  },
 ];
 
 export default function QuotaPage() {
@@ -85,6 +102,7 @@ export default function QuotaPage() {
     max_databases: 0,
     max_total_db_mb: 0,
     max_capability_calls_per_day: 0,
+    max_dedicated_instances: 0,
   });
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -125,6 +143,7 @@ export default function QuotaPage() {
           max_databases: r.data.quota.max_databases,
           max_total_db_mb: r.data.quota.max_total_db_mb,
           max_capability_calls_per_day: r.data.quota.max_capability_calls_per_day,
+          max_dedicated_instances: r.data.quota.max_dedicated_instances,
         });
         setErr("");
       })
@@ -230,7 +249,8 @@ export default function QuotaPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">📊 项目配额</h1>
       <p className="mb-4 text-sm text-text-muted">
-        4 维度强制：<b>应用数 / 库数 / 库总大小 / 每日 AI 调用</b>。建资源前
+        5 维度强制：
+        <b>应用数 / 库数 / 库总大小 / 每日 AI 调用 / 专属实例数</b>。建资源前
         check，超限返回友好错误。
       </p>
 
@@ -271,7 +291,7 @@ export default function QuotaPage() {
 
       {psID && usage && (
         <>
-          {/* 4 个用量卡片 */}
+          {/* 用量卡片 */}
           <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             {DIMENSIONS.map((d) => {
               const limit = usage.quota[d.key];

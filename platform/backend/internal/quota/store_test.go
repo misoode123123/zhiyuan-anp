@@ -84,20 +84,23 @@ func TestStore_Set(t *testing.T) {
 
 	s := NewStore(db)
 	// 不存在 → 报 ErrNotExists
-	if err := s.Set(context.Background(), psID, 1, 2, 3, 4); err != ErrNotExists {
+	if err := s.Set(context.Background(), psID, 1, 2, 3, 4, 5); err != ErrNotExists {
 		t.Errorf("不存在时 Set err = %v, want ErrNotExists", err)
 	}
 	// 先 GetOrCreate 建默认
 	if _, err := s.GetOrCreate(context.Background(), psID); err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
-	// Set 新值
-	if err := s.Set(context.Background(), psID, 30, 40, 50, 60); err != nil {
+	// Set 新值（含第 5 列 max_dedicated_instances）
+	if err := s.Set(context.Background(), psID, 30, 40, 50, 60, 70); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	q, _ := s.Get(context.Background(), psID)
 	if q.MaxApps != 30 || q.MaxDatabases != 40 || q.MaxTotalDBMb != 50 || q.MaxCapabilityCallsPerDay != 60 {
 		t.Errorf("Set 后值不对: %+v", q)
+	}
+	if q.MaxDedicatedInstances != 70 {
+		t.Errorf("MaxDedicatedInstances = %d, want 70", q.MaxDedicatedInstances)
 	}
 	// updated_at 应最近
 	if time.Since(q.UpdatedAt) > 5*time.Second {
