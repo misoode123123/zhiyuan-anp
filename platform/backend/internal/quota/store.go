@@ -17,7 +17,7 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 // quotaCols 显式列。
-// P4（迁移 000035）新增 max_dedicated_instances 列；Set 暂不更新此列（T3 加）。
+// P4（迁移 000035）新增 max_dedicated_instances 列；Set 自 T3 起更新此列。
 const quotaCols = `project_space_id, max_apps, max_databases, max_total_db_mb, max_capability_calls_per_day, max_dedicated_instances, updated_at`
 
 // Get 按项目取配额。不存在返回 nil,nil（语义：调用方决定是 GetOrCreate 还是新建默认）。
@@ -56,13 +56,13 @@ func (s *Store) GetOrCreate(ctx context.Context, psID string) (*Quota, error) {
 	return &q, nil
 }
 
-// Set 更新配额（4 个 max_*）。project_space_id 不存在 → ErrNotExists（调用方先 GetOrCreate）。
-func (s *Store) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay int) error {
+// Set 更新配额（5 个 max_*，含 max_dedicated_instances）。project_space_id 不存在 → ErrNotExists（调用方先 GetOrCreate）。
+func (s *Store) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances int) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE project_quota
-		 SET max_apps=$1, max_databases=$2, max_total_db_mb=$3, max_capability_calls_per_day=$4, updated_at=CURRENT_TIMESTAMP
-		 WHERE project_space_id=$5`,
-		maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, psID)
+		 SET max_apps=$1, max_databases=$2, max_total_db_mb=$3, max_capability_calls_per_day=$4, max_dedicated_instances=$5, updated_at=CURRENT_TIMESTAMP
+		 WHERE project_space_id=$6`,
+		maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances, psID)
 	if err != nil {
 		return err
 	}

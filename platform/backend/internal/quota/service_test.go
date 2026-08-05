@@ -57,7 +57,7 @@ func TestService_CheckApps_WithinLimit(t *testing.T) {
 func TestService_CheckApps_Exceeded(t *testing.T) {
 	psID, svc := setupPS(t)
 	// 调小上限到 0（已用 0 ≥ 0 → 拦截）
-	if _, err := svc.Set(context.Background(), psID, 0, 20, 10240, 10000); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 0, 20, 10240, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svc.CheckApps(context.Background(), psID)
@@ -87,7 +87,7 @@ func TestService_CheckApps_Exceeded(t *testing.T) {
 
 func TestService_CheckDatabases_Exceeded(t *testing.T) {
 	psID, svc := setupPS(t)
-	if _, err := svc.Set(context.Background(), psID, 20, 0, 10240, 10000); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 20, 0, 10240, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svc.CheckDatabases(context.Background(), psID)
@@ -113,7 +113,7 @@ func TestService_CheckCapabilityToday_Exceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed usage: %v", err)
 	}
-	if _, err := svc.Set(context.Background(), psID, 20, 20, 10240, 0); err != nil {
+	if _, err := svc.Set(context.Background(), psID, 20, 20, 10240, 0, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err = svc.CheckCapabilityToday(context.Background(), psID)
@@ -215,14 +215,14 @@ func TestService_CheckDBSize(t *testing.T) {
 		sizes: map[string]int64{dbName: 5 * 1024 * 1024},
 	})
 	// 上限 10MB，已用 5MB → 通过
-	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 10, 10000); err != nil {
+	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 10, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	if err := svcWithFakes.CheckDBSize(context.Background(), psID); err != nil {
 		t.Errorf("5/10MB 应通过: %v", err)
 	}
 	// 上限 5MB，已用 5MB → 拦截（>=）
-	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 5, 10000); err != nil {
+	if _, err := svcWithFakes.Set(context.Background(), psID, 20, 20, 5, 10000, DefaultMaxDedicatedInstances); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	err := svcWithFakes.CheckDBSize(context.Background(), psID)
@@ -278,6 +278,22 @@ func TestService_Usage_WithDBSize(t *testing.T) {
 	}
 	if u.UsedDatabases != 1 {
 		t.Errorf("UsedDatabases = %d, want 1", u.UsedDatabases)
+	}
+}
+
+// TestService_Set_Dedicated Set 能改 max_dedicated_instances，store.Get 读回。
+func TestService_Set_Dedicated(t *testing.T) {
+	psID, svc := setupPS(t)
+	ctx := context.Background()
+	if _, err := svc.store.GetOrCreate(ctx, psID); err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	if _, err := svc.Set(ctx, psID, 20, 20, 10240, 10000, 8); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	q, _ := svc.store.Get(ctx, psID)
+	if q.MaxDedicatedInstances != 8 {
+		t.Fatalf("Set 后应 8，得 %d", q.MaxDedicatedInstances)
 	}
 }
 

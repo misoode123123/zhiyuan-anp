@@ -236,12 +236,12 @@ func (s *Service) UsageTrend(ctx context.Context, psID string, days int) (*Usage
 }
 
 // Set 更新配额（admin 通过管理 UI 调；不存在则 GetOrCreate 后再 Set）。
-func (s *Service) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay int) (*Quota, error) {
+func (s *Service) Set(ctx context.Context, psID string, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances int) (*Quota, error) {
 	// 不存在则先建默认（再覆盖；保证 admin PUT 不报错）
 	if _, err := s.store.GetOrCreate(ctx, psID); err != nil {
 		return nil, err
 	}
-	if err := s.store.Set(ctx, psID, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay); err != nil {
+	if err := s.store.Set(ctx, psID, maxApps, maxDatabases, maxTotalDBMb, maxCapabilityCallsPerDay, maxDedicatedInstances); err != nil {
 		return nil, err
 	}
 	return s.store.Get(ctx, psID)
