@@ -291,7 +291,7 @@ export default function QuotaPage() {
 
       {psID && usage && (
         <>
-          {/* 4 个用量卡片 */}
+          {/* 用量卡片 */}
           <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             {DIMENSIONS.map((d) => {
               const limit = usage.quota[d.key];
