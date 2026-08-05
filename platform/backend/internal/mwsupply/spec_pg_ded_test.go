@@ -253,7 +253,7 @@ func TestPgDedicated_envWriteFail(t *testing.T) {
 	fl := &fakeFlusher{}
 	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
 	failEnv := &fakeEnvWriter{upsertErr: errStr("env 写失败")}
-	r := NewReconciler(store, failEnv, fl, fl, dk, "testdeploy", nil, ded)
+	r := NewReconciler(store, failEnv, fl, fl, dk, "testdeploy", nil, ded, nil)
 
 	ctx := context.Background()
 	a := &appdeploy.Application{ProjectSpaceID: "ps_1", Name: "pgenvfail", RepoDir: "/x", InternalPort: 8080}

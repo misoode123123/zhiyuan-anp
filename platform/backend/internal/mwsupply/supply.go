@@ -17,24 +17,32 @@ type EnvWriter interface {
 	DeleteEnv(ctx context.Context, appID, key string) error // P6：声明移除时删注入的 platform env
 }
 
+// DedicatedQuotaChecker 专属实例数配额检查（quota.Service 实现）。
+// nil=不强制（开发/测试或未注入 quota）。
+type DedicatedQuotaChecker interface {
+	CheckDedicatedInstances(ctx context.Context, psID string) error
+}
+
 // Reconciler 中间件依赖供给。best-effort：失败记 binding，不阻塞部署。
 type Reconciler struct {
-	store   *Store
-	env     EnvWriter
-	flusher DBFlusher     // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
-	ready   ReadyChecker  // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
-	docker  MWDockerRunner // dedicated 容器管理（run/rm）
-	host    string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
-	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
+	store    *Store
+	env      EnvWriter
+	flusher  DBFlusher     // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	ready    ReadyChecker  // 捕获进 spec 闭包（BuildSpecs 时）；此处仅 NewReconciler 接线保留
+	docker   MWDockerRunner // dedicated 容器管理（run/rm）
+	host     string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
+	dedQuota DedicatedQuotaChecker // P4：dedicated 起容器前查配额；nil=不强制
+	log      *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
 
 // NewReconciler 构造。末尾调 BuildSpecs 注册 redis/milvus/pg 的 KindSpec（闭包捕获 store/env/flusher/ready/docker/pgProv/pgDed）。
 //   env 传 appdeploy.Store（满足 EnvWriter）；
 //   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
 //   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost；
-//   pgProv 给 pg shared 自管供给；pgDed 给 pg dedicated（*pgsupply.InstanceManager 满足 PgDedicatedRunner）。
-func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner, pgDed PgDedicatedRunner) *Reconciler {
-	r := &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
+//   pgProv 给 pg shared 自管供给；pgDed 给 pg dedicated（*pgsupply.InstanceManager 满足 PgDedicatedRunner）；
+//   dedQuota 给 dedicated 配额检查（*quota.Service 满足 DedicatedQuotaChecker；nil=不强制）。
+func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string, pgProv *pgsupply.Provisioner, pgDed PgDedicatedRunner, dedQuota DedicatedQuotaChecker) *Reconciler {
+	r := &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host, dedQuota: dedQuota}
 	BuildSpecs(store, env, flusher, ready, docker, pgProv, pgDed)
 	return r
 }
@@ -223,6 +231,13 @@ func (r *Reconciler) supplyDedicated(ctx context.Context, appID, psID string, de
 			}
 			r.writeDedicatedEnvSpec(ctx, appID, spec, inst)
 			mkBind(StatusBound, inst.ID, "", "")
+			return
+		}
+	}
+	// P4 配额：起容器前查 dedicated 实例数（reuse 已 bound 不耗新配额，故在 reuse 之后）。
+	if r.dedQuota != nil {
+		if err := r.dedQuota.CheckDedicatedInstances(ctx, psID); err != nil {
+			mkBind(StatusFailed, "", "", "专属中间件实例数已达上限: "+err.Error())
 			return
 		}
 	}

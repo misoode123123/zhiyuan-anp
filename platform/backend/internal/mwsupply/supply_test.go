@@ -94,7 +94,7 @@ func newReconcilerTestWithPgDed(t *testing.T, pgDed PgDedicatedRunner) (*Reconci
 	appStore := appdeploy.NewStore(db)
 	f := &fakeFlusher{} // 同时作 DBFlusher + ReadyChecker
 	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
-	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy", nil, pgDed), appStore, db, f, dk
+	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy", nil, pgDed, nil), appStore, db, f, dk
 }
 
 // ensureSeed 确保 .28 redis/milvus bind_existing 种子 + shared redis 种子在（Truncate 不动 service_instance；幂等再插）。
