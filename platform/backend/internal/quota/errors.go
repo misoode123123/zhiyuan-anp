@@ -7,10 +7,10 @@ import (
 
 // QuotaExceededError 配额超限错误。携带维度 / 已用 / 上限 / 单位，便于前端友好提示。
 type QuotaExceededError struct {
-	Dimension string // apps / databases / capability_today / db_size
+	Dimension string // apps / databases / capability_today / db_size / dedicated
 	Used      int    // 已用值（db_size 单位 MB）
 	Limit     int    // 上限值
-	Unit      string // 显示单位（"" / "MB" / "次"）
+	Unit      string // 显示单位（"" / "MB" / "次" / "个"）
 }
 
 func (e *QuotaExceededError) Error() string {
@@ -22,6 +22,7 @@ func (e *QuotaExceededError) Error() string {
 		DimensionDatabases:       "数据库数",
 		DimensionCapabilityToday: "今日 AI 调用",
 		DimensionDBSize:          "数据库总大小",
+		DimensionDedicated:       "专属实例数",
 	}[e.Dimension]
 	if dimLabel == "" {
 		dimLabel = e.Dimension

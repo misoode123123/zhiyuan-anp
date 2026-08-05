@@ -17,7 +17,8 @@ type Store struct {
 func NewStore(db *sqlx.DB) *Store { return &Store{db: db} }
 
 // quotaCols 显式列。
-const quotaCols = `project_space_id, max_apps, max_databases, max_total_db_mb, max_capability_calls_per_day, updated_at`
+// P4（迁移 000035）新增 max_dedicated_instances 列；Set 暂不更新此列（T3 加）。
+const quotaCols = `project_space_id, max_apps, max_databases, max_total_db_mb, max_capability_calls_per_day, max_dedicated_instances, updated_at`
 
 // Get 按项目取配额。不存在返回 nil,nil（语义：调用方决定是 GetOrCreate 还是新建默认）。
 func (s *Store) Get(ctx context.Context, psID string) (*Quota, error) {
@@ -33,7 +34,7 @@ func (s *Store) Get(ctx context.Context, psID string) (*Quota, error) {
 	return &q, nil
 }
 
-// GetOrCreate 取配额，不存在则建默认（应用数 20 / 库数 20 / 10GB / 10000 次每日）。
+// GetOrCreate 取配额，不存在则建默认（应用数 20 / 库数 20 / 10GB / 10000 次每日 / 专属实例 5）。
 // 并发兜底：用 INSERT ... ON CONFLICT DO NOTHING；冲突时另一 goroutine 已建 → 重查返回。
 func (s *Store) GetOrCreate(ctx context.Context, psID string) (*Quota, error) {
 	if q, err := s.Get(ctx, psID); err != nil {
@@ -44,11 +45,11 @@ func (s *Store) GetOrCreate(ctx context.Context, psID string) (*Quota, error) {
 	// 建默认（不存在）。ON CONFLICT 兜底并发：两 goroutine 同时进此分支时，后到者冲突 → returning 拿到先到者建的行
 	var q Quota
 	err := s.db.QueryRowxContext(ctx,
-		`INSERT INTO project_quota (project_space_id, max_apps, max_databases, max_total_db_mb, max_capability_calls_per_day)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO project_quota (project_space_id, max_apps, max_databases, max_total_db_mb, max_capability_calls_per_day, max_dedicated_instances)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (project_space_id) DO UPDATE SET project_space_id=EXCLUDED.project_space_id
 		 RETURNING `+quotaCols,
-		psID, DefaultMaxApps, DefaultMaxDatabases, DefaultMaxTotalDBMb, DefaultMaxCapabilityCallsPerDay).StructScan(&q)
+		psID, DefaultMaxApps, DefaultMaxDatabases, DefaultMaxTotalDBMb, DefaultMaxCapabilityCallsPerDay, DefaultMaxDedicatedInstances).StructScan(&q)
 	if err != nil {
 		return nil, err
 	}
