@@ -322,6 +322,9 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
       : s === "failed"
         ? "border-danger/60 bg-danger/10"
         : "border-warn/60 bg-warn/10";
+  // 依赖连接地址展示：有 catalog 地址用之；bound 但无地址（shared 用平台库）显「平台共享实例」；否则未供给。
+  const depAddr = (d: { envValue: string; status: string }) =>
+    d.envValue || (d.status === "bound" ? "平台共享实例" : "(未供给)");
 
   return (
     <div className="mt-3 rounded border border-border p-3">
@@ -378,7 +381,7 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
                 {/* 边标签 ENV=值 */}
                 <div className="mb-0.5 rounded bg-surface-2 px-1.5 py-0.5 text-center font-mono text-[11px]">
                   <span className="text-text">{d.envLabel}</span>
-                  <span className="text-text-muted">={d.envValue || "(未供给)"}</span>
+                  <span className="text-text-muted">={depAddr(d)}</span>
                 </div>
                 <div className="text-text-muted">│</div>
                 {/* 依赖盒（富参数：连接地址/strategy/status/token/error） */}
@@ -386,7 +389,7 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
                   className={`w-full rounded border px-2 py-1.5 text-xs ${depBoxCls(d.status)}`}
                   title={[
                     `${d.kind} · ${d.strategy} · ${d.status}`,
-                    d.envValue ? `${d.envLabel}=${d.envValue}` : `${d.envLabel} 未供给`,
+                    `${d.envLabel}=${depAddr(d)}`,
                     d.name ? `实例: ${d.name}` : "",
                     d.token ? `token: ${d.token}` : "",
                     d.error ? `错误: ${d.error}` : "",
@@ -396,7 +399,7 @@ function TopologySection({ psID, appID, app }: { psID: string; appID: string; ap
                 >
                   <div className="font-medium">{d.kind}</div>
                   <div className="text-text-muted">
-                    {d.envValue || "(未供给)"} · {d.strategy}
+                    {depAddr(d)} · {d.strategy}
                   </div>
                   <div className="text-text-muted">{d.status}</div>
                   {d.token && (
