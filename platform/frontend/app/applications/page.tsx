@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import type { CatalogInstance, Dep, DepsCatalog } from "@/lib/deps-ui";
 import { groupInstancesByKind } from "@/lib/deps-ui";
+import { appBoxes, buildDepBoxes } from "@/lib/topology";
 import type { Artifact } from "@/lib/api-types";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
@@ -281,6 +282,98 @@ function InstancesPanel({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// 部署拓扑：应用容器层 → 标 env 变量名的边 → 中间件实例层（手绘盒，两层）。
+// 仅已部署应用（有 instance）渲染；external 不渲染（由父级条件保证）。
+// deps/catalog 自 fetch（同 DepsSection 范式，best-effort）。
+function TopologySection({ psID, appID, app }: { psID: string; appID: string; app: App }) {
+  const [deps, setDeps] = useState<Dep[]>([]);
+  const [catalog, setCatalog] = useState<DepsCatalog | null>(null);
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deps`).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/project-spaces/${psID}/deps/catalog`).then((r) => r.json()),
+    ])
+      .then(([d, c]) => {
+        setDeps((d as Envelope<Dep[]>)?.data ?? []);
+        setCatalog((c as Envelope<DepsCatalog>)?.data ?? null);
+      })
+      .catch(() => {});
+  }, [psID, appID]);
+
+  const boxes = appBoxes(app.instances);
+  const depBoxes = buildDepBoxes(deps, catalog?.instances ?? []);
+  if (boxes.length === 0) return null;
+
+  const appBoxCls = (s: string) =>
+    s === "running"
+      ? "border-success/60 bg-success/10"
+      : s === "building"
+        ? "border-warn/60 bg-warn/10"
+        : s === "failed"
+          ? "border-danger/60 bg-danger/10"
+          : "border-border bg-surface-2";
+  const depBoxCls = (s: string) =>
+    s === "bound"
+      ? "border-success/60 bg-success/10"
+      : s === "failed"
+        ? "border-danger/60 bg-danger/10"
+        : "border-warn/60 bg-warn/10"; // declared
+
+  return (
+    <div className="mt-3 rounded border border-border p-3">
+      <div className="mb-2 text-sm font-semibold">🕸️ 部署拓扑</div>
+      {/* 应用容器层 */}
+      <div className="mb-1 text-xs text-text-muted">应用容器</div>
+      <div className="flex flex-wrap gap-2">
+        {boxes.map((b) => (
+          <div key={b.env} className={`rounded border px-2 py-1 text-xs ${appBoxCls(b.status)}`}>
+            <div className="font-medium">
+              {app.name} · {b.env}
+            </div>
+            <div className="text-text-muted">
+              :{b.port} · v{b.version} · {b.status}
+            </div>
+            {app.app_kind && (
+              <div className="text-text-muted">
+                {app.app_kind}
+                {app.network_mode === "host" ? " · host 网络" : ""}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* env 注入边标签 */}
+      {depBoxes.length > 0 && (
+        <div className="my-2 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+          <span>↓ 注入环境变量</span>
+          {depBoxes.map((d) => (
+            <span key={d.kind} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono">
+              {d.envLabel}
+            </span>
+          ))}
+        </div>
+      )}
+      {/* 中间件实例层 */}
+      <div className="mb-1 text-xs text-text-muted">中间件依赖</div>
+      {depBoxes.length === 0 ? (
+        <div className="text-xs text-text-muted">无中间件依赖</div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {depBoxes.map((d) => (
+            <div key={d.kind} className={`rounded border px-2 py-1 text-xs ${depBoxCls(d.status)}`}>
+              <div className="font-medium">{d.kind}</div>
+              <div className="text-text-muted">
+                {d.host ? `${d.host}:${d.port}` : "(未供给)"} · {d.strategy} · {d.status}
+              </div>
+              {d.error && <div className="truncate text-danger">{d.error}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1901,6 +1994,9 @@ export default function ApplicationsPage() {
                   <DepsSection psID={psID} appID={a.id} />
                   <NetworkModeSection psID={psID} appID={a.id} mode={a.network_mode} />
                 </>
+              )}
+              {a.deploy_mode !== "external" && a.instances && a.instances.length > 0 && (
+                <TopologySection psID={psID} appID={a.id} app={a} />
               )}
             </div>
           );
