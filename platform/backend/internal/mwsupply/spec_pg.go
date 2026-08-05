@@ -62,7 +62,8 @@ func pgSpec(prov *pgsupply.Provisioner, ded PgDedicatedRunner, store *Store, env
 				Status:        "active",
 			}
 			if err := store.CreateInstance(ctx, inst); err != nil {
-				// 登记失败回收容器（best-effort），返回错让 binding failed。
+				// 登记失败：删刚写的 DATABASE_URL env 行（防 stale 残留至下次 reconcile）+ 回收容器（best-effort），返错让 binding failed。
+				_ = env.DeleteEnv(ctx, appID, "DATABASE_URL")
 				_ = ded.CleanupDedicated(ctx, container)
 				return "", "", err
 			}

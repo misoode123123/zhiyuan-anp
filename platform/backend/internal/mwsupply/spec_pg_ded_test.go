@@ -2,7 +2,10 @@ package mwsupply
 
 import (
 	"context"
+	"database/sql"
 	"testing"
+
+	"github.com/jmoiron/sqlx"
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/testutil"
@@ -270,5 +273,59 @@ func TestPgDedicated_envWriteFail(t *testing.T) {
 	// DATABASE_URL 未落库（fake env 不写真 DB）
 	if v, _ := appStore.GetEnvValue(ctx, a.ID, "DATABASE_URL"); v != "" {
 		t.Fatalf("env 写失败不应落 DATABASE_URL，得 %q", v)
+	}
+}
+
+// TestPgDedicated_createInstanceFail M-1：env 写成功后 store.CreateInstance 失败 →
+// 须 DeleteEnv(DATABASE_URL) 删掉刚写的 env 行（防 stale 残留至下次 reconcile）+ 回收容器 + 返错。
+// pgSpec 闭包捕获 *Store 具体类型无法注入 fake store，故：env 用 fakeEnvWriter（记录 upsert/delete，
+// env 侧不碰 DB），store 用 closed db 句柄让 CreateInstance 必失败（ExecContext → sql: database is closed），
+// 直接驱动 spec.SupplyDedicated 闭包。
+func TestPgDedicated_createInstanceFail(t *testing.T) {
+	ded := &fakePgDedicated{
+		container: "pg-ded-cifail-1",
+		dbName:    "app_cifail",
+		dsn:       "postgres://app_role:secret@testdeploy:9552/app_cifail?sslmode=disable",
+		adminURL:  "postgres://postgres:pw@testdeploy:9552/postgres",
+		port:      9552,
+	}
+	// closed db 句柄：CreateInstance（INSERT）必失败，不依赖网络。
+	sqlDB, _ := sql.Open("pgx", "")
+	sqlDB.Close()
+	store := NewStore(sqlx.NewDb(sqlDB, "pgx"))
+	recEnv := &fakeEnvWriter{} // UpsertEnv 成功；记录 DeleteEnv（M-1 验证点）
+
+	// pgSpec(nil prov)：dedicated 路径不碰 SupplyShared，prov 留 nil。
+	spec := pgSpec(nil, ded, store, recEnv)
+	instID, token, err := spec.SupplyDedicated(context.Background(), "app_cifail", "ps_1", "testdeploy")
+
+	// 返错 + 空返回
+	if err == nil {
+		t.Fatal("CreateInstance 失败应返错")
+	}
+	if instID != "" || token != "" {
+		t.Fatalf("失败应空返回 instID/token，得 %q/%q", instID, token)
+	}
+	// ProvisionDedicated 被调（容器确实起了）
+	if ded.provCalls != 1 {
+		t.Fatalf("ProvisionDedicated 应调 1 次，得 %d", ded.provCalls)
+	}
+	// DATABASE_URL 先写（env.UpsertEnv 成功）
+	if len(recEnv.upsertCalls) != 1 || recEnv.upsertCalls[0].key != "DATABASE_URL" {
+		t.Fatalf("应先 UpsertEnv DATABASE_URL，得 %+v", recEnv.upsertCalls)
+	}
+	if recEnv.upsertCalls[0].value != ded.dsn {
+		t.Fatalf("UpsertEnv 值应 dsn %q，得 %q", ded.dsn, recEnv.upsertCalls[0].value)
+	}
+	// M-1 核心：DATABASE_URL 已被删除（不残留 stale 行）
+	if len(recEnv.deleteCalls) != 1 || recEnv.deleteCalls[0].key != "DATABASE_URL" {
+		t.Fatalf("CreateInstance 失败应 DeleteEnv DATABASE_URL（M-1），得 %+v", recEnv.deleteCalls)
+	}
+	if recEnv.deleteCalls[0].appID != "app_cifail" {
+		t.Fatalf("DeleteEnv appID 应 app_cifail，得 %q", recEnv.deleteCalls[0].appID)
+	}
+	// CleanupDedicated 被调（容器回收）
+	if len(ded.cleanCalls) != 1 || ded.cleanCalls[0] != ded.container {
+		t.Fatalf("CleanupDedicated 应以 %q 调一次，得 %v", ded.container, ded.cleanCalls)
 	}
 }
