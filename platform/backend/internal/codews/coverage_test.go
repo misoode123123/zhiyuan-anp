@@ -252,7 +252,7 @@ func TestEnsureSession_PicksMatchingNewest(t *testing.T) {
         ]}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r"); got != "new" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "new" {
 		t.Errorf("ensureSession 应选 updated 最大的匹配项 new, got %q", got)
 	}
 }
@@ -267,7 +267,7 @@ func TestEnsureSession_NoMatchCallsInit(t *testing.T) {
 		fmt.Fprint(w, `{"id":"fresh"}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r"); got != "fresh" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "fresh" {
 		t.Errorf("无匹配应调 initSession 返回 fresh, got %q", got)
 	}
 }
@@ -282,8 +282,62 @@ func TestEnsureSession_EmptyList(t *testing.T) {
 		fmt.Fprint(w, `{"id":"empty_new"}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r"); got != "empty_new" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "empty_new" {
 		t.Errorf("空列表应走 initSession 返回 empty_new, got %q", got)
+	}
+}
+
+// TestEnsureSession_ForceNewBypassesReuse forceNew=true 时即使 /api/session 有匹配的最近会话,
+// 也应跳过复用直接 initSession 新建（换需求时不把旧需求会话捞回）。
+func TestEnsureSession_ForceNewBypassesReuse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session" {
+			fmt.Fprint(w, `{"data":[{"id":"reuse_me","time":{"updated":9000},"location":{"directory":"/r"}}]}`)
+			return
+		}
+		// /session (initSession)
+		fmt.Fprint(w, `{"id":"fresh"}`)
+	}))
+	defer srv.Close()
+	if got := ensureSession(portOf(t, srv.URL), "/r", true); got != "fresh" {
+		t.Errorf("forceNew=true 应跳过 reuse_me 走 initSession 返回 fresh, got %q", got)
+	}
+}
+
+// TestEnsureSession_ForceNewFalseStillReuses forceNew=false 时保留原"取 updated 最近匹配"行为。
+func TestEnsureSession_ForceNewFalseStillReuses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"new","time":{"updated":5000},"location":{"directory":"/r"}}]}`)
+	}))
+	defer srv.Close()
+	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "new" {
+		t.Errorf("forceNew=false 应复用 new, got %q", got)
+	}
+}
+
+// ============================================================
+// shouldForceNewForRequirement（换需求判定纯函数）
+// ============================================================
+
+// TestShouldForceNewForRequirement 换需求(或旧会话无需求绑定而现在选了需求)→true;
+// 首次(nil)/没选需求(reqID空)/同需求 →false。
+func TestShouldForceNewForRequirement(t *testing.T) {
+	cases := []struct {
+		name string
+		old  *Session
+		req  string
+		want bool
+	}{
+		{"首次无旧会话", nil, "r1", false},
+		{"没选需求", &Session{RequirementID: "r1"}, "", false},
+		{"同需求", &Session{RequirementID: "r1"}, "r1", false},
+		{"换需求", &Session{RequirementID: "r1"}, "r2", true},
+		{"旧会话无需求现在选了", &Session{RequirementID: ""}, "r1", true},
+	}
+	for _, c := range cases {
+		if got := shouldForceNewForRequirement(c.old, c.req); got != c.want {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
 	}
 }
 

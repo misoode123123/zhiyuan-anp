@@ -126,6 +126,8 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 		m.mu.Unlock()
 		return nil, fmt.Errorf("未知编码工具: %s（已注册: %v）", toolName, m.Tools())
 	}
+	old := m.sessions[key] // 旧会话（可能 nil）；用于判定换需求是否强制新建
+	forceNew := shouldForceNewForRequirement(old, reqID)
 	// 同开发者同工具 且 需求未变 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
 	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && (reqID == "" || s.RequirementID == reqID) {
 		m.mu.Unlock()
@@ -180,7 +182,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 		// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
 		// opencode 上报的 location.directory 是它自己的 cwd（worktree），
 		// 会话匹配 / 深链接 slug 都须用 workDir，否则永 mismtach → 每次新建会话、深链接打不开。
-		s.SessionID = ensureSession(port, workDir)
+		s.SessionID = ensureSession(port, workDir, forceNew)
 		if s.SessionID != "" {
 			s.DeepURL = sessionDeepURL(s.URL, workDir, s.SessionID)
 		}
@@ -233,10 +235,22 @@ var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
 // 会话较多时序列化偏慢，放宽到 15s，避免 ensureSession 误判超时→新建多余会话。
 var sessionListClient = &http.Client{Timeout: 3 * time.Second}
 
+// shouldForceNewForRequirement 判定是否因切换需求需强制新建 opencode 会话。
+// 换需求(旧会话绑了不同 RequirementID，或旧会话无绑定而现在选了需求)→ true，杜绝跨需求历史串台/累积。
+// 首次(无旧会话) / 没选需求(reqID 空) / 同需求 → false。
+func shouldForceNewForRequirement(old *Session, reqID string) bool {
+	return old != nil && reqID != "" && old.RequirementID != reqID
+}
+
 // ensureSession 复用 opencode 已有会话(按 repo 目录匹配,取 updated 最近的一个);无则新建。
+// forceNew=true(换需求)时跳过复用直接新建——避免按 workDir 把上一个需求的会话捞回,真正按需求隔离。
 // opencode 会话持久化在磁盘(/root/.local/share/opencode),进程或后端重启后仍可据此
 // 恢复开发者上次的编码上下文,而非每次打开都新建空会话。
-func ensureSession(port int, repoDir string) string {
+func ensureSession(port int, repoDir string, forceNew bool) string {
+	if forceNew {
+		log.Printf("[codews] forceNew 新建 opencode 会话 (repo=%s)", repoDir)
+		return initSession(port)
+	}
 	// opencode serve 刚 listen 时 HTTP handler 可能尚未就绪（请求挂起直至起来），
 	// 用短超时 + 重试等就绪；就绪后 /api/session 仅几毫秒。
 	for i := 0; i < 6; i++ {

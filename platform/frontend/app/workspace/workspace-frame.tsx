@@ -137,7 +137,7 @@ export default function WorkspaceFrame() {
     fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool }),
+      body: JSON.stringify({ tool, ...(selectedReq ? { requirement_id: selectedReq } : {}) }),
     })
       .then((r) => r.json())
       .then((r) => {
@@ -162,7 +162,7 @@ export default function WorkspaceFrame() {
     return () => {
       aborted = true;
     };
-  }, [appID, psID, tool, reloadKey, missingParams]);
+  }, [appID, psID, tool, reloadKey, missingParams, selectedReq]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
