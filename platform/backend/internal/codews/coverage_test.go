@@ -494,46 +494,6 @@ func TestSendPrompt_HTTPError(t *testing.T) {
 	}
 }
 
-// TestSendPrompt_RotatesWhenTurnsExceed 同需求会话 user 轮次达 maxTurnsPerReq(20) 时,
-// SendPrompt 应调 initSession 新建会话, 更新 SessionID/DeepURL, 并把 prompt POST 到
-// 新会话(ses_rot); 若未轮转会打到旧会话(ses_1) → 断言失败。
-// 守护轮转核心行为（TestSendPrompt_PostsPrompt 的 httptest 返回空 → 计数 0 → 不轮转, 无法覆盖此分支）。
-func TestSendPrompt_RotatesWhenTurnsExceed(t *testing.T) {
-	// 21 条 user(非空 text) → countUserTurns=21 >= 20 触发轮转
-	userMsgs := strings.TrimSuffix(
-		strings.Repeat(`{"type":"user","parts":[{"type":"text","text":"q"}]},`, 21), ",")
-	messages := `{"data":[` + userMsgs + `]}`
-
-	var promptPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method + " " + r.URL.Path {
-		case "GET /api/session/ses_1/message": // countUserTurns → LiveTranscript
-			fmt.Fprint(w, messages)
-		case "POST /session": // initSession 新建
-			fmt.Fprint(w, `{"id":"ses_rot"}`)
-		case "POST /api/session/ses_1/prompt", "POST /api/session/ses_rot/prompt": // 实际命中记录
-			promptPath = r.URL.Path
-		}
-	}))
-	defer srv.Close()
-	port := portOf(t, srv.URL)
-
-	m := NewManager("h", nil)
-	m.sessions["app:user"] = &Session{
-		AppID: "app", UserID: "user", Port: port,
-		SessionID: "ses_1", URL: "http://h", RepoDir: "/r",
-		cmd: &exec.Cmd{}, // ProcessState nil → alive()
-	}
-	if err := m.SendPrompt("app", "user", "go"); err != nil {
-		t.Fatalf("SendPrompt 错误: %v", err)
-	}
-	// 命中新会话路径证明已轮转；未轮转则停在 /api/session/ses_1/prompt
-	wantPath := "/api/session/ses_rot/prompt"
-	if promptPath != wantPath {
-		t.Errorf("轮转后 prompt POST 路径 = %q, want %q（未轮转会停在 ses_1）", promptPath, wantPath)
-	}
-}
-
 // ============================================================
 // Ensure：仅测不真实启动进程的错误/复用路径
 // ============================================================
@@ -687,37 +647,6 @@ func TestEnsureWorktree_NoGitRepo(t *testing.T) {
 	repoDir := t.TempDir()
 	if got := ensureWorktree(repoDir, "Bob"); got != repoDir {
 		t.Errorf("非 git 仓库应回退主仓 %q, got %q", repoDir, got)
-	}
-}
-
-// ============================================================
-// countUserTurns（同需求会话轮次计数）
-// ============================================================
-
-// TestCountUserTurns 拉 /api/session/<id>/message 后数 role=user 的条数（工具/assistant 不计）。
-func TestCountUserTurns(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"data":[
-            {"type":"user","parts":[{"type":"text","text":"q1"}]},
-            {"type":"assistant","parts":[{"type":"text","text":"a1"}]},
-            {"type":"tool","parts":[{"type":"text","text":"..."}]},
-            {"type":"user","parts":[{"type":"text","text":"q2"}]},
-            {"type":"user","parts":[{"type":"text","text":"   "}]}
-        ]}`)
-	}))
-	defer srv.Close()
-	port := portOf(t, srv.URL)
-	// 3 条 user（含 1 条纯空白 part 仍算一条 user 消息——LiveTranscript 会因无文本跳过整条，
-	// 故实际计数 2；此处断言与 LiveTranscript 行为一致：纯空白 user 不计入）
-	if got := countUserTurns(port, "ses_1"); got != 2 {
-		t.Errorf("countUserTurns = %d, want 2（纯空白 user 被 LiveTranscript 过滤）", got)
-	}
-}
-
-// TestCountUserTurns_FetchFails 不可达 → 0（非致命，不阻断 prompt）。
-func TestCountUserTurns_FetchFails(t *testing.T) {
-	if got := countUserTurns(1, "ses_1"); got != 0 {
-		t.Errorf("不可达应返回 0, got %d", got)
 	}
 }
 

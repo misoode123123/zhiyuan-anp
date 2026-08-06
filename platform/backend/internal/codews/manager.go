@@ -29,9 +29,6 @@ const (
 	portMin     = 9400
 	portMax     = 9450
 	defaultTool = "opencode"
-	// maxTurnsPerReq 同一需求会话内 user 提问轮次上限：超过则轮转到新会话，
-	// 防止单需求历史无限累积烧 token（与 opencode autocompact 互补）。可按需调。
-	maxTurnsPerReq = 20
 )
 
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
@@ -356,37 +353,14 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 	return strings.TrimSpace(sb.String()), nil
 }
 
-// countUserTurns 数 opencode 会话中 role=user 的消息条数（≈用户提问轮次）。
-// 读失败/无会话返回 0（非致命，不阻断发 prompt）。
-func countUserTurns(port int, sessionID string) int {
-	msgs, err := LiveTranscript(port, sessionID)
-	if err != nil || len(msgs) == 0 {
-		return 0
-	}
-	n := 0
-	for _, m := range msgs {
-		if m.Role == "user" {
-			n++
-		}
-	}
-	return n
-}
-
 // SendPrompt 向某开发者当前 opencode 会话发送一条 prompt(注入需求/指令),
 // opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。
-// 同需求会话累计 user 轮次达 maxTurnsPerReq 时，先轮转到新会话再发，避免历史滚雪球。
+// 不自动轮转/截断——为保能力，token 控制交给"按需求隔离"（换需求自动新开会话）
+// + 任务完成时前端提醒用户认领下一需求新开会话，避免硬切清零上下文。
 func (m *Manager) SendPrompt(appID, userID, text string) error {
 	s := m.Get(appID, userID)
 	if s == nil || s.SessionID == "" {
 		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
-	}
-	// 轮次双限：同需求会话达上限 → 新建会话轮转（DeepURL 一并由 handler 回传前端跳转）
-	if countUserTurns(s.Port, s.SessionID) >= maxTurnsPerReq {
-		if newID := initSession(s.Port); newID != "" {
-			s.SessionID = newID
-			s.DeepURL = sessionDeepURL(s.URL, s.RepoDir, newID)
-			log.Printf("[codews] 需求会话达 %d 轮, 轮转到新会话 %s", maxTurnsPerReq, newID)
-		}
 	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"prompt": map[string]string{"text": text},

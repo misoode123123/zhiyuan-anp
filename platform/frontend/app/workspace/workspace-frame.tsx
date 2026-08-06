@@ -300,10 +300,6 @@ export default function WorkspaceFrame() {
         setDispatching(false);
         return;
       }
-      // 轮数轮转后后端回传新 deep_url → 跳 iframe 到新会话
-      if (r.data?.deep_url && r.data.deep_url !== url) {
-        setUrl(r.data.deep_url);
-      }
       setTaskMsg(
         next
           ? `✅ 已发送子任务: ${next.text}\n做完后在左侧 checklist 打勾,再点「🤖AI编码」做下一个`
@@ -405,7 +401,7 @@ export default function WorkspaceFrame() {
       }
       const d = r.data || {};
       alert(
-        `✅ 已合并到主线 main,可点「🚀上线」\n${d.delivered ? "📦 需求已交付" : ""}${d.released ? " · 🔓 已释放认领" : ""}${d.worktree_cleaned ? " · 🧹 已清理工作区" : ""}`
+        `✅ 已合并到主线 main,可点「🚀上线」\n${d.delivered ? "📦 需求已交付" : ""}${d.released ? " · 🔓 已释放认领" : ""}${d.worktree_cleaned ? " · 🧹 已清理工作区" : ""}\n\n💡 本需求已完成——为节省 token,建议认领下一个需求,将自动开启新的编码会话(旧会话历史不会带入)。`
       );
       fetchDetail();
     } catch (e) {
