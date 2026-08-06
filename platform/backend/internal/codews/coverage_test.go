@@ -192,10 +192,12 @@ func TestAllocPortLocked_Empty(t *testing.T) {
 }
 
 // TestAllocPortLocked_SkipUsed 已占用端口应被跳过, 返回最小可用。
+// 端口占用经端口注册表 m.ports 标记（F-1：端口生命周期独立于 sessions，
+// allocPort 即刻登记，进程 cmd.Wait 后由清理 goroutine 释放）。
 func TestAllocPortLocked_SkipUsed(t *testing.T) {
 	m := NewManager("h", nil)
-	m.sessions["a:u1"] = &Session{Port: portMin}
-	m.sessions["a:u2"] = &Session{Port: portMin + 2}
+	m.ports[portMin] = true
+	m.ports[portMin+2] = true
 	if got := m.allocPortLocked(); got != portMin+1 {
 		t.Errorf("占用 %d/%d 后应分配 %d, got %d", portMin, portMin+2, portMin+1, got)
 	}
@@ -205,7 +207,7 @@ func TestAllocPortLocked_SkipUsed(t *testing.T) {
 func TestAllocPortLocked_Full(t *testing.T) {
 	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
-		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
+		m.ports[p] = true
 	}
 	if p := m.allocPortLocked(); p != 0 {
 		t.Errorf("所有端口占用应返回 0, got %d", p)
@@ -492,46 +494,6 @@ func TestSendPrompt_HTTPError(t *testing.T) {
 	}
 }
 
-// TestSendPrompt_RotatesWhenTurnsExceed 同需求会话 user 轮次达 maxTurnsPerReq(20) 时,
-// SendPrompt 应调 initSession 新建会话, 更新 SessionID/DeepURL, 并把 prompt POST 到
-// 新会话(ses_rot); 若未轮转会打到旧会话(ses_1) → 断言失败。
-// 守护轮转核心行为（TestSendPrompt_PostsPrompt 的 httptest 返回空 → 计数 0 → 不轮转, 无法覆盖此分支）。
-func TestSendPrompt_RotatesWhenTurnsExceed(t *testing.T) {
-	// 21 条 user(非空 text) → countUserTurns=21 >= 20 触发轮转
-	userMsgs := strings.TrimSuffix(
-		strings.Repeat(`{"type":"user","parts":[{"type":"text","text":"q"}]},`, 21), ",")
-	messages := `{"data":[` + userMsgs + `]}`
-
-	var promptPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method + " " + r.URL.Path {
-		case "GET /api/session/ses_1/message": // countUserTurns → LiveTranscript
-			fmt.Fprint(w, messages)
-		case "POST /session": // initSession 新建
-			fmt.Fprint(w, `{"id":"ses_rot"}`)
-		case "POST /api/session/ses_1/prompt", "POST /api/session/ses_rot/prompt": // 实际命中记录
-			promptPath = r.URL.Path
-		}
-	}))
-	defer srv.Close()
-	port := portOf(t, srv.URL)
-
-	m := NewManager("h", nil)
-	m.sessions["app:user"] = &Session{
-		AppID: "app", UserID: "user", Port: port,
-		SessionID: "ses_1", URL: "http://h", RepoDir: "/r",
-		cmd: &exec.Cmd{}, // ProcessState nil → alive()
-	}
-	if err := m.SendPrompt("app", "user", "go"); err != nil {
-		t.Fatalf("SendPrompt 错误: %v", err)
-	}
-	// 命中新会话路径证明已轮转；未轮转则停在 /api/session/ses_1/prompt
-	wantPath := "/api/session/ses_rot/prompt"
-	if promptPath != wantPath {
-		t.Errorf("轮转后 prompt POST 路径 = %q, want %q（未轮转会停在 ses_1）", promptPath, wantPath)
-	}
-}
-
 // ============================================================
 // Ensure：仅测不真实启动进程的错误/复用路径
 // ============================================================
@@ -553,7 +515,7 @@ func TestEnsure_UnknownTool(t *testing.T) {
 func TestEnsure_PortExhausted(t *testing.T) {
 	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
-		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
+		m.ports[p] = true // 经端口注册表占满（F-1）
 	}
 	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "")
 	if err == nil {
@@ -679,44 +641,34 @@ func TestEnsureWorktree_SanitizesUserID(t *testing.T) {
 	}
 }
 
-// TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库, git 命令会失败但被 _ 吞,
-// 路径仍应正确推算（不 panic）。
+// TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库时 git worktree add 必失败；
+// ensureWorktree 兜底回退主仓 repoDir（避免 opencode chdir 到无效 .worktrees 目录起不来）。
 func TestEnsureWorktree_NoGitRepo(t *testing.T) {
 	repoDir := t.TempDir()
-	got := ensureWorktree(repoDir, "Bob")
-	want := filepath.Join(repoDir, ".worktrees", "bob")
-	if got != want {
-		t.Errorf("ensureWorktree = %q, want %q", got, want)
+	if got := ensureWorktree(repoDir, "Bob"); got != repoDir {
+		t.Errorf("非 git 仓库应回退主仓 %q, got %q", repoDir, got)
 	}
 }
 
 // ============================================================
-// countUserTurns（同需求会话轮次计数）
+// allocPort / 端口注册表（F-1：端口生命周期独立于 sessions，防并发/kill 后重用同端口）
 // ============================================================
 
-// TestCountUserTurns 拉 /api/session/<id>/message 后数 role=user 的条数（工具/assistant 不计）。
-func TestCountUserTurns(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"data":[
-            {"type":"user","parts":[{"type":"text","text":"q1"}]},
-            {"type":"assistant","parts":[{"type":"text","text":"a1"}]},
-            {"type":"tool","parts":[{"type":"text","text":"..."}]},
-            {"type":"user","parts":[{"type":"text","text":"q2"}]},
-            {"type":"user","parts":[{"type":"text","text":"   "}]}
-        ]}`)
-	}))
-	defer srv.Close()
-	port := portOf(t, srv.URL)
-	// 3 条 user（含 1 条纯空白 part 仍算一条 user 消息——LiveTranscript 会因无文本跳过整条，
-	// 故实际计数 2；此处断言与 LiveTranscript 行为一致：纯空白 user 不计入）
-	if got := countUserTurns(port, "ses_1"); got != 2 {
-		t.Errorf("countUserTurns = %d, want 2（纯空白 user 被 LiveTranscript 过滤）", got)
+// TestAllocPort_ReservesAndFrees 连续分配得到递增端口且即刻登记；释放后最低空闲端口可再分配。
+// 守护 F-1：端口在 allocPort 时就进注册表，避免并发 Ensure 或 kill-后-未死 时抢同端口。
+func TestAllocPort_ReservesAndFrees(t *testing.T) {
+	m := NewManager("h", nil)
+	p1 := m.allocPortLocked()
+	p2 := m.allocPortLocked()
+	if p1 != portMin || p2 != portMin+1 {
+		t.Errorf("前两次应分配 %d/%d, got %d/%d", portMin, portMin+1, p1, p2)
 	}
-}
-
-// TestCountUserTurns_FetchFails 不可达 → 0（非致命，不阻断 prompt）。
-func TestCountUserTurns_FetchFails(t *testing.T) {
-	if got := countUserTurns(1, "ses_1"); got != 0 {
-		t.Errorf("不可达应返回 0, got %d", got)
+	if !m.ports[p1] || !m.ports[p2] {
+		t.Errorf("端口未登记为已用: ports=%v", m.ports)
+	}
+	// 模拟清理 goroutine 释放 p1（进程退出归还端口）
+	delete(m.ports, p1)
+	if p3 := m.allocPortLocked(); p3 != p1 {
+		t.Errorf("释放后应重新分配最低空闲端口 %d, got %d", p1, p3)
 	}
 }

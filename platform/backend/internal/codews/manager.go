@@ -29,9 +29,6 @@ const (
 	portMin     = 9400
 	portMax     = 9450
 	defaultTool = "opencode"
-	// maxTurnsPerReq 同一需求会话内 user 提问轮次上限：超过则轮转到新会话，
-	// 防止单需求历史无限累积烧 token（与 opencode autocompact 互补）。可按需调。
-	maxTurnsPerReq = 20
 )
 
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
@@ -41,6 +38,7 @@ type Manager struct {
 	sessionLog SessionStore  // 会话持久化（绩效/互动统计）；nil=纯内存兼容
 	mu         sync.Mutex
 	sessions   map[string]*Session // appID -> 当前活跃工作台
+	ports      map[int]bool        // 端口注册表：allocPort 即刻登记，进程 cmd.Wait 后释放（独立于 sessions，防并发/kill 后重用同端口）
 	tools      map[string]Tool
 }
 
@@ -67,7 +65,7 @@ type Session struct {
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
 func NewManager(host string, cfg *config.Store) *Manager {
-	m := &Manager{host: host, cfg: cfg, sessions: map[string]*Session{}, tools: map[string]Tool{}}
+	m := &Manager{host: host, cfg: cfg, sessions: map[string]*Session{}, ports: map[int]bool{}, tools: map[string]Tool{}}
 	m.Register(OpenCodeTool{})
 	m.Register(ClaudeTool{})
 	m.Register(CodexTool{})
@@ -152,6 +150,9 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 	workDir := ensureWorktree(repoDir, userID)
 	cmd, err := tool.Start(workDir, port, m.toolEnv(toolName))
 	if err != nil {
+		m.mu.Lock()
+		delete(m.ports, port) // Start 失败：归还预留端口，避免端口表泄漏
+		m.mu.Unlock()
 		return nil, err
 	}
 	s := &Session{
@@ -170,8 +171,9 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 			_ = m.sessionLog.FinishSession(context.Background(), s.logID, m.finishCounts(s))
 		}
 		m.mu.Lock()
+		delete(m.ports, s.Port) // 进程已退出，无条件归还端口（与是否当前 session 无关）
 		if cur, ok := m.sessions[key]; ok && cur == s {
-			delete(m.sessions, key)
+			delete(m.sessions, key) // 仅当仍是当前 session 时才从 map 移除（并发起新的不误删）
 		}
 		m.mu.Unlock()
 	}()
@@ -234,9 +236,11 @@ func sessionDeepURL(baseURL, repoDir, sessionID string) string {
 // wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。
 var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
-// sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计,
-// 会话较多时序列化偏慢，放宽到 15s，避免 ensureSession 误判超时→新建多余会话。
-var sessionListClient = &http.Client{Timeout: 3 * time.Second}
+// sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计。
+// 超时需覆盖两种情况：① serve 刚 listen 但 HTTP handler 未就绪（请求挂起）——由 ensureSession
+// 的重试循环兜底；② 会话累积较多时序列化偏慢——需足够长的单次超时，否则误判超时→initSession
+// 不断新建→会话越多越慢的死亡螺旋（F-3）。故给 10s（重试主要服务情形①的连接级失败）。
+var sessionListClient = &http.Client{Timeout: 10 * time.Second}
 
 // shouldForceNewForRequirement 判定是否因切换需求需强制新建 opencode 会话。
 // 换需求(旧会话绑了不同 RequirementID，或旧会话无绑定而现在选了需求)→ true，杜绝跨需求历史串台/累积。
@@ -349,37 +353,14 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 	return strings.TrimSpace(sb.String()), nil
 }
 
-// countUserTurns 数 opencode 会话中 role=user 的消息条数（≈用户提问轮次）。
-// 读失败/无会话返回 0（非致命，不阻断发 prompt）。
-func countUserTurns(port int, sessionID string) int {
-	msgs, err := LiveTranscript(port, sessionID)
-	if err != nil || len(msgs) == 0 {
-		return 0
-	}
-	n := 0
-	for _, m := range msgs {
-		if m.Role == "user" {
-			n++
-		}
-	}
-	return n
-}
-
 // SendPrompt 向某开发者当前 opencode 会话发送一条 prompt(注入需求/指令),
 // opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。
-// 同需求会话累计 user 轮次达 maxTurnsPerReq 时，先轮转到新会话再发，避免历史滚雪球。
+// 不自动轮转/截断——为保能力，token 控制交给"按需求隔离"（换需求自动新开会话）
+// + 任务完成时前端提醒用户认领下一需求新开会话，避免硬切清零上下文。
 func (m *Manager) SendPrompt(appID, userID, text string) error {
 	s := m.Get(appID, userID)
 	if s == nil || s.SessionID == "" {
 		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
-	}
-	// 轮次双限：同需求会话达上限 → 新建会话轮转（DeepURL 一并由 handler 回传前端跳转）
-	if countUserTurns(s.Port, s.SessionID) >= maxTurnsPerReq {
-		if newID := initSession(s.Port); newID != "" {
-			s.SessionID = newID
-			s.DeepURL = sessionDeepURL(s.URL, s.RepoDir, newID)
-			log.Printf("[codews] 需求会话达 %d 轮, 轮转到新会话 %s", maxTurnsPerReq, newID)
-		}
 	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"prompt": map[string]string{"text": text},
@@ -438,13 +419,15 @@ func sanitizeID(s string) string {
 	return b.String()
 }
 
+// allocPortLocked 分配一个空闲工作台端口。端口注册表 m.ports 独立于 sessions：
+// 端口在 allocPort 时即刻登记，直到对应进程 cmd.Wait 返回（由 session 的清理 goroutine
+// 负责）才释放。这样 ① 换需求 kill 旧进程后端口不会立刻被新一轮 allocPort 重用——旧进程
+// 未死、端口未释放，直接重用会 EADDRINUSE 起不来；② 并发 Ensure（rapid 切需求触发）也
+// 抢不到同一个尚未登记完的端口。必须由持有 m.mu 的调用方调用。
 func (m *Manager) allocPortLocked() int {
-	used := map[int]bool{}
-	for _, s := range m.sessions {
-		used[s.Port] = true
-	}
 	for p := portMin; p <= portMax; p++ {
-		if !used[p] {
+		if !m.ports[p] {
+			m.ports[p] = true
 			return p
 		}
 	}
