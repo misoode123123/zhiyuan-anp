@@ -137,7 +137,7 @@ export default function WorkspaceFrame() {
     fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool }),
+      body: JSON.stringify({ tool, ...(selectedReq ? { requirement_id: selectedReq } : {}) }),
     })
       .then((r) => r.json())
       .then((r) => {
@@ -162,7 +162,7 @@ export default function WorkspaceFrame() {
     return () => {
       aborted = true;
     };
-  }, [appID, psID, tool, reloadKey, missingParams]);
+  }, [appID, psID, tool, reloadKey, missingParams, selectedReq]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
@@ -294,6 +294,10 @@ export default function WorkspaceFrame() {
         setTaskMsg(r.message || "失败");
         setDispatching(false);
         return;
+      }
+      // 轮数轮转后后端回传新 deep_url → 跳 iframe 到新会话
+      if (r.data?.deep_url && r.data.deep_url !== url) {
+        setUrl(r.data.deep_url);
       }
       setTaskMsg(
         next
@@ -503,19 +507,8 @@ export default function WorkspaceFrame() {
                 return;
               }
               setSelectedReq(id);
-              try {
-                const w = await fetch(
-                  `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ tool, requirement_id: id }),
-                  }
-                ).then((rr) => rr.json());
-                if (w.code === 0 && w.data?.url) {
-                  setUrl(w.data.deep_url || w.data.url);
-                }
-              } catch {}
+              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq），
+              // 不再内联 POST /workspace——否则与 effect 重跑并发双发，撞 Ensure 跨锁 race 致 opencode 进程/端口泄漏（I1）。
               setTaskMsg("");
               setTestMsg("");
               setTestResults(null);

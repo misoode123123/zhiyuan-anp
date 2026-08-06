@@ -482,7 +482,11 @@ func (h *Handler) InjectRequirement(c *gin.Context) {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"injected": true, "note": "需求已发给 opencode,在工作台看 AI 实时编码"})
+	deepURL := ""
+	if s := h.codeWS.Get(aid, user); s != nil {
+		deepURL = s.DeepURL
+	}
+	httpx.OK(c, gin.H{"injected": true, "deep_url": deepURL, "note": "需求已发给 opencode,在工作台看 AI 实时编码"})
 }
 
 // Submit 需求-代码核对门禁:从 requirement 读验收标准 + 读开发者 worktree 代码,AI 逐条核对。
