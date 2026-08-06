@@ -507,19 +507,8 @@ export default function WorkspaceFrame() {
                 return;
               }
               setSelectedReq(id);
-              try {
-                const w = await fetch(
-                  `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ tool, requirement_id: id }),
-                  }
-                ).then((rr) => rr.json());
-                if (w.code === 0 && w.data?.url) {
-                  setUrl(w.data.deep_url || w.data.url);
-                }
-              } catch {}
+              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq），
+              // 不再内联 POST /workspace——否则与 effect 重跑并发双发，撞 Ensure 跨锁 race 致 opencode 进程/端口泄漏（I1）。
               setTaskMsg("");
               setTestMsg("");
               setTestResults(null);
