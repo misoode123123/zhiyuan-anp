@@ -41,6 +41,7 @@ type Manager struct {
 	sessionLog SessionStore  // 会话持久化（绩效/互动统计）；nil=纯内存兼容
 	mu         sync.Mutex
 	sessions   map[string]*Session // appID -> 当前活跃工作台
+	ports      map[int]bool        // 端口注册表：allocPort 即刻登记，进程 cmd.Wait 后释放（独立于 sessions，防并发/kill 后重用同端口）
 	tools      map[string]Tool
 }
 
@@ -67,7 +68,7 @@ type Session struct {
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
 func NewManager(host string, cfg *config.Store) *Manager {
-	m := &Manager{host: host, cfg: cfg, sessions: map[string]*Session{}, tools: map[string]Tool{}}
+	m := &Manager{host: host, cfg: cfg, sessions: map[string]*Session{}, ports: map[int]bool{}, tools: map[string]Tool{}}
 	m.Register(OpenCodeTool{})
 	m.Register(ClaudeTool{})
 	m.Register(CodexTool{})
@@ -152,6 +153,9 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 	workDir := ensureWorktree(repoDir, userID)
 	cmd, err := tool.Start(workDir, port, m.toolEnv(toolName))
 	if err != nil {
+		m.mu.Lock()
+		delete(m.ports, port) // Start 失败：归还预留端口，避免端口表泄漏
+		m.mu.Unlock()
 		return nil, err
 	}
 	s := &Session{
@@ -170,8 +174,9 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 			_ = m.sessionLog.FinishSession(context.Background(), s.logID, m.finishCounts(s))
 		}
 		m.mu.Lock()
+		delete(m.ports, s.Port) // 进程已退出，无条件归还端口（与是否当前 session 无关）
 		if cur, ok := m.sessions[key]; ok && cur == s {
-			delete(m.sessions, key)
+			delete(m.sessions, key) // 仅当仍是当前 session 时才从 map 移除（并发起新的不误删）
 		}
 		m.mu.Unlock()
 	}()
@@ -234,9 +239,11 @@ func sessionDeepURL(baseURL, repoDir, sessionID string) string {
 // wsHTTPClient 调工作台内置 API 的客户端(带超时, 防卡死)。
 var wsHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
-// sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计,
-// 会话较多时序列化偏慢，放宽到 15s，避免 ensureSession 误判超时→新建多余会话。
-var sessionListClient = &http.Client{Timeout: 3 * time.Second}
+// sessionListClient 列 opencode 会话用:/api/session 响应含全部会话 + token 统计。
+// 超时需覆盖两种情况：① serve 刚 listen 但 HTTP handler 未就绪（请求挂起）——由 ensureSession
+// 的重试循环兜底；② 会话累积较多时序列化偏慢——需足够长的单次超时，否则误判超时→initSession
+// 不断新建→会话越多越慢的死亡螺旋（F-3）。故给 10s（重试主要服务情形①的连接级失败）。
+var sessionListClient = &http.Client{Timeout: 10 * time.Second}
 
 // shouldForceNewForRequirement 判定是否因切换需求需强制新建 opencode 会话。
 // 换需求(旧会话绑了不同 RequirementID，或旧会话无绑定而现在选了需求)→ true，杜绝跨需求历史串台/累积。
@@ -438,13 +445,15 @@ func sanitizeID(s string) string {
 	return b.String()
 }
 
+// allocPortLocked 分配一个空闲工作台端口。端口注册表 m.ports 独立于 sessions：
+// 端口在 allocPort 时即刻登记，直到对应进程 cmd.Wait 返回（由 session 的清理 goroutine
+// 负责）才释放。这样 ① 换需求 kill 旧进程后端口不会立刻被新一轮 allocPort 重用——旧进程
+// 未死、端口未释放，直接重用会 EADDRINUSE 起不来；② 并发 Ensure（rapid 切需求触发）也
+// 抢不到同一个尚未登记完的端口。必须由持有 m.mu 的调用方调用。
 func (m *Manager) allocPortLocked() int {
-	used := map[int]bool{}
-	for _, s := range m.sessions {
-		used[s.Port] = true
-	}
 	for p := portMin; p <= portMax; p++ {
-		if !used[p] {
+		if !m.ports[p] {
+			m.ports[p] = true
 			return p
 		}
 	}

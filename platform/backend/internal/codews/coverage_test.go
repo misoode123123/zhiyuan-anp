@@ -192,10 +192,12 @@ func TestAllocPortLocked_Empty(t *testing.T) {
 }
 
 // TestAllocPortLocked_SkipUsed 已占用端口应被跳过, 返回最小可用。
+// 端口占用经端口注册表 m.ports 标记（F-1：端口生命周期独立于 sessions，
+// allocPort 即刻登记，进程 cmd.Wait 后由清理 goroutine 释放）。
 func TestAllocPortLocked_SkipUsed(t *testing.T) {
 	m := NewManager("h", nil)
-	m.sessions["a:u1"] = &Session{Port: portMin}
-	m.sessions["a:u2"] = &Session{Port: portMin + 2}
+	m.ports[portMin] = true
+	m.ports[portMin+2] = true
 	if got := m.allocPortLocked(); got != portMin+1 {
 		t.Errorf("占用 %d/%d 后应分配 %d, got %d", portMin, portMin+2, portMin+1, got)
 	}
@@ -205,7 +207,7 @@ func TestAllocPortLocked_SkipUsed(t *testing.T) {
 func TestAllocPortLocked_Full(t *testing.T) {
 	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
-		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
+		m.ports[p] = true
 	}
 	if p := m.allocPortLocked(); p != 0 {
 		t.Errorf("所有端口占用应返回 0, got %d", p)
@@ -553,7 +555,7 @@ func TestEnsure_UnknownTool(t *testing.T) {
 func TestEnsure_PortExhausted(t *testing.T) {
 	m := NewManager("h", nil)
 	for p := portMin; p <= portMax; p++ {
-		m.sessions[fmt.Sprintf("k:%d", p)] = &Session{Port: p}
+		m.ports[p] = true // 经端口注册表占满（F-1）
 	}
 	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "")
 	if err == nil {
@@ -679,14 +681,12 @@ func TestEnsureWorktree_SanitizesUserID(t *testing.T) {
 	}
 }
 
-// TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库, git 命令会失败但被 _ 吞,
-// 路径仍应正确推算（不 panic）。
+// TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库时 git worktree add 必失败；
+// ensureWorktree 兜底回退主仓 repoDir（避免 opencode chdir 到无效 .worktrees 目录起不来）。
 func TestEnsureWorktree_NoGitRepo(t *testing.T) {
 	repoDir := t.TempDir()
-	got := ensureWorktree(repoDir, "Bob")
-	want := filepath.Join(repoDir, ".worktrees", "bob")
-	if got != want {
-		t.Errorf("ensureWorktree = %q, want %q", got, want)
+	if got := ensureWorktree(repoDir, "Bob"); got != repoDir {
+		t.Errorf("非 git 仓库应回退主仓 %q, got %q", repoDir, got)
 	}
 }
 
@@ -718,5 +718,28 @@ func TestCountUserTurns(t *testing.T) {
 func TestCountUserTurns_FetchFails(t *testing.T) {
 	if got := countUserTurns(1, "ses_1"); got != 0 {
 		t.Errorf("不可达应返回 0, got %d", got)
+	}
+}
+
+// ============================================================
+// allocPort / 端口注册表（F-1：端口生命周期独立于 sessions，防并发/kill 后重用同端口）
+// ============================================================
+
+// TestAllocPort_ReservesAndFrees 连续分配得到递增端口且即刻登记；释放后最低空闲端口可再分配。
+// 守护 F-1：端口在 allocPort 时就进注册表，避免并发 Ensure 或 kill-后-未死 时抢同端口。
+func TestAllocPort_ReservesAndFrees(t *testing.T) {
+	m := NewManager("h", nil)
+	p1 := m.allocPortLocked()
+	p2 := m.allocPortLocked()
+	if p1 != portMin || p2 != portMin+1 {
+		t.Errorf("前两次应分配 %d/%d, got %d/%d", portMin, portMin+1, p1, p2)
+	}
+	if !m.ports[p1] || !m.ports[p2] {
+		t.Errorf("端口未登记为已用: ports=%v", m.ports)
+	}
+	// 模拟清理 goroutine 释放 p1（进程退出归还端口）
+	delete(m.ports, p1)
+	if p3 := m.allocPortLocked(); p3 != p1 {
+		t.Errorf("释放后应重新分配最低空闲端口 %d, got %d", p1, p3)
 	}
 }
