@@ -295,6 +295,10 @@ export default function WorkspaceFrame() {
         setDispatching(false);
         return;
       }
+      // 轮数轮转后后端回传新 deep_url → 跳 iframe 到新会话
+      if (r.data?.deep_url && r.data.deep_url !== url) {
+        setUrl(r.data.deep_url);
+      }
       setTaskMsg(
         next
           ? `✅ 已发送子任务: ${next.text}\n做完后在左侧 checklist 打勾,再点「🤖AI编码」做下一个`
