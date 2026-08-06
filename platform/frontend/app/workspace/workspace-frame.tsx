@@ -130,37 +130,42 @@ export default function WorkspaceFrame() {
     };
   }, [missingParams, psID, appID]);
 
-  // 拉起 opencode 工作台
+  // 拉起 opencode 工作台（F-2：未选需求不 boot——避免进页面空 boot 一次、认领需求又被
+  // forceNew kill+reboot 浪费 ~6s 且触发并发 Ensure；selectedReq 变化加 400ms 防抖，rapid
+  // 切需求合并为一次 Ensure，配合后端端口注册表不再并发抢端口/泄漏。）
   useEffect(() => {
-    if (missingParams) return;
+    if (missingParams || !selectedReq) return;
     let aborted = false;
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool, ...(selectedReq ? { requirement_id: selectedReq } : {}) }),
-    })
-      .then((r) => r.json())
-      .then((r) => {
-        if (aborted) return;
-        if (r.code === 0 && r.data?.url) {
-          setUrl(r.data.deep_url || r.data.url);
-          setErr("");
-        } else {
-          setErr(r.message || "启动编码工作台失败");
-        }
-        setLoading(false);
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool, requirement_id: selectedReq }),
       })
-      .catch((e) => {
-        if (!aborted) {
-          setErr(String(e));
+        .then((r) => r.json())
+        .then((r) => {
+          if (aborted) return;
+          if (r.code === 0 && r.data?.url) {
+            setUrl(r.data.deep_url || r.data.url);
+            setErr("");
+          } else {
+            setErr(r.message || "启动编码工作台失败");
+          }
           setLoading(false);
-        }
-      })
-      .finally(() => {
-        if (!aborted) setLoading(false);
-      });
+        })
+        .catch((e) => {
+          if (!aborted) {
+            setErr(String(e));
+            setLoading(false);
+          }
+        })
+        .finally(() => {
+          if (!aborted) setLoading(false);
+        });
+    }, 400);
     return () => {
       aborted = true;
+      clearTimeout(timer);
     };
   }, [appID, psID, tool, reloadKey, missingParams, selectedReq]);
 
@@ -529,7 +534,12 @@ export default function WorkspaceFrame() {
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
-          {loading && !missingParams && (
+          {!missingParams && !selectedReq && !url && (
+            <div className="p-4 text-sm text-neutral-500">
+              请先在左侧认领一个需求，将自动启动该需求的编码工作台
+            </div>
+          )}
+          {loading && !missingParams && selectedReq && !url && (
             <div className="p-4 text-sm text-neutral-500">
               启动 opencode 工作台…（首次约 3-5 秒）
             </div>
