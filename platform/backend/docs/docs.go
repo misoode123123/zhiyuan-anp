@@ -6524,6 +6524,234 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/users/me/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "compute",
+                    "grant"
+                ],
+                "summary": "当前用户可用模型",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/internal_compute.Model"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "compute",
+                    "grant"
+                ],
+                "summary": "查用户已授权模型",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户ID（usr_xxx）",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/internal_compute.Model"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "compute",
+                    "grant"
+                ],
+                "summary": "批量授权模型给用户",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户ID（usr_xxx）",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "模型ID列表",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_compute.grantReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/models/{model_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "compute",
+                    "grant"
+                ],
+                "summary": "收回用户某模型授权",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户ID（usr_xxx）",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "模型ID（cmd_xxx）",
+                        "name": "model_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -6734,6 +6962,60 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_compute.Model": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "description": "JSONB",
+                    "type": "string"
+                },
+                "context_window": {
+                    "type": "integer"
+                },
+                "cost_input": {
+                    "type": "number"
+                },
+                "cost_output": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_output": {
+                    "type": "integer"
+                },
+                "modality": {
+                    "description": "text/vision/code",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_compute.grantReq": {
+            "type": "object",
+            "properties": {
+                "model_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "internal_config.setRequest": {
             "type": "object",
             "required": [
@@ -6935,6 +7217,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "model": {
+                    "description": "可选：指定模型（空=走 route 兼容）",
+                    "type": "string"
                 }
             }
         },
@@ -7186,6 +7472,22 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 64,
                     "minLength": 1
+                }
+            }
+        },
+        "zhiyuan-anp_platform_backend_internal_httpx.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "0 表示成功，其余为业务错误码",
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                },
+                "trace_id": {
+                    "type": "string"
                 }
             }
         }

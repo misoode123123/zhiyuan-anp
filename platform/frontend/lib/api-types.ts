@@ -7020,6 +7020,203 @@ export interface paths {
         };
         trace?: never;
     };
+    "/users/me/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前用户可用模型 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"] & {
+                            data?: components["schemas"]["internal_compute.Model"][];
+                        };
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查用户已授权模型 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 用户ID（usr_xxx） */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"] & {
+                            data?: components["schemas"]["internal_compute.Model"][];
+                        };
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 批量授权模型给用户 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 用户ID（usr_xxx） */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description 模型ID列表 */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_compute.grantReq"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"] & {
+                            data?: Record<string, never>;
+                        };
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 收回用户某模型授权 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 用户ID（usr_xxx） */
+                    id: string;
+                    /** @description 模型ID（cmd_xxx） */
+                    model_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"] & {
+                            data?: Record<string, never>;
+                        };
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["zhiyuan-anp_platform_backend_internal_httpx.Response"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7103,6 +7300,25 @@ export interface components {
             risk_level?: string;
             version?: string;
         };
+        "internal_compute.Model": {
+            /** @description JSONB */
+            capabilities?: string;
+            context_window?: number;
+            cost_input?: number;
+            cost_output?: number;
+            created_at?: string;
+            display_name?: string;
+            enabled?: boolean;
+            id?: string;
+            max_output?: number;
+            /** @description text/vision/code */
+            modality?: string;
+            name?: string;
+            provider_id?: string;
+        };
+        "internal_compute.grantReq": {
+            model_ids?: string[];
+        };
         "internal_config.setRequest": {
             category?: string;
             description?: string;
@@ -7159,6 +7375,8 @@ export interface components {
             description: string;
             /** @description data URL 或 http URL */
             images?: string[];
+            /** @description 可选：指定模型（空=走 route 兼容） */
+            model?: string;
         };
         "internal_requirement.dispatchRequest": {
             model?: string;
@@ -7237,6 +7455,13 @@ export interface components {
         "internal_workspace.CreateProjectSpaceInput": {
             name: string;
             slug: string;
+        };
+        "zhiyuan-anp_platform_backend_internal_httpx.Response": {
+            /** @description 0 表示成功，其余为业务错误码 */
+            code?: number;
+            data?: unknown;
+            message?: string;
+            trace_id?: string;
         };
     };
     responses: never;

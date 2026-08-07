@@ -138,8 +138,8 @@ func (h *Handler) TeamTasks(c *gin.Context) {
 type createRequest struct {
 	ApplicationID string   `json:"application_id,omitempty"` // 可选：归属应用
 	Description   string   `json:"description" binding:"required"`
-	Images        []string `json:"images,omitempty"`   // data URL 或 http URL
-	Model         string   `json:"model,omitempty"`    // 可选：指定模型（空=走 route 兼容）
+	Images        []string `json:"images,omitempty"` // data URL 或 http URL
+	Model         string   `json:"model,omitempty"`  // 可选：指定模型（空=走 route 兼容）
 }
 
 // Create 业务描述（可带图片）→ AI 生成规格（多模态走 GLM-4V）→ 入库。
