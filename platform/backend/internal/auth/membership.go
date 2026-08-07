@@ -12,6 +12,7 @@ import (
 // Member 成员关系（用户 × 项目空间 × 角色）。
 type Member struct {
 	UserID         string `json:"user_id" db:"user_id"`
+	Name           string `json:"name" db:"name"` // JOIN user 取的用户名（派发选人/指派用 name 口径）
 	ProjectSpaceID string `json:"project_space_id" db:"project_space_id"`
 	Role           string `json:"role" db:"role"` // business/dev/rule_architect/gatekeeper/admin
 }
@@ -33,11 +34,13 @@ func (s *Store) AddMember(ctx context.Context, m *Member) error {
 	return err
 }
 
-// ListMembers 列出项目空间成员。
+// ListMembers 列出项目空间成员（含用户名 name，供派发选人）。
 func (s *Store) ListMembers(ctx context.Context, projectSpaceID string) ([]Member, error) {
 	var list []Member
 	err := s.db.SelectContext(ctx, &list,
-		`SELECT user_id, project_space_id, role FROM membership WHERE project_space_id = $1`, projectSpaceID)
+		`SELECT m.user_id, COALESCE(u.name,'') AS name, m.project_space_id, m.role
+		 FROM membership m LEFT JOIN "user" u ON u.id = m.user_id
+		 WHERE m.project_space_id = $1`, projectSpaceID)
 	return list, err
 }
 
