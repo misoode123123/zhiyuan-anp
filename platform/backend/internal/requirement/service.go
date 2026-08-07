@@ -51,6 +51,8 @@ type CreateInput struct {
 	ApplicationID  string // 可选：归属应用（应用一等公民）
 	Description    string
 	Images         []string // 图片 data URL（data:image/...;base64,...）或 http URL
+	Model          string   // 用户选的模型（空=走 route 兼容，不传 Model 到 ChatRequest）
+	UserID         string   // 授权校验用（auth.CtxUserDBID，空=兼容老调用，Gateway 不校验）
 }
 
 type specResult struct {
@@ -72,7 +74,7 @@ const specSystemPrompt = `你是资深需求分析师。把用户的业务描述
 
 // Create：AI 生成规格 → 记录用量 → 入库。
 func (s *Service) Create(ctx context.Context, in CreateInput) (*Requirement, error) {
-	spec, usage, err := s.generateSpec(ctx, in.Description, in.Images)
+	spec, usage, err := s.generateSpec(ctx, in.Description, in.Images, in.Model, in.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("生成需求规格: %w", err)
 	}
@@ -273,7 +275,8 @@ func buildCodePrompt(r *Requirement) string {
 const deployableServiceHint = ` 【交付要求】产出必须是完整可独立运行的 Web 服务（含 main 入口，不是库/模块）：用一个 HTTP 服务监听 0.0.0.0:${PORT:-8080}，实现上述核心功能，并提供 GET / 返回 200 的健康检查；自包含可运行，依赖写入 go.mod/requirements.txt/package.json 之一；无需写 Dockerfile（平台按类型自动生成）。`
 
 // generateSpec 调 AI 生成规格（优先用算力中心网关，否则 HTTP→agent-runtime）。
-func (s *Service) generateSpec(ctx context.Context, description string, images []string) (*specResult, *usageInfo, error) {
+// model/userID 透传到 ChatRequest，触发 Gateway 授权校验（Task3）；空值=兼容老调用不校验。
+func (s *Service) generateSpec(ctx context.Context, description string, images []string, model, userID string) (*specResult, *usageInfo, error) {
 	// 构造 messages
 	var userContent interface{}
 	if len(images) > 0 {
@@ -298,6 +301,8 @@ func (s *Service) generateSpec(ctx context.Context, description string, images [
 		taskType := "spec"
 		resp, err := s.gateway.Chat(ctx, compute.ChatRequest{
 			TaskType: taskType,
+			Model:    model,
+			UserID:   userID,
 			Messages: messages,
 		})
 		if err == nil {

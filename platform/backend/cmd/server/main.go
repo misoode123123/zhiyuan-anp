@@ -296,7 +296,7 @@ func main() {
 	capability.Register(v1, capabilityStore, capabilityGateway)
 	ops.Register(v1, opsStore, cfg.AgentRuntimeURL, v)
 	docs.Register(v1, store)
-	dev.Register(v1, devAgent)
+	dev.Register(v1, devAgent, computeStore) // computeStore 实现 IsGranted，作 /code 授权第二道防线
 	reqSvc := requirement.Register(v1, reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore, changeStore, authStore)
 	reqSvc.SetGateway(computeGateway)
 	conversation.Register(v1, database, reqRepo, cfg.AgentRuntimeURL)
