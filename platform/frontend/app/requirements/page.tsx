@@ -429,6 +429,15 @@ export default function RequirementsPage() {
                   >
                     {dispatching === r.id ? "派发中…" : "👤 派发给开发"}
                   </button>
+                  {r.assignee === me && r.status === "developing" && r.application_id && (
+                    <a
+                      href={`/workspace?app=${r.application_id}&ps=${psID}&req=${r.id}`}
+                      className="rounded bg-accent px-2 py-1 text-xs text-white"
+                      title="进入该需求的编码工作台，协同 AI 开发"
+                    >
+                      💻 进编码工作台
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="mt-1 text-xs text-text-muted">{r.user_story}</div>
