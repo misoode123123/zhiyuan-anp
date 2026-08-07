@@ -281,6 +281,7 @@ func main() {
 	audit.NewHandler(auditStore).Register(v1) // 操作审计查询（/operation-logs）
 	compute.Register(v1, computeStore)
 	compute.NewProviderHandler(computeStore, v).RegisterProvider(v1)
+	compute.NewGrantHandler(computeStore).Register(v1)
 	computeGateway := compute.NewGateway(computeStore)
 	compute.SetGateway(computeGateway)
 	compute.SetOpenCodeConfigPath(store.Get("opencode_config_path", "../opencode.json"))
