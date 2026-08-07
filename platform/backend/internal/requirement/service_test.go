@@ -159,27 +159,57 @@ func TestService_AssignAndRelease(t *testing.T) {
 	}
 }
 
-// TestService_Dispatch_NoCoder 编码引擎未配置→明确错误（不触碰 AI/外部）。
-func TestService_Dispatch_NoCoder(t *testing.T) {
-	repo := newTestRepo(t)
-	svc := NewService(repo, "", nil, nil, nil)
-	mustCreateRepo(t, repo, mkReq("req_d", "ps_1"))
+// fakeAppResolver 测试用 AppResolver：EnsureApp 返回固定 appID（不碰真仓库）。
+type fakeAppResolver struct{ appID string }
 
-	_, err := svc.Dispatch(context.Background(), "ps_1", "usr_test", "req_d", "/tmp/repo", "glm-5.1")
-	if err == nil || !strings.Contains(err.Error(), "编码引擎未配置") {
-		t.Fatalf("coder=nil 应返回'编码引擎未配置'，得到: %v", err)
+func (f *fakeAppResolver) ResolveApp(ctx context.Context, appID string) (string, int, error) {
+	return "/tmp/repo", 0, nil
+}
+func (f *fakeAppResolver) EnsureAppForRequirement(ctx context.Context, psID, appName string) (string, string, int, error) {
+	return f.appID, "/tmp/repo", 0, nil
+}
+
+// TestService_Dispatch_AssignsAndReturnsAppID 派发=EnsureApp+指派+返回appID，不调 coder。
+func TestService_Dispatch_AssignsAndReturnsAppID(t *testing.T) {
+	repo := newTestRepo(t)
+	apps := &fakeAppResolver{appID: "app_disp1"}
+	svc := NewService(repo, "", nil, nil, apps) // coder=nil 也不再阻断派发
+	mustCreateRepo(t, repo, mkReq("req_disp", "ps_1"))
+
+	appID, err := svc.Dispatch(context.Background(), "ps_1", "req_disp", "alice")
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if appID != "app_disp1" {
+		t.Fatalf("appID 得 %s 想 app_disp1", appID)
+	}
+	got, _ := repo.Get(context.Background(), "req_disp")
+	if got.Assignee != "alice" {
+		t.Fatalf("assignee 得 %s 想 alice", got.Assignee)
+	}
+	if got.Status != "developing" {
+		t.Fatalf("status 得 %s 想 developing", got.Status)
+	}
+}
+
+// TestService_Dispatch_NoAssignee 派发必须指派开发人员。
+func TestService_Dispatch_NoAssignee(t *testing.T) {
+	repo := newTestRepo(t)
+	svc := NewService(repo, "", nil, nil, &fakeAppResolver{appID: "app_x"})
+	mustCreateRepo(t, repo, mkReq("req_nobody", "ps_1"))
+
+	_, err := svc.Dispatch(context.Background(), "ps_1", "req_nobody", "")
+	if err == nil || !strings.Contains(err.Error(), "指派") {
+		t.Fatalf("空 assignee 应报含'指派'的错误，得到: %v", err)
 	}
 }
 
 // TestService_Dispatch_RequirementNotFound 需求不存在→明确错误。
 func TestService_Dispatch_RequirementNotFound(t *testing.T) {
 	repo := newTestRepo(t)
-	svc := NewService(repo, "", nil, nil, nil)
-	// 注意：coder 仍是 nil，所以 Dispatch 会先在 coder 校验处失败；
-	// 但若需走"读取需求"分支，可让 coder 非 nil —— 这里仅验证 nil 路径稳定返回错误，
-	// 避免在单测中引入 dev.CodingAgent 真实依赖（任务约定跳过 opencode 编码相关）。
-	_, err := svc.Dispatch(context.Background(), "ps_1", "usr_test", "req_missing", "/tmp/repo", "glm-5.1")
-	if err == nil {
-		t.Fatal("Dispatch 应返回错误")
+	svc := NewService(repo, "", nil, nil, &fakeAppResolver{appID: "app_x"})
+	_, err := svc.Dispatch(context.Background(), "ps_1", "req_missing", "alice")
+	if err == nil || !strings.Contains(err.Error(), "不存在") {
+		t.Fatalf("需求不存在应报错，得到: %v", err)
 	}
 }

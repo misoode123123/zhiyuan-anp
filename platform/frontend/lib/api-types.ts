@@ -4730,7 +4730,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 派发编码任务 */
+        /** 派发给开发人员（进编码工作台） */
         post: {
             parameters: {
                 query?: never;
@@ -4743,14 +4743,14 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description 编码参数(repo_dir?/model?) */
+            /** @description 指派人 assignee */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["internal_requirement.dispatchRequest"];
                 };
             };
             responses: {
-                /** @description task_id/status */
+                /** @description app_id/workspace_url */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -6603,9 +6603,8 @@ export interface components {
             images?: string[];
         };
         "internal_requirement.dispatchRequest": {
-            model?: string;
-            /** @description 可选；空=用需求归属应用的托管仓库 */
-            repo_dir?: string;
+            /** @description 派发给的开发人员（用户名 name） */
+            assignee: string;
         };
         "internal_rule.checkRequest": {
             content?: string;

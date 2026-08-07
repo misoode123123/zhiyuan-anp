@@ -20,6 +20,7 @@ export default function WorkspaceFrame() {
   const appID = sp.get("app") || "";
   const psID = sp.get("ps") || "";
   const tool = sp.get("tool") || "opencode";
+  const initialReq = sp.get("req") || ""; // 派发跳转带 req 时直达需求
   const missingParams = !appID || !psID;
 
   const [url, setUrl] = useState("");
@@ -64,6 +65,9 @@ export default function WorkspaceFrame() {
     []
   );
 
+  // req 参数直达：detail 载入后自动认领+启动该需求工作台（仅一次）
+  const startedRef = useRef(false);
+
   function toggleDrawer() {
     setDrawerOpen((v) => {
       const nv = !v;
@@ -102,6 +106,39 @@ export default function WorkspaceFrame() {
     }
   }, [psID, appID]);
 
+  // 认领需求 + 重置需求面板状态（原 Sidebar onStartReq 内联逻辑抽出复用）。
+  // Sidebar 点击和 req 参数直达两条路径都走这里；不内联 POST /workspace——由下方 boot
+  // useEffect（deps 含 selectedReq，400ms 防抖）在 setSelectedReq 后统一拉起一次，
+  // 避免并发双发撞 Ensure 致 opencode 进程/端口泄漏（PR#4/PR#5 修复点）。
+  const startReq = useCallback(
+    async (id: string) => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`, {
+          method: "POST",
+        }).then((rr) => rr.json());
+        if (r.code !== 0) {
+          alert(r.message || "认领失败");
+          return;
+        }
+      } catch (e) {
+        alert(String(e));
+        return;
+      }
+      setSelectedReq(id);
+      setTaskMsg("");
+      setTestMsg("");
+      setTestResults(null);
+      setSubmitMsg("");
+      try {
+        setSubtasks(JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]"));
+      } catch {
+        setSubtasks([]);
+      }
+      fetchDetail();
+    },
+    [psID, detail, fetchDetail]
+  );
+
   // 首次加载上下文(setState 在 fetch 回调里,非 effect 同步,符合 set-state-in-effect)
   useEffect(() => {
     if (missingParams) return;
@@ -129,6 +166,14 @@ export default function WorkspaceFrame() {
       aborted = true;
     };
   }, [missingParams, psID, appID]);
+
+  // 派发跳转带 req 时：detail 载入后自动认领该需求（仅一次）。startReq 仅 setSelectedReq，
+  // 由下方 boot effect 防抖拉起单次会话隔离 boot；对"已 assignee=本人"幂等（后端 repo.Assign 允许同人重复）。
+  useEffect(() => {
+    if (!initialReq || startedRef.current || !detail) return;
+    startedRef.current = true;
+    startReq(initialReq);
+  }, [initialReq, detail, startReq]);
 
   // 拉起 opencode 工作台（F-2：未选需求不 boot——避免进页面空 boot 一次、认领需求又被
   // forceNew kill+reboot 浪费 ~6s 且触发并发 Ensure；selectedReq 变化加 400ms 防抖，rapid
@@ -492,37 +537,7 @@ export default function WorkspaceFrame() {
             loading={!detail && !detailErr}
             err={detailErr}
             selectedReq={selectedReq}
-            onStartReq={async (id) => {
-              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）
-              try {
-                const r = await fetch(
-                  `${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`,
-                  { method: "POST" }
-                ).then((rr) => rr.json());
-                if (r.code !== 0) {
-                  alert(r.message || "认领失败");
-                  return;
-                }
-              } catch (e) {
-                alert(String(e));
-                return;
-              }
-              setSelectedReq(id);
-              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq），
-              // 不再内联 POST /workspace——否则与 effect 重跑并发双发，撞 Ensure 跨锁 race 致 opencode 进程/端口泄漏（I1）。
-              setTaskMsg("");
-              setTestMsg("");
-              setTestResults(null);
-              setSubmitMsg("");
-              try {
-                setSubtasks(
-                  JSON.parse(detail?.requirements?.find((q) => q.id === id)?.tasks || "[]")
-                );
-              } catch {
-                setSubtasks([]);
-              }
-              fetchDetail();
-            }}
+            onStartReq={startReq}
             onApprove={(id) => decideChange(id, "approve")}
             onReject={(id) => decideChange(id, "reject")}
             reqState={reqState}
@@ -530,7 +545,7 @@ export default function WorkspaceFrame() {
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
-          {!missingParams && !selectedReq && !url && (
+          {!missingParams && !selectedReq && !url && !initialReq && (
             <div className="p-4 text-sm text-neutral-500">
               请先在左侧认领一个需求，将自动启动该需求的编码工作台
             </div>

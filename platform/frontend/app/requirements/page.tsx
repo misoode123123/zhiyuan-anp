@@ -36,6 +36,10 @@ export default function RequirementsPage() {
   const [msg, setMsg] = useState("");
   const [dispatching, setDispatching] = useState("");
   const dispatchingRef = useRef(false); // 同步锁：堵住 dispatching state 堵不住的同 tick 连点竞态
+  type Member = { user_id: string; name: string; role: string };
+  const [members, setMembers] = useState<Member[]>([]);
+  const [selAssignee, setSelAssignee] = useState(""); // 派发给谁（name 口径）
+  const [me, setMe] = useState(""); // 当前登录用户名（name）
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -45,6 +49,10 @@ export default function RequirementsPage() {
         const def = (r.data ?? []).find((s) => s.id === "ps_default") ?? (r.data ?? [])[0];
         if (def) setPsID(def.id);
       });
+    fetch(`${API_BASE_URL}/auth/me`)
+      .then((r) => r.json())
+      .then((r: Envelope<{ user: string }>) => setMe(r.data?.user ?? ""))
+      .catch(() => {});
   }, []);
 
   const loadList = (id: string) => {
@@ -56,6 +64,10 @@ export default function RequirementsPage() {
     fetch(`${API_BASE_URL}/project-spaces/${id}/apps`)
       .then((r) => r.json())
       .then((r: Envelope<App[]>) => setApps(r.data ?? []))
+      .catch(() => {});
+    fetch(`${API_BASE_URL}/project-spaces/${id}/members`)
+      .then((r) => r.json())
+      .then((r: Envelope<Member[]>) => setMembers(r.data ?? []))
       .catch(() => {});
   };
   useEffect(() => {
@@ -134,10 +146,8 @@ export default function RequirementsPage() {
   }
 
   async function dispatch(rid: string) {
-    if (!psID || dispatching || dispatchingRef.current) return;
-    dispatchingRef.current = true; // 同步锁：堵住 dispatching state 堵不住的同 tick 连点竞态
-    const req = list.find((x) => x.id === rid) ?? (last?.id === rid ? last : null);
-    const appBound = !!req?.application_id;
+    if (!psID || !selAssignee || dispatching || dispatchingRef.current) return;
+    dispatchingRef.current = true;
     setDispatching(rid);
     setMsg("");
     try {
@@ -146,17 +156,17 @@ export default function RequirementsPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // 未归属应用时后端会自动兜底创建托管应用并绑定，派发永不阻塞。
-          body: JSON.stringify({}),
+          body: JSON.stringify({ assignee: selAssignee }),
         }
       );
       const r = await res.json();
-      if (r.data?.task_id) {
-        setMsg(
-          appBound
-            ? `⚡ 已派发编码到所属应用仓库（任务 ${r.data.task_id}）。AI 后台实现并提交 → 去「🚪 变更审批」审批`
-            : `⚡ 已派发编码并自动创建托管应用（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`
-        );
+      if (r.data?.workspace_url) {
+        if (selAssignee === me) {
+          // 派给自己：直达该需求工作台
+          window.location.href = r.data.workspace_url;
+          return;
+        }
+        setMsg(`✅ 已派发给「${selAssignee}」。其可在「研发工作台」从「派给我的」进入编码工作台`);
       } else {
         setMsg(`✗ ${r.message ?? "派发失败"}`);
       }
@@ -260,6 +270,24 @@ export default function RequirementsPage() {
             <span className="ml-2 text-xs text-text-muted">先去「应用部署」创建应用</span>
           )}
         </div>
+        <div>
+          <label className="text-xs text-text-muted">派发给（开发人员）</label>
+          <select
+            value={selAssignee}
+            onChange={(e) => setSelAssignee(e.target.value)}
+            className="ml-2 rounded-md border border-border px-2 py-1 text-sm"
+          >
+            <option value="">— 选择开发人员 —</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.name}>
+                {m.name}（{m.role}）
+              </option>
+            ))}
+          </select>
+          {members.length === 0 && (
+            <span className="ml-2 text-xs text-text-muted">该项目空间暂无成员</span>
+          )}
+        </div>
       </div>
 
       <label className="text-xs text-text-muted">业务描述</label>
@@ -347,10 +375,11 @@ export default function RequirementsPage() {
             )}
             <button
               onClick={() => dispatch(last.id)}
-              disabled={!!dispatching}
+              disabled={!!dispatching || !selAssignee}
               className="rounded-md bg-success px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              title={selAssignee ? `派发给 ${selAssignee}` : "先选开发人员"}
             >
-              {dispatching === last.id ? "派发中…" : "⚡ ② 派发编码"}
+              {dispatching === last.id ? "派发中…" : "👤 派发给开发"}
             </button>
           </div>
         </div>
@@ -394,11 +423,21 @@ export default function RequirementsPage() {
                   </button>
                   <button
                     onClick={() => dispatch(r.id)}
-                    disabled={!!dispatching}
+                    disabled={!!dispatching || !selAssignee}
                     className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
+                    title={selAssignee ? `派发给 ${selAssignee}` : "先选开发人员"}
                   >
-                    {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
+                    {dispatching === r.id ? "派发中…" : "👤 派发给开发"}
                   </button>
+                  {r.assignee === me && r.status === "developing" && r.application_id && (
+                    <a
+                      href={`/workspace?app=${r.application_id}&ps=${psID}&req=${r.id}`}
+                      className="rounded bg-accent px-2 py-1 text-xs text-white"
+                      title="进入该需求的编码工作台，协同 AI 开发"
+                    >
+                      💻 进编码工作台
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="mt-1 text-xs text-text-muted">{r.user_story}</div>

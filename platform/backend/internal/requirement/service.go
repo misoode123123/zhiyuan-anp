@@ -3,6 +3,7 @@ package requirement
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/mozillazg/go-pinyin"
 
-	"zhiyuan-anp/platform/backend/internal/codetask"
 	"zhiyuan-anp/platform/backend/internal/compute"
 	"zhiyuan-anp/platform/backend/internal/dev"
 )
@@ -159,40 +159,42 @@ func (s *Service) ListByApp(ctx context.Context, appID string) ([]Requirement, e
 	return s.repo.ListByApp(ctx, appID)
 }
 
-// Dispatch 把需求规格异步派发给编码引擎，返回异步任务。
-// repo_dir 优先级：显式传入 > 需求归属应用的托管仓库（应用一等公民：代码归属确定）。
-func (s *Service) Dispatch(ctx context.Context, projectSpaceID, userID, reqID, repoDir, model string) (*codetask.Task, error) {
-	if s.coder == nil {
-		return nil, fmt.Errorf("编码引擎未配置")
+// Dispatch 把需求派发给开发人员：确定/兜底创建托管应用 + 指派(assignee) + 进入开发通道。
+// 不再启动 AI 自动编码——由开发人员在 /workspace 人工工作台协同 AI 开发；
+// coder.Submit（自动编码）保留作未来自动化底座，此处不调用。
+// 返回 appID 供前端跳转 /workspace?app=...。
+func (s *Service) Dispatch(ctx context.Context, projectSpaceID, reqID, assignee string) (string, error) {
+	if assignee == "" {
+		return "", fmt.Errorf("请指派开发人员")
 	}
 	req, err := s.repo.Get(ctx, reqID)
-	if err != nil {
-		return nil, fmt.Errorf("读取需求: %w", err)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("读取需求: %w", err)
 	}
-	if req == nil || req.ID == "" {
-		return nil, fmt.Errorf("需求 %s 不存在", reqID)
+	if req == nil || req.ID == "" || errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("需求 %s 不存在", reqID)
 	}
-	// repo_dir 优先级：显式传入 > 需求归属应用的托管仓库 > 兜底为需求自动创建托管应用。
-	// 应用一等公民：代码位置始终确定，派发永不因"未归属应用"阻塞。
-	if repoDir == "" && s.apps != nil {
-		if req.ApplicationID == "" {
-			// 未归属应用：兜底创建托管应用（req-<短id>，ASCII 确定名）并绑定到需求。
-			appID, rd, _, e := s.apps.EnsureAppForRequirement(ctx, projectSpaceID, deriveAppName(req.Title, req.ID))
-			if e != nil {
-				return nil, fmt.Errorf("为需求兜底创建托管应用失败: %w", e)
-			}
-			req.ApplicationID = appID
-			repoDir = rd
-			_ = s.repo.SetApplication(ctx, req.ID, appID) // 绑定，后续派发/发布自动归属
-		} else if rd, _, e := s.apps.ResolveApp(ctx, req.ApplicationID); e == nil {
-			repoDir = rd
+	if s.apps == nil {
+		return "", fmt.Errorf("应用解析器未配置")
+	}
+	var appID string
+	if req.ApplicationID != "" {
+		appID = req.ApplicationID // 已归属应用：直接用
+	} else {
+		// 未归属应用：兜底创建托管应用（req-<短id> ASCII 名）并绑定到需求。
+		aid, _, _, e := s.apps.EnsureAppForRequirement(ctx, projectSpaceID, deriveAppName(req.Title, req.ID))
+		if e != nil {
+			return "", fmt.Errorf("为需求兜底创建托管应用失败: %w", e)
 		}
+		appID = aid
+		_ = s.repo.SetApplication(ctx, req.ID, appID)
 	}
-	if repoDir == "" {
-		return nil, fmt.Errorf("无法确定代码位置：需求未归属应用且自动创建托管应用失败")
+	// 指派给开发人员。repo.Assign 自带 status=developing，且本人重复指派幂等。
+	// 已被他人认领时 Assign 返回错误——派发者需先释放再改派（最小惊讶，不无声夺走）。
+	if err := s.repo.Assign(ctx, reqID, assignee); err != nil {
+		return "", err
 	}
-	_, _ = s.repo.UpdateStatus(ctx, reqID, "developing") // 需求进入开发(specified→developing→delivered)
-	return s.coder.Submit(ctx, projectSpaceID, userID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
+	return appID, nil
 }
 
 // deriveAppName 为未归属应用的需求派生一个友好的托管应用名。
