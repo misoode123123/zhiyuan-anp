@@ -21,7 +21,8 @@ jobs:
     # 本地默认连 .28 私网，GitHub-hosted runner 不可达 → 提供 service 容器 + 覆盖连接串。
     services:
       postgres:
-        image: postgres:16
+        # pgvector 镜像：000001_init 迁移需 CREATE EXTENSION vector，标准 postgres:16 无此扩展。
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: anp
           POSTGRES_PASSWORD: anp_dev_pwd
