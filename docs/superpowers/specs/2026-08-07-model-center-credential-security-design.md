@@ -1,6 +1,10 @@
-# ANP 模型中心 · 凭证安全加固设计（Phase 1）
+# ANP 模型中心 · 凭证安全加固设计（Phase 1）—— ⚠️ 已废弃
 
-> 本设计基于桌面 `模型用户.txt` 草案 + 2026-08-07 全代码核验修订。
+> **⛔ DEPRECATED（2026-08-07）**：本 spec 的「凭证 AES 加密」方向已废弃。用户选择维持凭证现状
+> （`compute_provider.api_key` 明文），改做「用户模型授权与选择」。
+> **取代本文档**：`2026-08-07-model-center-user-grant-design.md`。本文件仅作历史留存。
+>
+> ~~本设计基于桌面 `模型用户.txt` 草案 + 2026-08-07 全代码核验修订。~~
 > 原草案假设「从零造模型目录」——核验发现 `compute_provider`/`compute_model`/`compute_route`
 > 三表 + `compute.Gateway` **已是半个模型中心**，故改为**扩展 `compute_*`**，首期聚焦**凭证安全加固**。
 > 三条已确认决策：① 扩展 `compute_*`（不新建并行表）；② 首期做凭证安全加固；③ opencode 编码路径 per-user key 暂不动。
