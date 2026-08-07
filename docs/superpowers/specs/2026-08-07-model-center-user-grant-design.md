@@ -213,6 +213,7 @@ if req.Model != "" {
 - **service 签名变更 blast radius**：`requirement.Generate` / `qa.GenerateTests` 加参数，影响所有调用点（含 handler、可能的测试），需一并改。
 - **空授权兜底**：用户未被授权任何模型时，下拉空 → fallback 平台默认 route（不阻断），避免新部署后用户突然用不了 AI。
 - **渐进迁移**：老调用（空 `UserID`）不校验直接放行，保证改造期间不破坏现有流程；service 全部带上 user_id 后即全面生效。
+- **默认路由 = 管理员隐式授权**：`req.Model` 为空时 Gateway 走默认 route 转发且不做 grant 校验——这是**设计意图**（默认 route 由管理员在 `compute_route` 配置，视为对全体登录用户的隐式授权），非漏洞。grant 校验仅约束「显式指定模型」的选择（防越权使用非授权模型）；默认路由属 admin 显式背书，不在约束范围。与「空授权兜底」配合：未授权任何模型的用户也总能用平台默认模型，不会被完全锁死。
 
 ---
 
