@@ -17,6 +17,24 @@ jobs:
     defaults:
       run:
         working-directory: platform/backend
+    # 测试硬依赖 PG（testutil.TestDB 连 anp_test + 跑迁移建全表）。
+    # 本地默认连 .28 私网，GitHub-hosted runner 不可达 → 提供 service 容器 + 覆盖连接串。
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: anp
+          POSTGRES_PASSWORD: anp_dev_pwd
+          POSTGRES_DB: anp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anp -d anp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      ANP_TEST_DATABASE_URL: postgres://anp:anp_dev_pwd@localhost:5432/anp_test?sslmode=disable&connect_timeout=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
