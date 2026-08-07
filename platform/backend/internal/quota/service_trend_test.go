@@ -110,7 +110,12 @@ func TestService_UsageTrend_DBSize(t *testing.T) {
 	testutil.Truncate(t, db, "db_size_snapshot")
 
 	now := time.Now()
-	daysAgo := func(n int) time.Time { return now.AddDate(0, 0, -n) }
+	// 锚定到当日 00:00 再减天：避免 CI 在 UTC 下午/晚间运行时，now 的时分加上
+	// +2h/+10h 越过午夜，把「昨天」快照滚到「今天」，日期分组数从 3 塌成 2。
+	daysAgo := func(n int) time.Time {
+		mid := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return mid.AddDate(0, 0, -n)
+	}
 
 	// 前天 1 条；昨天 2 条（早晚各一，晚的更大）；今天 1 条
 	// 当日末值语义：昨天应取「晚」那条
