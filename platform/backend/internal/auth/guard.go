@@ -53,6 +53,11 @@ var routeOps = map[string]string{
 	"PUT /api/v1/compute/models/:id":        "config.manage",
 	"DELETE /api/v1/compute/models/:id":     "config.manage",
 	"PUT /api/v1/compute/routes/:task_type": "config.manage",
+	// 用户模型授权管理（admin 视角）：管理员视角的查/授/收均需 config.manage。
+	// GET /users/me/models 不登记 → 任意登录用户放行（仅需登录态，前端模型下拉用）。
+	"GET /api/v1/users/:id/models":              "config.manage",
+	"POST /api/v1/users/:id/models":             "config.manage",
+	"DELETE /api/v1/users/:id/models/:model_id": "config.manage",
 	// 日志标记处理（admin）
 	"PATCH /api/v1/logs/:id/resolve": "config.manage",
 	// 部署权限分离（env 敏感）：占位 op 不在 OpRoles 故 AutoRequire 放行，

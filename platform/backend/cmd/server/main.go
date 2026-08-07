@@ -281,6 +281,7 @@ func main() {
 	audit.NewHandler(auditStore).Register(v1) // 操作审计查询（/operation-logs）
 	compute.Register(v1, computeStore)
 	compute.NewProviderHandler(computeStore, v).RegisterProvider(v1)
+	compute.NewGrantHandler(computeStore).Register(v1)
 	computeGateway := compute.NewGateway(computeStore)
 	compute.SetGateway(computeGateway)
 	compute.SetOpenCodeConfigPath(store.Get("opencode_config_path", "../opencode.json"))
@@ -295,7 +296,7 @@ func main() {
 	capability.Register(v1, capabilityStore, capabilityGateway)
 	ops.Register(v1, opsStore, cfg.AgentRuntimeURL, v)
 	docs.Register(v1, store)
-	dev.Register(v1, devAgent)
+	dev.Register(v1, devAgent, computeStore) // computeStore 实现 IsGranted，作 /code 授权第二道防线
 	reqSvc := requirement.Register(v1, reqRepo, cfg.AgentRuntimeURL, devAgent, computeStore, appDeployStore, changeStore, authStore)
 	reqSvc.SetGateway(computeGateway)
 	conversation.Register(v1, database, reqRepo, cfg.AgentRuntimeURL)

@@ -1,22 +1,36 @@
 package dev
 
 import (
+	"context"
+	"log"
+
 	"github.com/gin-gonic/gin"
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/httpx"
 )
 
+// computeGrantChecker 授权校验接口（局部，鸭子类型解耦对 compute.Store 的直接依赖）。
+// *compute.Store 实现了 IsGranted，满足此接口；测试可传 fake。
+type computeGrantChecker interface {
+	IsGranted(ctx context.Context, userID, modelID string) (bool, error)
+}
+
 // Handler 研发工作台 HTTP 接口（异步编码）。
 type Handler struct {
 	agent *CodingAgent
+	grant computeGrantChecker // 可为 nil（则跳过 /code 授权校验，兼容无 computeStore 的场景）
 }
 
-// NewHandler 构造 Handler。
-func NewHandler(agent *CodingAgent) *Handler { return &Handler{agent: agent} }
+// NewHandler 构造 Handler。grant 可为 nil（跳过 /code 授权校验）。
+func NewHandler(agent *CodingAgent, grant computeGrantChecker) *Handler {
+	return &Handler{agent: agent, grant: grant}
+}
 
 // Register 模块级装配：内部 new + Register，供 main 直接调用。
-func Register(r gin.IRouter, agent *CodingAgent) { NewHandler(agent).Register(r) }
+func Register(r gin.IRouter, agent *CodingAgent, grant computeGrantChecker) {
+	NewHandler(agent, grant).Register(r)
+}
 
 // Register 注册路由。
 func (h *Handler) Register(r gin.IRouter) {
@@ -48,6 +62,23 @@ func (h *Handler) Code(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
 		return
+	}
+	// 授权校验（第二道防线）：/code 不经 Gateway，故在派发前单独校验。
+	// req.Model 非空且 grant 可用时，校验当前用户是否被授权该模型；越权即拒 403，不 fallback。
+	// Model 空=走默认路由（兼容旧调用）；grant nil=未注入 computeStore（跳过，兼容）。
+	if req.Model != "" && h.grant != nil {
+		uid := c.GetString(auth.CtxUserDBID)
+		ok, err := h.grant.IsGranted(c.Request.Context(), uid, req.Model)
+		if err != nil {
+			// fail-closed：DB 校验出错时保守按未授权拒绝（err 时 ok=false → 落入 !ok 分支返 403）。
+			// 记 warn 供 ops 可见（对齐 gateway route.go，用 stdlib log；注入 zap 超出本修复范围）。
+			// 日志含 userID+model，不含 key。
+			log.Printf("warn: IsGranted 校验出错 user=%s model=%s: %v", uid, req.Model, err)
+		}
+		if !ok {
+			httpx.Err(c, 403, 40302, "无权使用该模型")
+			return
+		}
 	}
 	psID := c.GetString("project_space_id")
 	t, err := h.agent.Submit(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), "code", "", req.RepoDir, req.Prompt, req.Model)

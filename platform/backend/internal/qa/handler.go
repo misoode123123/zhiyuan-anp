@@ -67,7 +67,15 @@ func (h *Handler) Generate(c *gin.Context) {
 		httpx.Err(c, 404, 40401, "需求不存在")
 		return
 	}
-	cases, err := h.svc.GenerateTests(c.Request.Context(), psID, rid, req.Title, req.AcceptanceCriteria)
+	// model 可选：前端 body 指定则透传到 Gateway 授权校验，空=走 route 兼容。
+	var in struct {
+		Model string `json:"model,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	cases, err := h.svc.GenerateTests(c.Request.Context(), psID, rid, req.Title, req.AcceptanceCriteria, in.Model, c.GetString(auth.CtxUserDBID))
 	if err != nil {
 		httpx.Err(c, 500, 50008, err.Error())
 		return

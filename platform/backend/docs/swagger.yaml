@@ -145,6 +145,42 @@ definitions:
     - code
     - name
     type: object
+  internal_compute.Model:
+    properties:
+      capabilities:
+        description: JSONB
+        type: string
+      context_window:
+        type: integer
+      cost_input:
+        type: number
+      cost_output:
+        type: number
+      created_at:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      max_output:
+        type: integer
+      modality:
+        description: text/vision/code
+        type: string
+      name:
+        type: string
+      provider_id:
+        type: string
+    type: object
+  internal_compute.grantReq:
+    properties:
+      model_ids:
+        items:
+          type: string
+        type: array
+    type: object
   internal_config.setRequest:
     properties:
       category:
@@ -280,6 +316,9 @@ definitions:
         items:
           type: string
         type: array
+      model:
+        description: 可选：指定模型（空=走 route 兼容）
+        type: string
     required:
     - description
     type: object
@@ -452,6 +491,17 @@ definitions:
     required:
     - name
     - slug
+    type: object
+  zhiyuan-anp_platform_backend_internal_httpx.Response:
+    properties:
+      code:
+        description: 0 表示成功，其余为业务错误码
+        type: integer
+      data: {}
+      message:
+        type: string
+      trace_id:
+        type: string
     type: object
 info:
   contact: {}
@@ -4649,6 +4699,140 @@ paths:
       summary: 聚合规范（分层合并）
       tags:
       - standard
+  /users/{id}/models:
+    get:
+      parameters:
+      - description: 用户ID（usr_xxx）
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_compute.Model'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+      security:
+      - BearerAuth: []
+      summary: 查用户已授权模型
+      tags:
+      - compute
+      - grant
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID（usr_xxx）
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 模型ID列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_compute.grantReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+      security:
+      - BearerAuth: []
+      summary: 批量授权模型给用户
+      tags:
+      - compute
+      - grant
+  /users/{id}/models/{model_id}:
+    delete:
+      parameters:
+      - description: 用户ID（usr_xxx）
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 模型ID（cmd_xxx）
+        in: path
+        name: model_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+      security:
+      - BearerAuth: []
+      summary: 收回用户某模型授权
+      tags:
+      - compute
+      - grant
+  /users/me/models:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_compute.Model'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/zhiyuan-anp_platform_backend_internal_httpx.Response'
+      security:
+      - BearerAuth: []
+      summary: 当前用户可用模型
+      tags:
+      - compute
+      - grant
 securityDefinitions:
   BearerAuth:
     in: header

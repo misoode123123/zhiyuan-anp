@@ -58,7 +58,8 @@ type caseDraft struct {
 }
 
 // GenerateTests 把需求验收标准转为测试用例并入库（含可执行 HTTP 检查）。
-func (s *Service) GenerateTests(ctx context.Context, projectSpaceID, requirementID, title, acceptanceCriteria string) ([]TestCase, error) {
+// model/userID 透传到 ChatRequest 触发 Gateway 授权校验（Task3）；空值=兼容老调用不校验。
+func (s *Service) GenerateTests(ctx context.Context, projectSpaceID, requirementID, title, acceptanceCriteria, model, userID string) ([]TestCase, error) {
 	userMsg := "需求：" + title + "。验收标准：" + acceptanceCriteria
 	messages := []map[string]interface{}{
 		{"role": "system", "content": testSystemPrompt},
@@ -70,6 +71,8 @@ func (s *Service) GenerateTests(ctx context.Context, projectSpaceID, requirement
 	if s.gateway != nil {
 		resp, err := s.gateway.Chat(ctx, compute.ChatRequest{
 			TaskType: "test",
+			Model:    model,
+			UserID:   userID,
 			Messages: messages,
 		})
 		if err == nil {
