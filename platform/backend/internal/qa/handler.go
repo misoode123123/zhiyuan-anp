@@ -71,7 +71,10 @@ func (h *Handler) Generate(c *gin.Context) {
 	var in struct {
 		Model string `json:"model,omitempty"`
 	}
-	_ = c.ShouldBindJSON(&in)
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
 	cases, err := h.svc.GenerateTests(c.Request.Context(), psID, rid, req.Title, req.AcceptanceCriteria, in.Model, c.GetString(auth.CtxUserDBID))
 	if err != nil {
 		httpx.Err(c, 500, 50008, err.Error())

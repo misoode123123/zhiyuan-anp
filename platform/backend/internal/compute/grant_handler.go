@@ -69,11 +69,12 @@ func (h *GrantHandler) grant(c *gin.Context) {
 		return
 	}
 	grantedBy := c.GetString(auth.CtxUserDBID)
-	if err := h.store.GrantModels(c.Request.Context(), c.Param("id"), body.ModelIDs, grantedBy); err != nil {
+	granted, err := h.store.GrantModels(c.Request.Context(), c.Param("id"), body.ModelIDs, grantedBy)
+	if err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
 		return
 	}
-	httpx.OK(c, gin.H{"granted": len(body.ModelIDs)})
+	httpx.OK(c, gin.H{"granted": granted})
 }
 
 // revoke 收回单个授权（管理员）。

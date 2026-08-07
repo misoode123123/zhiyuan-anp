@@ -123,7 +123,7 @@ func TestGrantHandler_LifecycleAndMineModels(t *testing.T) {
 	}
 
 	// 6) me/models：当前用户=u_test（中间件注入），授权给 u_test 后应命中
-	if err := s.GrantModels(ctx, "u_test", []string{mdl.ID}, "admin"); err != nil {
+	if _, err := s.GrantModels(ctx, "u_test", []string{mdl.ID}, "admin"); err != nil {
 		t.Fatalf("GrantModels(u_test): %v", err)
 	}
 	_, resp = doJSON(t, r, "GET", "/users/me/models", nil)

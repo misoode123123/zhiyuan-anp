@@ -2,6 +2,7 @@ package dev
 
 import (
 	"context"
+	"log"
 
 	"github.com/gin-gonic/gin"
 
@@ -67,7 +68,14 @@ func (h *Handler) Code(c *gin.Context) {
 	// Model 空=走默认路由（兼容旧调用）；grant nil=未注入 computeStore（跳过，兼容）。
 	if req.Model != "" && h.grant != nil {
 		uid := c.GetString(auth.CtxUserDBID)
-		if ok, _ := h.grant.IsGranted(c.Request.Context(), uid, req.Model); !ok {
+		ok, err := h.grant.IsGranted(c.Request.Context(), uid, req.Model)
+		if err != nil {
+			// fail-closed：DB 校验出错时保守按未授权拒绝（err 时 ok=false → 落入 !ok 分支返 403）。
+			// 记 warn 供 ops 可见（对齐 gateway route.go，用 stdlib log；注入 zap 超出本修复范围）。
+			// 日志含 userID+model，不含 key。
+			log.Printf("warn: IsGranted 校验出错 user=%s model=%s: %v", uid, req.Model, err)
+		}
+		if !ok {
 			httpx.Err(c, 403, 40302, "无权使用该模型")
 			return
 		}

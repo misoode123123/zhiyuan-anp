@@ -43,8 +43,10 @@ func TestGrantModels_AndListRevokeIsGranted(t *testing.T) {
 	}
 
 	// 授权
-	if err := s.GrantModels(ctx, "u1", []string{mdl.ID}, "admin"); err != nil {
+	if n, err := s.GrantModels(ctx, "u1", []string{mdl.ID}, "admin"); err != nil {
 		t.Fatalf("GrantModels: %v", err)
+	} else if n != 1 {
+		t.Fatalf("首次授权应新增 1 行，got %d", n)
 	}
 
 	// 授权后：IsGranted=true
@@ -65,9 +67,11 @@ func TestGrantModels_AndListRevokeIsGranted(t *testing.T) {
 		t.Fatalf("ListGrants 期望 1 个 %s，got %+v", mdl.ID, list)
 	}
 
-	// 重复授权幂等（ON CONFLICT DO NOTHING）
-	if err := s.GrantModels(ctx, "u1", []string{mdl.ID}, "admin"); err != nil {
+	// 重复授权幂等（ON CONFLICT DO NOTHING）：返回新增 0 行（已存在的 model 不计）
+	if n, err := s.GrantModels(ctx, "u1", []string{mdl.ID}, "admin"); err != nil {
 		t.Fatalf("重复授权应幂等: %v", err)
+	} else if n != 0 {
+		t.Fatalf("重复授权应新增 0 行（幂等），got %d", n)
 	}
 	list, _ = s.ListGrants(ctx, "u1")
 	if len(list) != 1 {
@@ -106,7 +110,7 @@ func TestGrantModels_CascadeOnDeleteModel(t *testing.T) {
 	if err := s.CreateModel(ctx, mdl); err != nil {
 		t.Fatalf("CreateModel: %v", err)
 	}
-	if err := s.GrantModels(ctx, "u2", []string{mdl.ID}, "admin"); err != nil {
+	if _, err := s.GrantModels(ctx, "u2", []string{mdl.ID}, "admin"); err != nil {
 		t.Fatalf("GrantModels: %v", err)
 	}
 
