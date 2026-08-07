@@ -9,17 +9,17 @@ import (
 
 // ServerMetric 单次服务器指标采样。
 type ServerMetric struct {
-	NodeID     string    `json:"node_id" db:"node_id"`
-	CapturedAt time.Time `json:"captured_at" db:"captured_at"`
-	CPUPercent float64   `json:"cpu_percent" db:"cpu_percent"`
-	MemTotal   int64     `json:"mem_total" db:"mem_total"`
-	MemUsed    int64     `json:"mem_used" db:"mem_used"`
-	DiskTotal  int64     `json:"disk_total" db:"disk_total"`
-	DiskUsed   int64     `json:"disk_used" db:"disk_used"`
-	LoadAvg    float64   `json:"load_avg,omitempty" db:"load_avg"`
-	Uptime     string    `json:"uptime,omitempty" db:"uptime"`
-	AppCount   int       `json:"app_count" db:"app_count"`
-	ContainerCount int `json:"container_count,omitempty" db:"container_count"`
+	NodeID         string    `json:"node_id" db:"node_id"`
+	CapturedAt     time.Time `json:"captured_at" db:"captured_at"`
+	CPUPercent     float64   `json:"cpu_percent" db:"cpu_percent"`
+	MemTotal       int64     `json:"mem_total" db:"mem_total"`
+	MemUsed        int64     `json:"mem_used" db:"mem_used"`
+	DiskTotal      int64     `json:"disk_total" db:"disk_total"`
+	DiskUsed       int64     `json:"disk_used" db:"disk_used"`
+	LoadAvg        float64   `json:"load_avg,omitempty" db:"load_avg"`
+	Uptime         string    `json:"uptime,omitempty" db:"uptime"`
+	AppCount       int       `json:"app_count" db:"app_count"`
+	ContainerCount int       `json:"container_count,omitempty" db:"container_count"`
 }
 
 // MetricStore 服务器指标持久化（appdeploy_server_metric 表）。

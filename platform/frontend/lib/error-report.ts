@@ -4,7 +4,7 @@
 const LOG_ENDPOINT = "/api/v1/logs";
 
 // 批量缓冲（避免高频错误刷爆后端）
-let buffer: Array<{
+const buffer: Array<{
   level: string;
   source: string;
   message: string;

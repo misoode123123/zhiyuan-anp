@@ -51,16 +51,16 @@ type Handler struct {
 	quota       AppQuotaChecker         // 应用数配额检查；nil=不强制
 	nodeStore   *NodeStore              // 部署节点（多机）；nil=仅本地
 	monitor     *ServerMonitor          // 服务器指标采集（Task 8 加；nil=未启用，Task 9 注入）
-	metricStore  *MetricStore            // 服务器指标持久化（Task 8 加；nil=未启用，Task 9 注入）
+	metricStore *MetricStore            // 服务器指标持久化（Task 8 加；nil=未启用，Task 9 注入）
 	checkFn     checkFunc               // 可 mock 的核对函数(默认 checkRequirement);测试可注入
 	// 非 web 形态构建产物链路（Task 10）；nil=未装配（BuildArtifacts/ListArtifacts/DownloadArtifact 报"功能未配置"）。
 	// Task 13 在 main.go 注入真实值；在此之前 factory 调用处传 nil 保证编译。
-	buildCfgStore   *BuildConfigStore  // 构建配置（desktop/mobile/cli 按形态查镜像/命令）
-	artifactStore   *ArtifactStore     // 产物记录读写（appdeploy_artifact）
-	artifactStorage ArtifactStorage    // 产物实体存储（本地降级 / MinIO）
-	scaffoldsBase   string             // 脚手架种子根目录（建非 web 应用时克隆到 RepoDir；空=不克隆）
-	adaptSubmitter AdaptSubmitter      // 导入后 AI 编码适配触发器（main.go 经 SetAdaptSubmitter 注入）；nil=不自动适配
-	mwReconciler  MWReconciler         // 中间件依赖供给（部署前注入 REDIS_ADDR 等）；nil=不注入
+	buildCfgStore   *BuildConfigStore // 构建配置（desktop/mobile/cli 按形态查镜像/命令）
+	artifactStore   *ArtifactStore    // 产物记录读写（appdeploy_artifact）
+	artifactStorage ArtifactStorage   // 产物实体存储（本地降级 / MinIO）
+	scaffoldsBase   string            // 脚手架种子根目录（建非 web 应用时克隆到 RepoDir；空=不克隆）
+	adaptSubmitter  AdaptSubmitter    // 导入后 AI 编码适配触发器（main.go 经 SetAdaptSubmitter 注入）；nil=不自动适配
+	mwReconciler    MWReconciler      // 中间件依赖供给（部署前注入 REDIS_ADDR 等）；nil=不注入
 }
 
 // AdaptSubmitter 触发 AI 编码适配（导入后让 opencode 把应用适配成可部署）。
@@ -76,14 +76,14 @@ func (h *Handler) SetAdaptSubmitter(a AdaptSubmitter) { h.adaptSubmitter = a }
 // 删 app 时回收 dedicated 中间件容器）。由 mwsupply.Reconciler 实现（经 main.go SetMwReconciler 注入，避免 appdeploy→mwsupply 依赖）。
 type MWReconciler interface {
 	Reconcile(ctx context.Context, appID, psID string) error
-	Cleanup(ctx context.Context, appID string) error                                                      // P3：docker rm dedicated 容器（best-effort）
-	SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error // P6：导入时 .anp/deps.yaml → DB declared binding
-	ListDeps(ctx context.Context, appID string) ([]DepDeclaration, error)    // P6：读 app 的依赖声明（binding → DTO）
-	DepsCatalog(ctx context.Context, psID string) (DepsCatalog, error)       // P6：读勾选器选项（kinds/strategies/instances）
-	SetDeps(ctx context.Context, appID, psID string, decls []DepDeclaration) error // P6：整体替换声明（diff 释放/声明）
+	Cleanup(ctx context.Context, appID string) error                                          // P3：docker rm dedicated 容器（best-effort）
+	SeedFromManifest(ctx context.Context, appID, psID, repoDir string) error                  // P6：导入时 .anp/deps.yaml → DB declared binding
+	ListDeps(ctx context.Context, appID string) ([]DepDeclaration, error)                     // P6：读 app 的依赖声明（binding → DTO）
+	DepsCatalog(ctx context.Context, psID string) (DepsCatalog, error)                        // P6：读勾选器选项（kinds/strategies/instances）
+	SetDeps(ctx context.Context, appID, psID string, decls []DepDeclaration) error            // P6：整体替换声明（diff 释放/声明）
 	RegisterBindExisting(ctx context.Context, psID string, m MWInstance) (*MWInstance, error) // 注册已有中间件实例(spec ②)
 	ListBindExisting(ctx context.Context, psID string) ([]MWInstance, error)                  // 列已注册实例
-	DeleteInstance(ctx context.Context, id string) error                                       // 删实例
+	DeleteInstance(ctx context.Context, id string) error                                      // 删实例
 }
 
 // SetMwReconciler 注入中间件供给器（main.go 在 Register 后调）。
@@ -129,7 +129,7 @@ func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *ch
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps", h.List)
 	r.POST("/project-spaces/:id/apps", h.Create)
-	r.POST("/project-spaces/:id/import/apps", h.Import) // 导入已有项目（git/dir）；放 /import/apps 避开 /apps/:aid 冲突
+	r.POST("/project-spaces/:id/import/apps", h.Import)              // 导入已有项目（git/dir）；放 /import/apps 避开 /apps/:aid 冲突
 	r.POST("/project-spaces/:id/import/apps/upload", h.ImportUpload) // 本机 zip 上传导入
 	r.GET("/project-spaces/:id/apps/:aid/detail", h.Detail)
 	r.POST("/project-spaces/:id/apps/:aid/deploy", h.Deploy)   // 部署到 test（默认）或指定 env
@@ -146,36 +146,36 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/env", h.ListEnv)                           // 应用运行时环境变量
 	r.POST("/project-spaces/:id/apps/:aid/env", h.UpsertEnv)
 	r.DELETE("/project-spaces/:id/apps/:aid/env/:key", h.DeleteEnv)
-	r.GET("/project-spaces/:id/apps/:aid/deps", h.GetDeps)   // P6：依赖声明列表
-	r.PUT("/project-spaces/:id/apps/:aid/deps", h.PutDeps)   // P6：整体替换依赖声明
+	r.GET("/project-spaces/:id/apps/:aid/deps", h.GetDeps)                // P6：依赖声明列表
+	r.PUT("/project-spaces/:id/apps/:aid/deps", h.PutDeps)                // P6：整体替换依赖声明
 	r.PUT("/project-spaces/:id/apps/:aid/network-mode", h.PutNetworkMode) // host 网络门禁：设网络模式（需 gatekeeper/admin）
-	r.GET("/project-spaces/:id/deps/catalog", h.GetDepsCatalog) // P6：依赖目录（勾选器选项）
-	r.POST("/project-spaces/:id/mw-instances", h.RegisterMwInstance)   // 注册已有中间件实例(spec ②)
-	r.GET("/project-spaces/:id/mw-instances", h.ListMwInstances)       // 列已注册实例
+	r.GET("/project-spaces/:id/deps/catalog", h.GetDepsCatalog)           // P6：依赖目录（勾选器选项）
+	r.POST("/project-spaces/:id/mw-instances", h.RegisterMwInstance)      // 注册已有中间件实例(spec ②)
+	r.GET("/project-spaces/:id/mw-instances", h.ListMwInstances)          // 列已注册实例
 	r.DELETE("/project-spaces/:id/mw-instances/:iid", h.DeleteMwInstance)
 	r.GET("/project-spaces/:id/apps/:aid/stats", h.Stats) // 资源占用 + 健康探测
 	r.GET("/project-spaces/:id/apps/:aid/logs", h.Logs)
-	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs) // 应用 repo 文档(README/.md)
-	r.GET("/project-spaces/:id/apps/:aid/repo-file", h.RepoFile) // 读 repo 文件内容
-	r.GET("/project-spaces/:id/apps/:aid/git-status", h.GitStatus)           // 编码工作台 git 变更：工作区改动 + 提交历史
-	r.GET("/project-spaces/:id/apps/:aid/file-diff", h.FileDiff)             // 单文件行级 diff（工作区 / 指定提交）
-	r.GET("/project-spaces/:id/apps/:aid/commit-files", h.CommitFilesList)   // 某次提交改了哪些文件
-	r.POST("/project-spaces/:id/apps/:aid/commit", h.CommitWorktree)         // 仅提交 dev-<user> worktree（不部署）
+	r.GET("/project-spaces/:id/apps/:aid/repo-docs", h.RepoDocs)           // 应用 repo 文档(README/.md)
+	r.GET("/project-spaces/:id/apps/:aid/repo-file", h.RepoFile)           // 读 repo 文件内容
+	r.GET("/project-spaces/:id/apps/:aid/git-status", h.GitStatus)         // 编码工作台 git 变更：工作区改动 + 提交历史
+	r.GET("/project-spaces/:id/apps/:aid/file-diff", h.FileDiff)           // 单文件行级 diff（工作区 / 指定提交）
+	r.GET("/project-spaces/:id/apps/:aid/commit-files", h.CommitFilesList) // 某次提交改了哪些文件
+	r.POST("/project-spaces/:id/apps/:aid/commit", h.CommitWorktree)       // 仅提交 dev-<user> worktree（不部署）
 
 	// 非 web 应用构建产物链路（Task 10）：触发构建 / 列产物 / 下载产物。
-	r.POST("/project-spaces/:id/apps/:aid/build-artifacts", h.BuildArtifacts)                 // 触发非 web 构建
-	r.GET("/project-spaces/:id/apps/:aid/artifacts", h.ListArtifacts)                         // 列产物
-	r.GET("/project-spaces/:id/apps/:aid/artifacts/:artid/download", h.DownloadArtifact)      // 下载产物
+	r.POST("/project-spaces/:id/apps/:aid/build-artifacts", h.BuildArtifacts)            // 触发非 web 构建
+	r.GET("/project-spaces/:id/apps/:aid/artifacts", h.ListArtifacts)                    // 列产物
+	r.GET("/project-spaces/:id/apps/:aid/artifacts/:artid/download", h.DownloadArtifact) // 下载产物
 
 	// 部署节点管理（多机部署）
 	r.GET("/deploy-nodes", h.ListNodes)
 	r.POST("/deploy-nodes", h.CreateNode)
 	r.PUT("/deploy-nodes/:nid", h.UpdateNode)
 	r.DELETE("/deploy-nodes/:nid", h.DeleteNode)
-	r.POST("/deploy-nodes/:nid/test", h.TestNode) // 测试连通性
+	r.POST("/deploy-nodes/:nid/test", h.TestNode)           // 测试连通性
 	r.POST("/deploy-nodes/:nid/provision", h.ProvisionNode) // 异步搭建环境（SSH/WinRM 节点）
-	r.POST("/deploy-nodes/:nid/collect", h.CollectNode)    // 手动触发一次指标采集
-	r.GET("/deploy-nodes/:nid/metrics", h.NodeMetrics)     // 历史指标趋势
+	r.POST("/deploy-nodes/:nid/collect", h.CollectNode)     // 手动触发一次指标采集
+	r.GET("/deploy-nodes/:nid/metrics", h.NodeMetrics)      // 历史指标趋势
 }
 
 // List 应用列表，附带各环境实例（前端展示 test/prod URL）。
@@ -1932,11 +1932,6 @@ func (h *Handler) deployNative(ctx context.Context, a *Application, ins *AppInst
 	return nil
 }
 
-// syncOverviewAll 所有环境都同步实例态到 application 概览。
-func (h *Handler) syncOverviewAll(ctx context.Context, a *Application, env string) {
-	h.syncOverviewIfProd(ctx, a, env)
-}
-
 // syncOverviewIfProd 仅 prod 环境把实例态同步到 application 概览（列表显示正式上线态）。
 // test 部署不改变应用概览——概览始终代表"正式状态"。
 func (h *Handler) syncOverviewIfProd(ctx context.Context, a *Application, env string) {
@@ -2277,9 +2272,9 @@ func (h *Handler) ListNodes(c *gin.Context) {
 	// 附带每节点应用数 + 最新指标（metricStore 为 nil 时跳过指标填充）
 	type nodeWithCount struct {
 		DeployNode
-		AppCount     int            `json:"app_count"`
-		LatestMetric *ServerMetric  `json:"latest_metric,omitempty"`
-		HasOSCreds   bool           `json:"has_os_creds"`
+		AppCount     int           `json:"app_count"`
+		LatestMetric *ServerMetric `json:"latest_metric,omitempty"`
+		HasOSCreds   bool          `json:"has_os_creds"`
 	}
 	out := []nodeWithCount{}
 	for _, n := range list {

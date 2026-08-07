@@ -1158,6 +1158,15 @@
                 "summary": "创建应用",
                 "parameters": [
                     {
+                        "description": "应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：\nweb/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。",
+                        "name": "app_kind",
+                        "in": "path",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
                         "description": "managed(默认,A类) / external(B类纳管外部应用)",
                         "name": "deploy_mode",
                         "in": "path",
@@ -1210,7 +1219,7 @@
                             }
                         }
                     },
-                    "description": "应用(name+repo_dir+internal_port)",
+                    "description": "应用(name+repo_dir+internal_port+deploy_mode+app_kind+external_url)",
                     "required": true
                 },
                 "responses": {
@@ -1306,6 +1315,340 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/artifacts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "应用产物列表",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "产物列表",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "功能未配置/加载失败",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/artifacts/{artid}/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "下载应用产物",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "产物ID",
+                        "name": "artid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "产物文件",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "302": {
+                        "description": "跳转到预签名下载 URL",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "产物不存在",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "功能未配置/产物文件缺失",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/build-artifacts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "构建应用产物",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "构建结果(built 数量 + 版本号)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "web/service 应用不构建产物",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "功能未配置/构建失败",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/commit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "提交工作台改动",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "{message?}"
+                },
+                "responses": {
+                    "200": {
+                        "description": "{sha,message}",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/commit-files": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "某次提交改动文件列表",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "提交 sha",
+                        "name": "sha",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{sha,files}",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1441,6 +1784,143 @@
                     },
                     "400": {
                         "description": "需提供 sha",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/deps": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "应用依赖声明列表",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "依赖声明列表",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "应用不存在",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "替换应用依赖声明",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/internal_appdeploy.DepDeclaration"
+                                }
+                            }
+                        }
+                    },
+                    "description": "依赖声明数组",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "替换结果",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "kind/strategy 非法或重复",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1709,6 +2189,115 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/file-diff": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "工作台单文件 diff",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "文件路径",
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "提交 sha（空=工作区 diff）",
+                        "name": "sha",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{path,sha,diff,truncated}",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/apps/{aid}/git-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "工作台 git 变更",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "应用ID",
+                        "name": "aid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{worktree_exists,branch,changes,commits}",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3693,6 +4282,43 @@
                     },
                     "500": {
                         "description": "内部错误",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/project-spaces/{id}/deps/catalog": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "依赖目录（勾选器选项）",
+                "parameters": [
+                    {
+                        "description": "项目空间ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "依赖目录",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7047,12 +7673,45 @@
             }
         },
         "schemas": {
+            "internal_appdeploy.DepDeclaration": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "description": "failed 时的 last_error",
+                        "type": "string"
+                    },
+                    "instance": {
+                        "description": "供给的 service_instance_id（bound 时）",
+                        "type": "string"
+                    },
+                    "kind": {
+                        "description": "redis / milvus",
+                        "type": "string"
+                    },
+                    "status": {
+                        "description": "declared / bound / failed",
+                        "type": "string"
+                    },
+                    "strategy": {
+                        "description": "bind_existing / shared / dedicated",
+                        "type": "string"
+                    },
+                    "token": {
+                        "description": "隔离 token（shared：db号/前缀）",
+                        "type": "string"
+                    }
+                }
+            },
             "internal_appdeploy.createBody": {
                 "type": "object",
                 "required": [
                     "name"
                 ],
                 "properties": {
+                    "app_kind": {
+                        "description": "应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：\nweb/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。",
+                        "type": "string"
+                    },
                     "deploy_mode": {
                         "description": "managed(默认,A类) / external(B类纳管外部应用)",
                         "type": "string"

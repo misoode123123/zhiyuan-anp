@@ -15,9 +15,9 @@ import (
 type LogEntry struct {
 	ID             int64     `json:"id" db:"id"`
 	Timestamp      time.Time `json:"timestamp" db:"timestamp"`
-	ActorType      string    `json:"actor_type" db:"actor_type"`           // user / agent / system
-	ActorID        string    `json:"actor_id" db:"actor_id"`               // 用户 id / agent id / "system"
-	Action         string    `json:"action" db:"action"`                   // app.deploy / change.approve / ...
+	ActorType      string    `json:"actor_type" db:"actor_type"` // user / agent / system
+	ActorID        string    `json:"actor_id" db:"actor_id"`     // 用户 id / agent id / "system"
+	Action         string    `json:"action" db:"action"`         // app.deploy / change.approve / ...
 	ResourceType   string    `json:"resource_type,omitempty" db:"resource_type"`
 	ResourceID     string    `json:"resource_id,omitempty" db:"resource_id"`
 	ProjectSpaceID string    `json:"project_space_id,omitempty" db:"project_space_id"`

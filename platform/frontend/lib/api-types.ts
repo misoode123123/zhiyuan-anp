@@ -1232,10 +1232,13 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
+                    /**
+                     * @description 应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：
+                     *     web/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。
+                     */
+                    app_kind: string;
                     /** @description managed(默认,A类) / external(B类纳管外部应用) */
                     deploy_mode: string;
-                    /** @description 应用类型 web/desktop/mobile/cli/service */
-                    app_kind: string;
                     /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
                     external_url: string;
                     /** @description managed 可选；buildpack 检测或默认 8080 */
@@ -1246,7 +1249,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description 应用(name+repo_dir+internal_port) */
+            /** @description 应用(name+repo_dir+internal_port+deploy_mode+app_kind+external_url) */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["internal_appdeploy.createBody"];
@@ -1354,6 +1357,304 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 应用产物列表 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 产物列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 功能未配置/加载失败 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/artifacts/{artid}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 下载应用产物 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                    /** @description 产物ID */
+                    artid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 产物文件 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description 跳转到预签名下载 URL */
+                302: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description 产物不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 功能未配置/产物文件缺失 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/build-artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 构建应用产物 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 构建结果(built 数量 + 版本号) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description web/service 应用不构建产物 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 应用不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 功能未配置/构建失败 */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交工作台改动 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            /** @description {message?} */
+            requestBody?: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description {sha,message} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/commit-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 某次提交改动文件列表 */
+        get: {
+            parameters: {
+                query: {
+                    /** @description 提交 sha */
+                    sha: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description {sha,files} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1482,6 +1783,114 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/deps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 应用依赖声明列表 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 依赖声明列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 应用不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        /** 替换应用依赖声明 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            /** @description 依赖声明数组 */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_appdeploy.DepDeclaration"][];
+                };
+            };
+            responses: {
+                /** @description 替换结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description kind/strategy 非法或重复 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description 应用不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1701,6 +2110,97 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/file-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工作台单文件 diff */
+        get: {
+            parameters: {
+                query: {
+                    /** @description 文件路径 */
+                    path: string;
+                    /** @description 提交 sha（空=工作区 diff） */
+                    sha?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description {path,sha,diff,truncated} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/apps/{aid}/git-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工作台 git 变更 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                    /** @description 应用ID */
+                    aid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description {worktree_exists,branch,changes,commits} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3506,6 +4006,47 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/project-spaces/{id}/deps/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 依赖目录（勾选器选项） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目空间ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 依赖目录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6483,11 +7024,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        "internal_appdeploy.DepDeclaration": {
+            /** @description failed 时的 last_error */
+            error?: string;
+            /** @description 供给的 service_instance_id（bound 时） */
+            instance?: string;
+            /** @description redis / milvus */
+            kind?: string;
+            /** @description declared / bound / failed */
+            status?: string;
+            /** @description bind_existing / shared / dedicated */
+            strategy?: string;
+            /** @description 隔离 token（shared：db号/前缀） */
+            token?: string;
+        };
         "internal_appdeploy.createBody": {
+            /**
+             * @description 应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：
+             *     web/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。
+             */
+            app_kind?: string;
             /** @description managed(默认,A类) / external(B类纳管外部应用) */
             deploy_mode?: string;
-            /** @description 应用类型 web/desktop/mobile/cli/service */
-            app_kind?: string;
             /** @description external 必填：外部应用访问地址 http(s)://host[:port][/path] */
             external_url?: string;
             /** @description managed 可选；buildpack 检测或默认 8080 */
@@ -6696,88 +7254,3 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export type operations = Record<string, never>;
-
-/**
- * 构建产物（非 web/service 应用的可下载产物，如桌面安装包/CLI 二进制/移动包）
- *
- * 手动维护：后端 swag 注解未生成此类型（ListArtifacts 的 @Success 用的是
- * map[string]interface{}，未引用 Artifact struct；全仓 @Success 无 typed 返回惯例）。
- * openapi-typescript 再生会丢失本 interface，需手动补回。
- * 字段对应 platform/backend/internal/appdeploy/model.go 的 Artifact struct。
- */
-export interface Artifact {
-    id: string;
-    application_id: string;
-    build_version: number;
-    app_kind: string;
-    /** @description windows/macos/linux/android/ios/multi */
-    platform: string;
-    /** @description x64/arm64/x86/universal/multi */
-    arch: string;
-    filename: string;
-    size_bytes: number;
-    sha256: string;
-    storage_key: string;
-    content_type: string;
-    created_at: string;
-}
-
-/**
- * 部署节点（.28 本地 / .30 远程）——手动维护。
- *
- * 后端 Task 8 扩展了 /deploy-nodes 接口（os_type/env/connect_type/ssh_port/
- * winrm_user/last_seen + latest_metric），但 swag 注解用 map[string]interface{}
- * 返回，openapi-typescript 再生会丢失本类型，需手动补回。
- * 字段对应 platform/backend/internal/appdeploy/node.go 的 DeployNode struct，
- * 敏感凭证（ssh_key/winrm_password）列表接口已掩码，故此处不暴露。
- */
-export interface DeployNode {
-    id: string;
-    name: string;
-    host: string;
-    docker_url: string;
-    ssh_user: string;
-    status: string;
-    max_apps: number;
-    description?: string;
-    created_at: string;
-    /** @description linux/windows */
-    os_type: string;
-    /** @description dev/prod 等 */
-    env: string;
-    /** @description docker_tcp / ssh / winrm */
-    connect_type: string;
-    ssh_port: number;
-    winrm_user?: string;
-    /** @description WinRM 端口（默认 5985）；connect_type=winrm 时使用 */
-    winrm_port?: number;
-    last_seen?: string;
-}
-
-/**
- * 服务器指标单次采样——手动维护。
- * 字段对应 platform/backend/internal/appdeploy/metric_store.go 的 ServerMetric struct。
- */
-export interface ServerMetric {
-    node_id: string;
-    captured_at: string;
-    cpu_percent: number;
-    mem_total: number;
-    mem_used: number;
-    disk_total: number;
-    disk_used: number;
-    load_avg?: number;
-    uptime?: string;
-    app_count: number;
-    container_count?: number;
-}
-
-/**
- * /deploy-nodes 列表项：DeployNode + 应用数 + 最新指标。
- * 对应 handler.go ListNodes 的 nodeWithCount。
- */
-export interface DeployNodeListItem extends DeployNode {
-    app_count: number;
-    latest_metric?: ServerMetric;
-    has_os_creds: boolean;
-}

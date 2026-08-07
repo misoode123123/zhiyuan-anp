@@ -31,7 +31,10 @@ func TestAggregateHealth(t *testing.T) {
 	}
 }
 
-type fakeInspector struct{ h ContainerHealth; err error }
+type fakeInspector struct {
+	h   ContainerHealth
+	err error
+}
 
 func (f *fakeInspector) InspectHealth(_ context.Context, _ string) (ContainerHealth, error) {
 	return f.h, f.err

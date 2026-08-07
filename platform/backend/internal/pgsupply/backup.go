@@ -168,11 +168,11 @@ func (b *Backuper) BackupAll(ctx context.Context) BackupResult {
 
 // BackupFile 备份产物（GET /pgsupply/backups 返回单元）。
 type BackupFile struct {
-	AppID       string    `json:"app_id"`
-	Name        string    `json:"name"`         // 文件名（20060102-150405.dump）
-	Path        string    `json:"path"`         // backupRoot 下的相对路径
-	Size        int64     `json:"size"`         // 字节
-	ModifiedAt  time.Time `json:"modified_at"`  // 文件 mtime（UTC）
+	AppID      string    `json:"app_id"`
+	Name       string    `json:"name"`        // 文件名（20060102-150405.dump）
+	Path       string    `json:"path"`        // backupRoot 下的相对路径
+	Size       int64     `json:"size"`        // 字节
+	ModifiedAt time.Time `json:"modified_at"` // 文件 mtime（UTC）
 }
 
 // ListBackups 扫描 backupRoot 下所有 .dump 文件，按 app_id 分组返回。

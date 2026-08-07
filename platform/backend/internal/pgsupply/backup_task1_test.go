@@ -17,8 +17,8 @@ func TestPasswordFromAdminURL(t *testing.T) {
 	}{
 		{"postgres://postgres:secret@h:5432/postgres?sslmode=disable", "secret"},
 		{"postgres://u:p%40ss@h:5432/db", "p@ss"}, // url 解码
-		{"postgres://u@h:5432/db", ""},             // 无密码
-		{"not-a-url", ""},                          // 解析失败兜底空
+		{"postgres://u@h:5432/db", ""},            // 无密码
+		{"not-a-url", ""},                         // 解析失败兜底空
 		{"postgres://postgres:abc@h:5432/postgres", "abc"},
 	}
 	for _, c := range cases {

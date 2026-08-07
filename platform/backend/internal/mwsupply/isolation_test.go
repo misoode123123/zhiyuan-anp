@@ -4,14 +4,14 @@ import "testing"
 
 func TestParseDBRange(t *testing.T) {
 	cases := []struct {
-		in   string
-		lo   int
-		hi   int
-		ok   bool
+		in string
+		lo int
+		hi int
+		ok bool
 	}{
 		{`{"db_range":[1,15]}`, 1, 15, true},
 		{`{"db_range": [0, 7]}`, 0, 7, true}, // PG jsonb::text 带空格
-		{`{"default_db":0}`, 0, 0, false}, // 无 db_range（bind_existing 的 isolation）
+		{`{"default_db":0}`, 0, 0, false},    // 无 db_range（bind_existing 的 isolation）
 		{``, 0, 0, false},
 		{`not json`, 0, 0, false},
 		{`{"db_range":[5]}`, 0, 0, false},   // 长度不对

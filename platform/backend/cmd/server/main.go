@@ -26,6 +26,7 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/appgw"
+	"zhiyuan-anp/platform/backend/internal/audit"
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/capability"
 	"zhiyuan-anp/platform/backend/internal/change"
@@ -37,13 +38,12 @@ import (
 	"zhiyuan-anp/platform/backend/internal/dev"
 	"zhiyuan-anp/platform/backend/internal/docs"
 	zhlog "zhiyuan-anp/platform/backend/internal/log"
-	"zhiyuan-anp/platform/backend/internal/audit"
 	"zhiyuan-anp/platform/backend/internal/logsvc"
+	"zhiyuan-anp/platform/backend/internal/mwsupply"
 	"zhiyuan-anp/platform/backend/internal/notif"
 	"zhiyuan-anp/platform/backend/internal/ops"
 	"zhiyuan-anp/platform/backend/internal/performance"
 	"zhiyuan-anp/platform/backend/internal/pgsupply"
-	"zhiyuan-anp/platform/backend/internal/mwsupply"
 	"zhiyuan-anp/platform/backend/internal/qa"
 	"zhiyuan-anp/platform/backend/internal/quota"
 	"zhiyuan-anp/platform/backend/internal/release"
@@ -135,8 +135,8 @@ func main() {
 		"opencode_config_path":   {cfg.OpencodeConfigPath, "opencode"},
 		"opencode_git_bash_path": {cfg.GitBashPath, "opencode"},
 		// claude（Claude Code via ttyd）走智谱 anthropic 兼容端点；key 复用 zhipuai_api_key
-		"claude_base_url":        {"https://open.bigmodel.cn/api/anthropic", "model"},
-		"claude_model":           {"glm-4.6", "model"},
+		"claude_base_url": {"https://open.bigmodel.cn/api/anthropic", "model"},
+		"claude_model":    {"glm-4.6", "model"},
 	}); err != nil {
 		logger.Fatal("seed system_config", zap.Error(err))
 	}
@@ -182,7 +182,7 @@ func main() {
 	pgProvisioner := pgsupply.NewProvisioner(instanceMgr, pgsupplyStore, pgAdmin, appDeployStore, quotaSvc) // appDeployStore 满足 EnvWriter
 	// ---- 中间件依赖供给（mwsupply）：适配回写 .anp/deps.yaml → 部署注入 REDIS_ADDR/MILVUS_ADDR 等 ----
 	mwStore := mwsupply.NewStore(database)
-	mwProbe := mwsupply.NewRedisFlusher()                                                                 // *redisFlusher 同时满足 DBFlusher+ReadyChecker
+	mwProbe := mwsupply.NewRedisFlusher()                                                                                        // *redisFlusher 同时满足 DBFlusher+ReadyChecker
 	mwReconciler := mwsupply.NewReconciler(mwStore, appDeployStore, mwProbe, mwProbe, mwsupply.NewOSDocker(), cfg.AppDeployHost) // appDeployStore 满足 mwsupply.EnvWriter
 	// Backuper：定时 pg_dump 所有应用库 → /data/backups（BACKUP_INTERVAL_HOURS 控制，0=关闭）
 	// 每应用保留最近 N 份（BACKUP_RETAIN 默认 7，0=不清理）—— Dump 成功后自动 prune 该 app 旧备份。
@@ -270,7 +270,7 @@ func main() {
 	appDeployHandler.SetAdaptSubmitter(appAdaptSubmitter{devAgent}) // 导入后触发 opencode 适配（改应用代码 to ANP）
 	appDeployHandler.SetMwReconciler(mwReconciler)                  // 部署前注入中间件连接 env（REDIS_ADDR 等）
 	mwReconciler.SetLogger(logger)                                  // shared flush best-effort 失败记 Warn
-	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper) // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
+	pgsupply.Register(v1, pgsupplyStore, appDeployStore, backuper)  // 数据库管理只读查询 + 备份触发（appDeployStore 满足 EnvValueReader）
 	quota.Register(v1, quotaSvc, v)
 	workspace.Register(v1, wsSvc, v)
 	config.Register(v1, store)

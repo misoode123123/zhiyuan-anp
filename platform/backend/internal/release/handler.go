@@ -149,7 +149,7 @@ func releaseNote(rowsDelivered int, deployed string) string {
 	}
 	return "需求已交付；应用 " + deployed + " 已发布，异步部署到 test 验证；确认无误后到「应用部署」点「上线」推 prod"
 }
-//
+
 // @Summary      发布历史
 // @Tags         release
 // @Produce      json

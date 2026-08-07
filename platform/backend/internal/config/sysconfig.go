@@ -10,9 +10,9 @@ import (
 
 // ConfigItem 系统配置项（业务配置入库，从系统配置页管理）。
 type ConfigItem struct {
-	Key         string    `json:"key" db:"key"`
-	Value       string    `json:"value" db:"value"`
-	Category    string    `json:"category" db:"category"`
+	Key      string `json:"key" db:"key"`
+	Value    string `json:"value" db:"value"`
+	Category string `json:"category" db:"category"`
 	// description 列可空（无 NOT NULL/default）；查询须 COALESCE 成 ""，否则 NULL 行扫进 string 会报
 	// "converting NULL to string is unsupported"（曾因手插无 description 的行致 backend 启动 FATAL）。
 	Description string    `json:"description" db:"description"`

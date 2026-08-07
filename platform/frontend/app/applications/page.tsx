@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
-import type { Artifact } from "@/lib/api-types";
+import type { Artifact } from "@/lib/api-types-manual";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
 import { toast } from "@/lib/toast";

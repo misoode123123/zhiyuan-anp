@@ -15,9 +15,9 @@ func TestIsRetryable(t *testing.T) {
 		{"unexpected EOF", true},
 		{"provider 返回 503: service unavailable", true},
 		{"provider 返回 500: internal error", true},
-		{"provider 返回 401: unauthorized", false},  // 4xx 不 retry
+		{"provider 返回 401: unauthorized", false}, // 4xx 不 retry
 		{"provider 返回 400: bad request", false},
-		{"解析 JSON 失败", false},                     // 非网络错误不 retry
+		{"解析 JSON 失败", false}, // 非网络错误不 retry
 	}
 	for _, tt := range tests {
 		got := isRetryable(&strErr{msg: tt.errMsg})

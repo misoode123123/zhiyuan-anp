@@ -12,20 +12,20 @@ import (
 
 // LogEntry 日志条目。
 type LogEntry struct {
-	ID              int64     `json:"id" db:"id"`
-	Timestamp       time.Time `json:"timestamp" db:"timestamp"`
-	Level           string    `json:"level" db:"level"`
-	Source          string    `json:"source" db:"source"`
-	Module          string    `json:"module,omitempty" db:"module"`
-	TraceID         string    `json:"trace_id,omitempty" db:"trace_id"`
-	UserID          string    `json:"user_id,omitempty" db:"user_id"`
-	ProjectSpaceID  string    `json:"project_space_id,omitempty" db:"project_space_id"`
-	Message         string    `json:"message" db:"message"`
-	StackTrace      string    `json:"stack_trace,omitempty" db:"stack_trace"`
-	Context         *string   `json:"context,omitempty" db:"context"`
-	Resolved        bool      `json:"resolved" db:"resolved"`
-	ResolvedBy      *string   `json:"resolved_by,omitempty" db:"resolved_by"`
-	ResolvedAt      *time.Time `json:"resolved_at,omitempty" db:"resolved_at"`
+	ID             int64      `json:"id" db:"id"`
+	Timestamp      time.Time  `json:"timestamp" db:"timestamp"`
+	Level          string     `json:"level" db:"level"`
+	Source         string     `json:"source" db:"source"`
+	Module         string     `json:"module,omitempty" db:"module"`
+	TraceID        string     `json:"trace_id,omitempty" db:"trace_id"`
+	UserID         string     `json:"user_id,omitempty" db:"user_id"`
+	ProjectSpaceID string     `json:"project_space_id,omitempty" db:"project_space_id"`
+	Message        string     `json:"message" db:"message"`
+	StackTrace     string     `json:"stack_trace,omitempty" db:"stack_trace"`
+	Context        *string    `json:"context,omitempty" db:"context"`
+	Resolved       bool       `json:"resolved" db:"resolved"`
+	ResolvedBy     *string    `json:"resolved_by,omitempty" db:"resolved_by"`
+	ResolvedAt     *time.Time `json:"resolved_at,omitempty" db:"resolved_at"`
 }
 
 // Store 日志数据访问。
@@ -160,10 +160,10 @@ func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"total_logs":       totalLogs,
+		"total_logs":        totalLogs,
 		"unresolved_errors": unresolvedErrors,
-		"today_errors":     todayErrors,
-		"by_source":        sourceMap,
+		"today_errors":      todayErrors,
+		"by_source":         sourceMap,
 	}, nil
 }
 

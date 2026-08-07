@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
 	"zhiyuan-anp/platform/backend/internal/appdeploy"
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
@@ -42,7 +43,7 @@ type fakeDocker struct {
 	stackCalls   []fakeMilvusStack // milvus：RunMilvusStack 调用
 	stackErr     error
 	rmStackCalls []string // milvus：RmMilvusStack 调用（base）
-	readyErr     error   // milvus：MilvusReady 返错（默认 nil=就绪）
+	readyErr     error    // milvus：MilvusReady 返错（默认 nil=就绪）
 	readyCalls   int
 }
 
@@ -86,7 +87,7 @@ func newReconcilerTest(t *testing.T) (*Reconciler, *appdeploy.Store, *sqlx.DB, *
 	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
 	ensureSeed(t, db)
 	appStore := appdeploy.NewStore(db)
-	f := &fakeFlusher{}                                       // 同时作 DBFlusher + ReadyChecker
+	f := &fakeFlusher{} // 同时作 DBFlusher + ReadyChecker
 	dk := &fakeDocker{usedPorts: map[int]struct{}{}}
 	return NewReconciler(NewStore(db), appStore, f, f, dk, "testdeploy"), appStore, db, f, dk
 }
@@ -218,7 +219,7 @@ func TestReconcile_shared_idempotent(t *testing.T) {
 	_ = appStore.Create(ctx, a)
 	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}})
 	db1, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB")
-	fl.calls = 0 // 重置计数
+	fl.calls = 0                                                                      // 重置计数
 	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "shared"}}) // 重部署
 	db2, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_DB")
 	if db1 != db2 {
@@ -317,7 +318,7 @@ func TestReconcile_dedicated_idempotent(t *testing.T) {
 	_ = appStore.Create(ctx, a)
 	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}})
 	ra1, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
-	dk.runCalls = nil // 重置
+	dk.runCalls = nil                                                                    // 重置
 	r.supplyAll(ctx, a.ID, "ps_1", []DepService{{Kind: "redis", Strategy: "dedicated"}}) // 重部署
 	ra2, _ := appStore.GetEnvValue(ctx, a.ID, "REDIS_ADDR")
 	if ra1 != ra2 {

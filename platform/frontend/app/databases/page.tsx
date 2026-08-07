@@ -256,6 +256,28 @@ export default function DatabasesPage() {
   );
 }
 
+// TabBtn 库工具面板的小 tab 按钮（模块级组件，避免在组件内定义组件触发 react-hooks 规则）。
+function TabBtn({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded px-2 py-1 text-xs ${
+        active ? "bg-accent text-white" : "bg-surface text-text-muted hover:bg-surface-2"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 // DatabaseTools 应用库工具面板：3 个 tab（表结构 / SQL 执行 / 操作日志）。
 // 每个应用库展开后独立挂一份，状态互不干扰。
 function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
@@ -356,23 +378,12 @@ function DatabaseTools({ psID, appID }: { psID: string; appID: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const TabBtn = ({ id, label }: { id: typeof tab; label: string }) => (
-    <button
-      onClick={() => setTab(id)}
-      className={`rounded px-2 py-1 text-xs ${
-        tab === id ? "bg-accent text-white" : "bg-surface text-text-muted hover:bg-surface-2"
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="mt-2 border-t border-border pt-2">
       <div className="flex items-center gap-1">
-        <TabBtn id="tables" label="📋 表结构" />
-        <TabBtn id="sql" label="▶ SQL 执行" />
-        <TabBtn id="actions" label="📝 操作日志" />
+        <TabBtn label="📋 表结构" active={tab === "tables"} onClick={() => setTab("tables")} />
+        <TabBtn label="▶ SQL 执行" active={tab === "sql"} onClick={() => setTab("sql")} />
+        <TabBtn label="📝 操作日志" active={tab === "actions"} onClick={() => setTab("actions")} />
       </div>
 
       {tab === "tables" && (

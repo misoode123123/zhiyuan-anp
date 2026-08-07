@@ -17,8 +17,8 @@ type RateLimiter struct {
 }
 
 type rateBucket struct {
-	count    int
-	resetAt  time.Time
+	count   int
+	resetAt time.Time
 }
 
 // NewRateLimiter 构造（rpm = 每分钟允许请求数）。

@@ -9,7 +9,7 @@ import (
 
 // Service 项目空间业务逻辑。
 type Service struct {
-	repo    *Repository
+	repo      *Repository
 	teardowns []TeardownHook // 删项目前的级联清理钩子（pgsupply 清 PG 容器等）
 }
 

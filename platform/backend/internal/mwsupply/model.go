@@ -25,17 +25,17 @@ const (
 
 // ServiceInstance 可绑定的中间件实例（注册表：bind_existing 目标 / shared 池 / dedicated 供给出来的）。
 type ServiceInstance struct {
-	ID             string   `json:"id" db:"id"`
-	ProjectSpaceID *string  `json:"project_space_id,omitempty" db:"project_space_id"` // NULL=平台全局
-	Kind           string   `json:"kind" db:"kind"`                                   // redis/milvus/...
-	Name           string   `json:"name" db:"name"`
-	SupplyMode     string   `json:"supply_mode" db:"supply_mode"`
-	Host           string   `json:"host" db:"host"`
-	Port           int      `json:"port" db:"port"`
-	AuthRef        string   `json:"auth_ref,omitempty" db:"auth_ref"`       // 密码/token 引用（明文，同 pgsupply I1 债）
-	Isolation      string   `json:"isolation,omitempty" db:"isolation"`     // raw jsonb text（shared 用）
-	ContainerName  string   `json:"container_name,omitempty" db:"container_name"` // dedicated 容器名（Cleanup docker rm 用）
-	Status         string   `json:"status" db:"status"`
+	ID             string    `json:"id" db:"id"`
+	ProjectSpaceID *string   `json:"project_space_id,omitempty" db:"project_space_id"` // NULL=平台全局
+	Kind           string    `json:"kind" db:"kind"`                                   // redis/milvus/...
+	Name           string    `json:"name" db:"name"`
+	SupplyMode     string    `json:"supply_mode" db:"supply_mode"`
+	Host           string    `json:"host" db:"host"`
+	Port           int       `json:"port" db:"port"`
+	AuthRef        string    `json:"auth_ref,omitempty" db:"auth_ref"`             // 密码/token 引用（明文，同 pgsupply I1 债）
+	Isolation      string    `json:"isolation,omitempty" db:"isolation"`           // raw jsonb text（shared 用）
+	ContainerName  string    `json:"container_name,omitempty" db:"container_name"` // dedicated 容器名（Cleanup docker rm 用）
+	Status         string    `json:"status" db:"status"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }

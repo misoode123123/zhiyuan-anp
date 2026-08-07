@@ -17,6 +17,25 @@ jobs:
     defaults:
       run:
         working-directory: platform/backend
+    # 测试硬依赖 PG（testutil.TestDB 连 anp_test + 跑迁移建全表）。
+    # 本地默认连 .28 私网，GitHub-hosted runner 不可达 → 提供 service 容器 + 覆盖连接串。
+    services:
+      postgres:
+        # pgvector 镜像：000001_init 迁移需 CREATE EXTENSION vector，标准 postgres:16 无此扩展。
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: anp
+          POSTGRES_PASSWORD: anp_dev_pwd
+          POSTGRES_DB: anp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anp -d anp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      ANP_TEST_DATABASE_URL: postgres://anp:anp_dev_pwd@localhost:5432/anp_test?sslmode=disable&connect_timeout=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -31,7 +50,9 @@ jobs:
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
           golangci-lint run ./... --timeout 5m
       - name: go test
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+        # -p 1 串行执行包：测试共享同一 PG，并行包互相 TRUNCATE 同表会死锁/数据踩踏
+        # （requirement/workspace 等间歇 FAIL）。串行避竞争，覆盖率仍正常采集。
+        run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
       - name: 覆盖率门禁 (≥30%)
         run: |
           COV=$(go tool cover -func=coverage.out | awk '/^total/ {gsub("%",""); print $NF}')

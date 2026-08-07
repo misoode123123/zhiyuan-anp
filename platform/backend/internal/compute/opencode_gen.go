@@ -9,16 +9,16 @@ import (
 
 // OpenCodeConfig opencode.json 的 Go 表示。
 type OpenCodeConfig struct {
-	Schema   string                              `json:"$schema"`
-	Provider map[string]*OpenCodeProvider        `json:"provider"`
+	Schema   string                       `json:"$schema"`
+	Provider map[string]*OpenCodeProvider `json:"provider"`
 }
 
 // OpenCodeProvider opencode 的 provider 配置。
 type OpenCodeProvider struct {
-	NPM     string                       `json:"npm"`
-	Name    string                       `json:"name"`
-	Options OpenCodeProviderOptions       `json:"options"`
-	Models  map[string]*OpenCodeModel    `json:"models,omitempty"`
+	NPM     string                    `json:"npm"`
+	Name    string                    `json:"name"`
+	Options OpenCodeProviderOptions   `json:"options"`
+	Models  map[string]*OpenCodeModel `json:"models,omitempty"`
 }
 
 // OpenCodeProviderOptions provider 选项。
@@ -29,9 +29,9 @@ type OpenCodeProviderOptions struct {
 
 // OpenCodeModel opencode 的 model 配置。
 type OpenCodeModel struct {
-	Name      string           `json:"name"`
-	Reasoning bool             `json:"reasoning,omitempty"`
-	Limit     *OpenCodeLimit   `json:"limit,omitempty"`
+	Name      string         `json:"name"`
+	Reasoning bool           `json:"reasoning,omitempty"`
+	Limit     *OpenCodeLimit `json:"limit,omitempty"`
 }
 
 // OpenCodeLimit 上下文/输出限制。
@@ -57,7 +57,7 @@ func (s *Store) GenerateOpenCodeConfig(ctx context.Context) (*OpenCodeConfig, er
 		// provider key：取 name 的 slug 化（去空格、小写、- 分隔）
 		key := slugify(p.Name)
 		provider := &OpenCodeProvider{
-			NPM: "@ai-sdk/openai-compatible",
+			NPM:  "@ai-sdk/openai-compatible",
 			Name: p.Name,
 			Options: OpenCodeProviderOptions{
 				BaseURL: p.BaseURL,

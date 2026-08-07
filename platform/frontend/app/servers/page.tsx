@@ -5,7 +5,7 @@
 // 消费 Task 8 扩展的 /deploy-nodes 接口（os_type/env/connect_type/latest_metric）。
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
-import type { DeployNodeListItem, ServerMetric } from "@/lib/api-types";
+import type { DeployNodeListItem, ServerMetric } from "@/lib/api-types-manual";
 import { toast } from "@/lib/toast";
 
 type Envelope<T> = { code: number; data: T; message?: string };

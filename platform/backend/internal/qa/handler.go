@@ -42,8 +42,8 @@ func Register(r gin.IRouter, db *sqlx.DB, agentRuntimeURL string, reqRepo *requi
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/project-spaces/:id/requirements/:rid/generate-tests", h.Generate)
 	r.GET("/project-spaces/:id/test-cases", h.List)
-	r.POST("/project-spaces/:id/test-cases/:tcid/run", h.Run)              // 单条自动验收
-	r.POST("/project-spaces/:id/requirements/:rid/run-tests", h.RunForReq) // 批量验收某需求的用例
+	r.POST("/project-spaces/:id/test-cases/:tcid/run", h.Run)                      // 单条自动验收
+	r.POST("/project-spaces/:id/requirements/:rid/run-tests", h.RunForReq)         // 批量验收某需求的用例
 	r.POST("/project-spaces/:id/test-cases/:tcid/manual-verdict", h.ManualVerdict) // 人工验收：manual 用例录结论
 }
 

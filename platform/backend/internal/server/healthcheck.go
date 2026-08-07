@@ -13,7 +13,7 @@ import (
 
 // HealthChecker 深度健康检查（DB + agent-runtime + opencode + 磁盘）。
 type HealthChecker struct {
-	db             *sqlx.DB
+	db              *sqlx.DB
 	agentRuntimeURL string
 }
 
@@ -80,7 +80,7 @@ func (hc *HealthChecker) DeepHealthz(c *gin.Context) {
 		status = 503
 	}
 	c.JSON(status, gin.H{
-		"status":  ternary(allOK, "healthy", "unhealthy"),
+		"status": ternary(allOK, "healthy", "unhealthy"),
 		"checks": checks,
 	})
 }

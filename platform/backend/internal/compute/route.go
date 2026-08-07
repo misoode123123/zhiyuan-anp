@@ -14,13 +14,13 @@ import (
 
 // Route 路由策略（任务类型 → 模型）。
 type Route struct {
-	ID               string    `json:"id" db:"id"`
-	TaskType         string    `json:"task_type" db:"task_type"`
-	PrimaryModelID   string    `json:"primary_model_id" db:"primary_model_id"`
-	FallbackModelID  *string   `json:"fallback_model_id,omitempty" db:"fallback_model_id"`
-	Priority         int       `json:"priority" db:"priority"`
-	Enabled          bool      `json:"enabled" db:"enabled"`
-	UpdatedAt        time.Time `json:"updated_at" db:"updated_at"`
+	ID              string    `json:"id" db:"id"`
+	TaskType        string    `json:"task_type" db:"task_type"`
+	PrimaryModelID  string    `json:"primary_model_id" db:"primary_model_id"`
+	FallbackModelID *string   `json:"fallback_model_id,omitempty" db:"fallback_model_id"`
+	Priority        int       `json:"priority" db:"priority"`
+	Enabled         bool      `json:"enabled" db:"enabled"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // --- Route Store ---
@@ -99,18 +99,18 @@ func SeedRoutes(ctx context.Context, store *Store) error {
 // ChatRequest 统一对话请求。
 type ChatRequest struct {
 	TaskType       string                   `json:"task_type"`
-	Model          string                   `json:"model,omitempty"`  // 直接指定模型 ID（绕过路由）
+	Model          string                   `json:"model,omitempty"` // 直接指定模型 ID（绕过路由）
 	Messages       []map[string]interface{} `json:"messages"`
 	ProjectSpaceID string                   `json:"project_space_id,omitempty"`
 }
 
 // ChatResponse 统一对话响应。
 type ChatResponse struct {
-	Model       string                 `json:"model"`
-	Content     string                 `json:"content"`
-	Usage       map[string]interface{} `json:"usage,omitempty"`
-	Provider    string                 `json:"provider"`
-	Error       string                 `json:"error,omitempty"`
+	Model    string                 `json:"model"`
+	Content  string                 `json:"content"`
+	Usage    map[string]interface{} `json:"usage,omitempty"`
+	Provider string                 `json:"provider"`
+	Error    string                 `json:"error,omitempty"`
 }
 
 // Gateway 统一模型网关：路由 → 选模型 → 转发到 provider → 记账。

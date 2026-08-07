@@ -48,4 +48,4 @@ func (r *recordingExecutor) Run(_ context.Context, cmd string) (string, string, 
 	return out, "", 0, err
 }
 func (r *recordingExecutor) PutFile(_ context.Context, _, _ string) error { return nil }
-func (r *recordingExecutor) TestConnection(_ context.Context) error { return nil }
+func (r *recordingExecutor) TestConnection(_ context.Context) error       { return nil }

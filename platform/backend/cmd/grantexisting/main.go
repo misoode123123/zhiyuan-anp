@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 	logger := zhlog.New(zhlog.Config{Level: cfg.LogLevel, Format: "console"})
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	database, err := db.Open(cfg.DatabaseURL)
 	if err != nil {

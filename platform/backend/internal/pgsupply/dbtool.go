@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/jackc/pgx/v5/stdlib" // 驱动名 "pgx"
+	"github.com/jmoiron/sqlx"
 )
 
 // TableInfo 应用库的表信息（information_schema.tables）。
@@ -28,10 +28,10 @@ type ColumnInfo struct {
 
 // QueryResult SQL 执行结果。
 type QueryResult struct {
-	ActionType string           `json:"action_type"`        // SELECT/INSERT/UPDATE/DELETE/DDL/OTHER
-	Columns    []string         `json:"columns,omitempty"`  // SELECT 的列名
-	Rows       []map[string]any `json:"rows,omitempty"`     // SELECT 的行（列名→值）
-	RowCount   int64            `json:"row_count"`          // 影响行数(DML) / 返回行数(SELECT)
+	ActionType string           `json:"action_type"`       // SELECT/INSERT/UPDATE/DELETE/DDL/OTHER
+	Columns    []string         `json:"columns,omitempty"` // SELECT 的列名
+	Rows       []map[string]any `json:"rows,omitempty"`    // SELECT 的行（列名→值）
+	RowCount   int64            `json:"row_count"`         // 影响行数(DML) / 返回行数(SELECT)
 }
 
 // connectAppDB 用应用 DSN 连应用库（应用 role，仅本库权限）。
