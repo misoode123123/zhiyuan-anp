@@ -19,25 +19,24 @@
 - 用户自带凭证 / per-user key（平台持有 key，用户不带 key、看不到 key）。
 - 凭证 AES 加密（`compute_provider.api_key` 明文维持现状）。
 - 产出应用运行时的模型选择（与本次无关）。
-- `codews` 交互编码（`opencode serve`）的 per-user 模型选择（受 serve 单文件限制，列 follow-up，见 §8）。
 - 收拢 `appdeploy` 两处散落模型调用（非用户选模型路径，留后续）。
 
 ---
 
 ## 二、现状核验（决策依据，file:line 锚定真实代码）
 
-| 维度                         | 现状（核验确认）                                                                                                                                                                  | 说明                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 模型目录                     | `compute_provider`/`compute_model`/`compute_route`（migration `000011_compute_provider_model.up.sql`）                                                                            | 已是多 provider/多 model/按 task_type 路由的目录         |
-| **Gateway 已支持指定 model** | `compute.Gateway.Chat`（`route.go:125`）：`req.Model != ""` → 直接用该 model ID **绕过路由**；否则 `GetRoute(taskType)`（`route.go:126-143`）                                     | 🔑 **转发能力已就绪**，只差把前端选择透传进来 + 授权校验 |
-| `ChatRequest` 字段           | `route.go:100-105`：`task_type` / `model` / `messages` / `project_space_id`                                                                                                       | **无 `user_id`** → 授权校验需补                          |
-| 调用方现状                   | `requirement/service.go:299`（spec）、`qa/service.go:71`（test）调 `gateway.Chat` **均不传 Model**；`/compute/chat` handler（`provider_handler.go:319`）可收前端 model            | service 调用链要加 model 透传                            |
-| `codews` 不走 Gateway        | `internal/codews` 全包 grep `compute\|gateway` **零命中**；编码走 opencode（配置由 `opencode_gen.go` 生成）                                                                       | 交互编码选模型受 opencode serve 限制（§8）               |
-| 前端 AI 入口                 | 需求生成（`requirements/page.tsx:106`）、对话式（`requirements/chat/page.tsx:129`）、测试（`testing/page.tsx:81`）、工作台（`workspace-frame.tsx:290/363/421`）**全部不传 model** | 由后端 route 默认                                        |
-| 唯一传 model 的前端          | `dev/page.tsx:35` 硬编码 `"zai-coding/glm-5.1"`，自由文本 `<input>`（`:137-140`）                                                                                                 | 最低成本改造点：换下拉                                   |
-| 用户管理页                   | `app/admin/users/page.tsx`（用户 CRUD + 空间成员 + 角色），**无任何模型授权代码**                                                                                                 | 授权 UI 从零挂此页                                       |
-| `users` 表                   | `000001_init.up.sql:37-44`：无 model/权限字段（连 `role` 列都没有；权限在 `auth/guard.go` 硬编码）                                                                                | 需新授权表                                               |
-| 模型/路由数据源              | `GET /compute/models`（`compute/page.tsx:82`）、`GET /compute/routes`（`:86`）                                                                                                    | 下拉选项与默认值的数据源已就绪                           |
+| 维度                         | 现状（核验确认）                                                                                                                                                                  | 说明                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 模型目录                     | `compute_provider`/`compute_model`/`compute_route`（migration `000011_compute_provider_model.up.sql`）                                                                            | 已是多 provider/多 model/按 task_type 路由的目录            |
+| **Gateway 已支持指定 model** | `compute.Gateway.Chat`（`route.go:125`）：`req.Model != ""` → 直接用该 model ID **绕过路由**；否则 `GetRoute(taskType)`（`route.go:126-143`）                                     | 🔑 **转发能力已就绪**，只差把前端选择透传进来 + 授权校验    |
+| `ChatRequest` 字段           | `route.go:100-105`：`task_type` / `model` / `messages` / `project_space_id`                                                                                                       | **无 `user_id`** → 授权校验需补                             |
+| 调用方现状                   | `requirement/service.go:299`（spec）、`qa/service.go:71`（test）调 `gateway.Chat` **均不传 Model**；`/compute/chat` handler（`provider_handler.go:319`）可收前端 model            | service 调用链要加 model 透传                               |
+| `codews` 不走 Gateway        | `internal/codews` 全包 grep `compute\|gateway` **零命中**；编码走 opencode（配置由 `opencode_gen.go` 生成）                                                                       | 编码工具模型控制在 Tool 接口层注入（§4.5），非 Gateway 路径 |
+| 前端 AI 入口                 | 需求生成（`requirements/page.tsx:106`）、对话式（`requirements/chat/page.tsx:129`）、测试（`testing/page.tsx:81`）、工作台（`workspace-frame.tsx:290/363/421`）**全部不传 model** | 由后端 route 默认                                           |
+| 唯一传 model 的前端          | `dev/page.tsx:35` 硬编码 `"zai-coding/glm-5.1"`，自由文本 `<input>`（`:137-140`）                                                                                                 | 最低成本改造点：换下拉                                      |
+| 用户管理页                   | `app/admin/users/page.tsx`（用户 CRUD + 空间成员 + 角色），**无任何模型授权代码**                                                                                                 | 授权 UI 从零挂此页                                          |
+| `users` 表                   | `000001_init.up.sql:37-44`：无 model/权限字段（连 `role` 列都没有；权限在 `auth/guard.go` 硬编码）                                                                                | 需新授权表                                                  |
+| 模型/路由数据源              | `GET /compute/models`（`compute/page.tsx:82`）、`GET /compute/routes`（`:86`）                                                                                                    | 下拉选项与默认值的数据源已就绪                              |
 
 **核心判断**：目录 + 网关（含 model 透传）已就绪，真正空白是**授权数据 + 授权校验 + 前端下拉**。本期填这三块。
 
@@ -126,6 +125,24 @@ if req.Model != "" {
 - 鉴权：管理员判定复用 `auth/guard.go` 的 `config.manage`（与 `PUT /compute/routes` 同属模型配置范畴，不新增权限，YAGNI）；`/users/me/models` 仅需登录态。
 - `swagger.json`/`api-types.ts` 同步。
 
+### 4.5 编码工具模型控制（codews · 所有工具统一）
+
+**架构原则**：任何编码工具（opencode / claude / codex / 未来接入）启动时，系统都按「当前用户授权的模型」配置工具——模型控制是 `Tool` 接口层（`internal/codews/tool.go`）的职责，与具体工具无关，不因工具而异绕过。
+
+`codews.Manager.Ensure` 已持有 `userID`（session key = `app:userID`，`manager.go:123`）。启动工具前：
+
+1. **解析编码模型**：前端工作台 `ModelSelect(taskType="code")` 选定值，随 `/workspace` POST 的 `model` 字段传入；未传则取用户授权模型中 `code` 路由的 primary，再否则第一个授权模型。
+2. **授权校验**：`IsGranted(userID, model)`——未授权即拒（与 Gateway 同防线，防绕过）。
+3. **按工具落地**（`toolEnv` / `Start` 注入）：
+
+| 工具         | 现状（核验）                                                                                                                                    | 改造（注入用户授权模型）                                                                                                                                                                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| opencode     | `tool.go:24-34` serve 只读全局 `$HOME/.config/opencode/opencode.json`；核验 `serve --help` **无 `--config` flag**，也不读 `OPENCODE_CONFIG` env | per-session 生成 opencode.json（`compute.GenerateOpenCodeConfig` 用该用户模型）+ **config 路径隔离**：优先 `XDG_CONFIG_HOME=<dir>` env（若 opencode 遵循 XDG，最干净、不动 data）；否则 `HOME=<dir>` 隔离（session data 随之隔离，`ensureSession` 恢复路径同构调整） |
+| claude       | `manager.go:90-92` 已注 `ANTHROPIC_MODEL`，但来自全局 `claude_model` 配置                                                                       | `ANTHROPIC_MODEL` 改取**用户授权模型**（env 注入机制已在，只改来源）                                                                                                                                                                                                 |
+| codex / 未来 | `Tool` 接口预留（`tool.go:53`）                                                                                                                 | 接入时在 `Start`/`toolEnv` 遵守同一原则                                                                                                                                                                                                                              |
+
+> **待实现时核验**：opencode 是否遵循 `XDG_CONFIG_HOME`（决定走 XDG 还是 HOME 隔离）。两者皆可落地——XDG 更干净（只隔离 config，不影响 session data 目录与恢复）；HOME 隔离则顺带把 session 存储隔离到 per-(app,user)，恢复逻辑同构。
+
 ---
 
 ## 五、前端设计
@@ -140,13 +157,13 @@ if req.Model != "" {
 
 ### 5.2 挂载点（各 AI 入口）
 
-| 入口         | file:line                                                   | 改造                                                                 |
-| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------------- |
-| 需求规格生成 | `requirements/page.tsx:230-263`（空间/应用选择行）          | 加 `<ModelSelect taskType="spec">`，值进 `generate()` body（`:109`） |
-| 对话式需求   | `requirements/chat/page.tsx:392-441`（工具栏）              | 加 `<ModelSelect taskType="chat">`，值进消息 body（`:129`）          |
-| dev 手动派发 | `dev/page.tsx:35,137-140`                                   | **替换硬编码自由文本 input** 为 `<ModelSelect taskType="code">`      |
-| 测试生成     | `testing/page.tsx:194-207`                                  | 加 `<ModelSelect taskType="test">`                                   |
-| 工作台       | `workspace/workspace-frame.tsx:466-485`（WorkspaceToolbar） | 加 `<ModelSelect>`，值进 inject/breakdown/submit body                |
+| 入口         | file:line                                                   | 改造                                                                                                                              |
+| ------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 需求规格生成 | `requirements/page.tsx:230-263`（空间/应用选择行）          | 加 `<ModelSelect taskType="spec">`，值进 `generate()` body（`:109`）                                                              |
+| 对话式需求   | `requirements/chat/page.tsx:392-441`（工具栏）              | 加 `<ModelSelect taskType="chat">`，值进消息 body（`:129`）                                                                       |
+| dev 手动派发 | `dev/page.tsx:35,137-140`                                   | **替换硬编码自由文本 input** 为 `<ModelSelect taskType="code">`                                                                   |
+| 测试生成     | `testing/page.tsx:194-207`                                  | 加 `<ModelSelect taskType="test">`                                                                                                |
+| 工作台       | `workspace/workspace-frame.tsx:466-485`（WorkspaceToolbar） | `<ModelSelect taskType="code">`：选定值随 `/workspace` POST 传 codews 启动工具（§4.5）；inject/breakdown/submit 另按各自 taskType |
 
 各 fetch body 增 `model` 字段（用户选了才传，空则后端走 route）。
 
@@ -184,8 +201,8 @@ if req.Model != "" {
 
 ## 八、范围边界与已知限制
 
-- **`codews` 交互编码（opencode serve）选模型 — 本期不做**：opencode serve 只读全局 `$HOME/.config/opencode/opencode.json`，per-user 换 model 需重启 serve 或独立 `$HOME`，属 P5 范畴。本期 dev 路径（headless `opencode run`）已覆盖「手动派发编码选模型」。
 - **`appdeploy` 散落调用 — 本期不收拢**：`summarizeChange`/`checkRequirement` 两处手写硬编码调用，非用户选模型路径，留后续。
+- **codex 等未接入工具**：本期 opencode/claude 落地模型控制；codex 接入时按 §4.5 同一原则实现。
 - **授权粒度 = 用户级全局**：不按 project_space 细分（YAGNI；用户需求明确是「每个用户」）。
 
 ---
@@ -201,4 +218,4 @@ if req.Model != "" {
 
 ## 十、一句话总结
 
-复用已支持 `req.Model` 的 `compute.Gateway` 与 `compute_*` 目录，新增 `user_model_grant` 授权表 + 管理员授权页 + 平台 AI 功能的模型下拉；Gateway 与 `/code` handler 在转发前做授权校验（越权即拒）；凭证维持现状，用户级/per-user/codews 交互编码留后续。
+复用已支持 `req.Model` 的 `compute.Gateway` 与 `compute_*` 目录，新增 `user_model_grant` 授权表 + 管理员授权页 + 平台 AI 功能的模型下拉；Gateway、`/code` handler、**codews 编码工具启动**（Tool 接口层：opencode config 隔离、claude env 注入）三处防线均校验/注入用户授权模型（越权即拒）；凭证维持现状，用户级/per-user 凭证留后续。
