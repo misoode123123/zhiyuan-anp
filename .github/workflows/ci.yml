@@ -31,7 +31,9 @@ jobs:
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
           golangci-lint run ./... --timeout 5m
       - name: go test
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+        # -p 1 串行执行包：测试共享同一 PG，并行包互相 TRUNCATE 同表会死锁/数据踩踏
+        # （requirement/workspace 等间歇 FAIL）。串行避竞争，覆盖率仍正常采集。
+        run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
       - name: 覆盖率门禁 (≥30%)
         run: |
           COV=$(go tool cover -func=coverage.out | awk '/^total/ {gsub("%",""); print $NF}')
