@@ -1,7 +1,33 @@
 basePath: /api/v1
 definitions:
+  internal_appdeploy.DepDeclaration:
+    properties:
+      error:
+        description: failed 时的 last_error
+        type: string
+      instance:
+        description: 供给的 service_instance_id（bound 时）
+        type: string
+      kind:
+        description: redis / milvus
+        type: string
+      status:
+        description: declared / bound / failed
+        type: string
+      strategy:
+        description: bind_existing / shared / dedicated
+        type: string
+      token:
+        description: 隔离 token（shared：db号/前缀）
+        type: string
+    type: object
   internal_appdeploy.createBody:
     properties:
+      app_kind:
+        description: |-
+          应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：
+          web/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。
+        type: string
       deploy_mode:
         description: managed(默认,A类) / external(B类纳管外部应用)
         type: string
@@ -259,11 +285,11 @@ definitions:
     type: object
   internal_requirement.dispatchRequest:
     properties:
-      model:
+      assignee:
+        description: 派发给的开发人员（用户名 name）
         type: string
-      repo_dir:
-        description: 可选；空=用需求归属应用的托管仓库
-        type: string
+    required:
+    - assignee
     type: object
   internal_rule.checkRequest:
     properties:
@@ -1071,6 +1097,12 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: |-
+          应用形态：web/desktop/mobile/cli/service/headless，空默认 web。与 deploy_mode 正交：
+          web/service/headless 走容器部署链路(headless 容器部署无 HTTP 路由,进程存活健康)；desktop/mobile/cli 走预置构建容器出可下载产物。
+        in: path
+        name: app_kind
+        type: string
       - description: managed(默认,A类) / external(B类纳管外部应用)
         in: path
         name: deploy_mode
@@ -1091,7 +1123,7 @@ paths:
         in: path
         name: repo_dir
         type: string
-      - description: 应用(name+repo_dir+internal_port)
+      - description: 应用(name+repo_dir+internal_port+deploy_mode+app_kind+external_url)
         in: body
         name: body
         required: true
@@ -1154,6 +1186,186 @@ paths:
       security:
       - BearerAuth: []
       summary: 删除应用
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/artifacts:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 产物列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 功能未配置/加载失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用产物列表
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/artifacts/{artid}/download:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 产物ID
+        in: path
+        name: artid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 产物文件
+          schema:
+            type: file
+        "302":
+          description: 跳转到预签名下载 URL
+          schema:
+            type: string
+        "404":
+          description: 产物不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 功能未配置/产物文件缺失
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下载应用产物
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/build-artifacts:
+    post:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 构建结果(built 数量 + 版本号)
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: web/service 应用不构建产物
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 功能未配置/构建失败
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 构建应用产物
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/commit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: '{message?}'
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{sha,message}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交工作台改动
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/commit-files:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 提交 sha
+        in: query
+        name: sha
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{sha,files}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 某次提交改动文件列表
       tags:
       - appdeploy
   /project-spaces/{id}/apps/{aid}/deploy:
@@ -1236,6 +1448,82 @@ paths:
       security:
       - BearerAuth: []
       summary: 部署/回滚到指定版本
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/deps:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 依赖声明列表
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 应用依赖声明列表
+      tags:
+      - appdeploy
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 依赖声明数组
+        in: body
+        name: body
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/internal_appdeploy.DepDeclaration'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 替换结果
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: kind/strategy 非法或重复
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 应用不存在
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 替换应用依赖声明
       tags:
       - appdeploy
   /project-spaces/{id}/apps/{aid}/detail:
@@ -1377,6 +1665,67 @@ paths:
       security:
       - BearerAuth: []
       summary: 删除环境变量
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/file-diff:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      - description: 文件路径
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: 提交 sha（空=工作区 diff）
+        in: query
+        name: sha
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{path,sha,diff,truncated}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 工作台单文件 diff
+      tags:
+      - appdeploy
+  /project-spaces/{id}/apps/{aid}/git-status:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{worktree_exists,branch,changes,commits}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 工作台 git 变更
       tags:
       - appdeploy
   /project-spaces/{id}/apps/{aid}/inject-requirement:
@@ -2457,6 +2806,27 @@ paths:
       summary: 创建对话会话
       tags:
       - conversation
+  /project-spaces/{id}/deps/catalog:
+    get:
+      parameters:
+      - description: 项目空间ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 依赖目录
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 依赖目录（勾选器选项）
+      tags:
+      - appdeploy
   /project-spaces/{id}/import/apps:
     post:
       consumes:
@@ -3266,7 +3636,7 @@ paths:
         name: rid
         required: true
         type: string
-      - description: 编码参数(repo_dir?/model?)
+      - description: 指派人 assignee
         in: body
         name: body
         required: true
@@ -3276,7 +3646,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: task_id/status
+          description: app_id/workspace_url
           schema:
             additionalProperties: true
             type: object
@@ -3287,7 +3657,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 派发编码任务
+      summary: 派发给开发人员（进编码工作台）
       tags:
       - requirement
   /project-spaces/{id}/requirements/{rid}/generate-tests:
