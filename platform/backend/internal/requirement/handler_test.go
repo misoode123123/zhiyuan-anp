@@ -396,3 +396,74 @@ func TestHandler_Release_DBError(t *testing.T) {
 		t.Fatalf("DB 错误时 Release 应 500，得到 %d", code)
 	}
 }
+
+// newHandlerWithApps 同 newHandlerWith，但注入 AppResolver（派发需要 EnsureApp）。
+func newHandlerWithApps(t *testing.T, repo *Repository, chg *change.Store, apps AppResolver) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		if u := c.GetHeader("X-User"); u != "" {
+			c.Set("user_id", u)
+		}
+		c.Next()
+	})
+	svc := NewService(repo, "", nil, nil, apps)
+	h := NewHandler(svc, chg, nil)
+	h.Register(r.Group("/api/v1"))
+	return r
+}
+
+// doJSONBody 发带 body 的请求并返回状态码 + 响应体。
+func doJSONBody(t *testing.T, r http.Handler, method, target, xUser, body string) (int, map[string]interface{}) {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if xUser != "" {
+		req.Header.Set("X-User", xUser)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var b map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &b)
+	return w.Code, b
+}
+
+// TestHandler_DispatchCode_ReturnsWorkspaceURL 派发→指派+返回 workspace_url。
+func TestHandler_DispatchCode_ReturnsWorkspaceURL(t *testing.T) {
+	repo, chg := newReqRepoWithChanges(t)
+	mustCreateRepo(t, repo, mkReq("req_d1", "ps_1"))
+	r := newHandlerWithApps(t, repo, chg, &fakeAppResolver{appID: "app_ws1"})
+
+	code, body := doJSONBody(t, r, "POST",
+		"/api/v1/project-spaces/ps_1/requirements/req_d1/dispatch-code",
+		"lead", `{"assignee":"alice"}`)
+	if code != 200 {
+		t.Fatalf("code=%d body=%v", code, body)
+	}
+	d := dataOf(t, body)
+	if d["app_id"] != "app_ws1" {
+		t.Fatalf("app_id=%v 想 app_ws1", d["app_id"])
+	}
+	want := "/workspace?app=app_ws1&ps=ps_1&req=req_d1"
+	if d["workspace_url"] != want {
+		t.Fatalf("workspace_url=%v 想 %s", d["workspace_url"], want)
+	}
+	got, _ := repo.Get(context.Background(), "req_d1")
+	if got.Assignee != "alice" {
+		t.Fatalf("assignee=%s 想 alice", got.Assignee)
+	}
+}
+
+// TestHandler_DispatchCode_NoAssignee 缺 assignee → 400。
+func TestHandler_DispatchCode_NoAssignee(t *testing.T) {
+	repo, chg := newReqRepoWithChanges(t)
+	mustCreateRepo(t, repo, mkReq("req_d2", "ps_1"))
+	r := newHandlerWithApps(t, repo, chg, &fakeAppResolver{appID: "app_ws2"})
+	code, _ := doJSONBody(t, r, "POST",
+		"/api/v1/project-spaces/ps_1/requirements/req_d2/dispatch-code",
+		"lead", `{}`)
+	if code != 400 {
+		t.Fatalf("缺 assignee 应 400，得到 %d", code)
+	}
+}

@@ -1,7 +1,7 @@
 package requirement
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 
@@ -208,8 +208,7 @@ func (h *Handler) ListByApp(c *gin.Context) {
 }
 
 type dispatchRequest struct {
-	RepoDir string `json:"repo_dir,omitempty"` // 可选；空=用需求归属应用的托管仓库
-	Model   string `json:"model,omitempty"`
+	Assignee string `json:"assignee" binding:"required"` // 派发给的开发人员（用户名 name）
 }
 
 // Breakdown AI 把需求拆成子任务清单,存 tasks 并返回。
@@ -277,16 +276,16 @@ func (h *Handler) Release(c *gin.Context) {
 	httpx.OK(c, gin.H{"released": true})
 }
 
-// DispatchCode 需求规格 → 异步编码（立即返回 task_id）。
+// DispatchCode 需求 → 指派开发人员 + 确定应用 + 返回人工工作台 URL（不再自动编码）。
 //
-// @Summary      派发编码任务
+// @Summary      派发给开发人员（进编码工作台）
 // @Tags         requirement
 // @Accept       json
 // @Produce      json
 // @Param        id    path  string           true  "项目空间ID"
 // @Param        rid   path  string           true  "需求ID"
-// @Param        body  body  dispatchRequest  true  "编码参数(repo_dir?/model?)"
-// @Success      200  {object}  map[string]interface{}  "task_id/status"
+// @Param        body  body  dispatchRequest  true  "指派人 assignee"
+// @Success      200  {object}  map[string]interface{}  "app_id/workspace_url"
 // @Failure      400  {object}  map[string]interface{}  "invalid body"
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/requirements/{rid}/dispatch-code [post]
@@ -298,19 +297,14 @@ func (h *Handler) DispatchCode(c *gin.Context) {
 	}
 	psID := c.Param("id")
 	rid := c.Param("rid")
-	t, err := h.svc.Dispatch(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), rid, in.RepoDir, in.Model)
+	appID, err := h.svc.Dispatch(c.Request.Context(), psID, rid, in.Assignee)
 	if err != nil {
-		if errors.Is(err, dev.ErrActiveTaskConflict) {
-			httpx.Err(c, 409, 40902, err.Error())
-			return
-		}
 		httpx.Err(c, 500, 50004, err.Error())
 		return
 	}
 	httpx.OK(c, gin.H{
 		"requirement_id": rid,
-		"task_id":        t.ID,
-		"status":         "running",
-		"note":           "异步编码中，轮询 GET /api/v1/code-tasks/:id 查进度",
+		"app_id":         appID,
+		"workspace_url":  fmt.Sprintf("/workspace?app=%s&ps=%s&req=%s", appID, psID, rid),
 	})
 }
