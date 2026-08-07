@@ -31,7 +31,7 @@ func (s *Store) GrantModels(ctx context.Context, userID string, modelIDs []strin
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // 回滚结果无需检查：成功 Commit 后 Rollback 是 sql.ErrTxDone
 	const q = `INSERT INTO user_model_grant (user_id, model_id, granted_by)
 	           VALUES ($1, $2, $3) ON CONFLICT (user_id, model_id) DO NOTHING`
 	granted := 0
