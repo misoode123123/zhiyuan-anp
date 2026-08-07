@@ -3,8 +3,10 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -102,7 +104,12 @@ type ChatRequest struct {
 	Model          string                   `json:"model,omitempty"` // 直接指定模型 ID（绕过路由）
 	Messages       []map[string]interface{} `json:"messages"`
 	ProjectSpaceID string                   `json:"project_space_id,omitempty"`
+	UserID         string                   `json:"user_id,omitempty"` // 授权校验：空=兼容老调用，不校验
 }
+
+// ErrModelNotAuthorized 授权拒绝哨兵错误：用户未授权使用该模型。
+// 越权即拒不 fallback 到路由（安全优先）。
+var ErrModelNotAuthorized = errors.New("model not authorized for user")
 
 // ChatResponse 统一对话响应。
 type ChatResponse struct {
@@ -123,6 +130,20 @@ func NewGateway(store *Store) *Gateway { return &Gateway{store: store} }
 
 // Chat 统一对话入口。
 func (g *Gateway) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	// —— 授权校验（入口，先于任何 model 选择/转发）——
+	// 仅当显式指定 model + userID 时校验；空 userID 兼容老调用（不校验，渐进迁移）。
+	if req.Model != "" && req.UserID != "" {
+		ok, err := g.store.IsGranted(ctx, req.UserID, req.Model)
+		if err != nil {
+			// 校验出错：log warn，不泄露内部细节；按未授权保守拒绝。
+			log.Printf("warn: IsGranted 校验出错 user=%s model=%s: %v", req.UserID, req.Model, err)
+			return nil, ErrModelNotAuthorized
+		}
+		if !ok {
+			return nil, ErrModelNotAuthorized // 越权即拒，不 fallback 到路由
+		}
+	}
+
 	var modelID string
 
 	// 1. 路由选模型
