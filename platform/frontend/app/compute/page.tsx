@@ -159,7 +159,10 @@ export default function ComputePage() {
   );
 
   async function saveRoute(taskType: string, modelId: string, fallbackId: string) {
-    const body: any = { primary_model_id: modelId, enabled: true };
+    const body: { primary_model_id: string; enabled: boolean; fallback_model_id?: string } = {
+      primary_model_id: modelId,
+      enabled: true,
+    };
     if (fallbackId) body.fallback_model_id = fallbackId;
     const res = await fetch(`${API_BASE_URL}/compute/routes/${taskType}`, {
       method: "PUT",
@@ -183,15 +186,17 @@ export default function ComputePage() {
       <p className="mb-4 text-sm text-text-muted">多平台多模型统一管理 · 智能路由 · 成本核算</p>
 
       <div className="mb-4 flex gap-2">
-        {[
-          { k: "providers", l: "🔌 供应商" },
-          { k: "models", l: "🤖 模型" },
-          { k: "routes", l: "🔀 路由" },
-          { k: "usage", l: "📊 看板" },
-        ].map((t) => (
+        {(
+          [
+            { k: "providers", l: "🔌 供应商" },
+            { k: "models", l: "🤖 模型" },
+            { k: "routes", l: "🔀 路由" },
+            { k: "usage", l: "📊 看板" },
+          ] as const
+        ).map((t) => (
           <button
             key={t.k}
-            onClick={() => setTab(t.k as any)}
+            onClick={() => setTab(t.k)}
             className={`rounded-md px-3 py-1.5 text-sm ${tab === t.k ? "bg-accent text-white" : "bg-surface-2"}`}
           >
             {t.l}
