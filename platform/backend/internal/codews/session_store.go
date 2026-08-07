@@ -17,7 +17,7 @@ type SessionRecord struct {
 	Tool           string     `json:"tool" db:"tool"`
 	RepoDir        string     `json:"repo_dir" db:"repo_dir"`
 	Port           int        `json:"port" db:"port"`
-	SessionID      string     `json:"session_id,omitempty" db:"session_id"` // 工具原生会话 id（opencode 有；claude/codex 按 repo_dir 解析）
+	SessionID      string     `json:"session_id,omitempty" db:"session_id"`         // 工具原生会话 id（opencode 有；claude/codex 按 repo_dir 解析）
 	RequirementID  string     `json:"requirement_id,omitempty" db:"requirement_id"` // 绑定的需求（工作直播按此查；空=application 页老入口）
 	StartedAt      time.Time  `json:"started_at" db:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty" db:"ended_at"`
@@ -30,8 +30,8 @@ type SessionCounts struct{ PromptCount, MessageCount int }
 
 // SessionStore codews 会话持久化（落库供绩效/互动统计；nil=纯内存兼容，测试/未启用）。
 type SessionStore interface {
-	StartSession(ctx context.Context, s *SessionRecord) error                  // Ensure 启动后调
-	FinishSession(ctx context.Context, id string, counts SessionCounts) error  // 进程退出时调
+	StartSession(ctx context.Context, s *SessionRecord) error                 // Ensure 启动后调
+	FinishSession(ctx context.Context, id string, counts SessionCounts) error // 进程退出时调
 }
 
 type pgSessionStore struct{ db *sqlx.DB }

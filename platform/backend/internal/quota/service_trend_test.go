@@ -123,7 +123,7 @@ func TestService_UsageTrend_DBSize(t *testing.T) {
 			t.Fatalf("seed db_size_snapshot: %v", err)
 		}
 	}
-	ins(10*1024*1024, daysAgo(2))                  // 前天 10MB
+	ins(10*1024*1024, daysAgo(2))                   // 前天 10MB
 	ins(20*1024*1024, daysAgo(1).Add(2*time.Hour))  // 昨天早 20MB
 	ins(30*1024*1024, daysAgo(1).Add(10*time.Hour)) // 昨天晚 30MB ← 当日末值
 	ins(45*1024*1024, daysAgo(0))                   // 今天 45MB

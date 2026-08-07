@@ -8,8 +8,8 @@ import (
 
 // dedicated redis 供给常量。
 const (
-	mwPortMin         = 9600              // redis dedicated 端口池下界（PG 占 9500-9599，避开）
-	mwPortMax         = 9699              // 上界（100 槽；池满即配额超限 failed）
+	mwPortMin         = 9600 // redis dedicated 端口池下界（PG 占 9500-9599，避开）
+	mwPortMax         = 9699 // 上界（100 槽；池满即配额超限 failed）
 	redisImage        = "redis:7-alpine"
 	redisInternalPort = 6379
 	readyTimeout      = 15 * time.Second // 就绪检测轮询上限（严格场景）
@@ -18,17 +18,17 @@ const (
 
 // dedicated milvus 供给常量（1:1 复刻 .28 yxt-milvus 配方）。
 const (
-	milvusPortMin      = 9700               // milvus dedicated 端口池下界（redis 占 9600-9699，避开）
-	milvusPortMax      = 9799               // 上界（100 槽）
+	milvusPortMin      = 9700 // milvus dedicated 端口池下界（redis 占 9600-9699，避开）
+	milvusPortMax      = 9799 // 上界（100 槽）
 	milvusImage        = "milvusdb/milvus:v2.6.15"
 	etcdImage          = "quay.io/coreos/etcd:v3.5.16"
 	minioImage         = "minio:v20.2.5-2024.7.4"
-	milvusGrpcPort     = 19530              // milvus gRPC（publish 到宿主）
-	milvusHealthPort   = 9091               // milvus HTTP 健康/指标（就绪探针用，不 publish）
-	etcdInternalPort   = 2379               // etcd 内部端口（milvus 经 ETCD_ENDPOINTS 访问）
-	minioInternalPort  = 9000               // minio 内部端口（milvus 经 MINIO_ADDRESS 访问）
-	milvusReadyTimeout = 120 * time.Second  // milvus 慢启动就绪探针上限
-	readyAlpineImage   = "alpine:3.19"      // 就绪探针镜像（.28 已缓存）
+	milvusGrpcPort     = 19530             // milvus gRPC（publish 到宿主）
+	milvusHealthPort   = 9091              // milvus HTTP 健康/指标（就绪探针用，不 publish）
+	etcdInternalPort   = 2379              // etcd 内部端口（milvus 经 ETCD_ENDPOINTS 访问）
+	minioInternalPort  = 9000              // minio 内部端口（milvus 经 MINIO_ADDRESS 访问）
+	milvusReadyTimeout = 120 * time.Second // milvus 慢启动就绪探针上限
+	readyAlpineImage   = "alpine:3.19"     // 就绪探针镜像（.28 已缓存）
 )
 
 // portRange 按 kind 给 dedicated 端口池上下界。

@@ -282,10 +282,10 @@ func TestListNodes_HasOSCreds(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mk("a-ssh", "ssh", "", "")            // ssh 类型 → has
-	mk("b-docker-pw", "docker_tcp", "x", "") // docker_tcp 有 ssh pw → has
+	mk("a-ssh", "ssh", "", "")                // ssh 类型 → has
+	mk("b-docker-pw", "docker_tcp", "x", "")  // docker_tcp 有 ssh pw → has
 	mk("c-docker-none", "docker_tcp", "", "") // 无凭证 → 无
-	mk("d-winrm", "winrm", "", "x")       // winrm 凭证 → has
+	mk("d-winrm", "winrm", "", "x")           // winrm 凭证 → has
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deploy-nodes", nil)
 	w := httptest.NewRecorder()

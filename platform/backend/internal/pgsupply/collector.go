@@ -29,12 +29,12 @@ func NewCollector(store *Store, pg PGAdmin, logger *zap.Logger) *Collector {
 
 // CollectResult CollectDBSizes 的累计结果。
 type CollectResult struct {
-	Instances  int         `json:"instances"`  // 处理的 active 实例数
-	Total      int         `json:"total"`      // 待采库数
-	Updated    int         `json:"updated"`    // 成功更新 size_bytes 的库数
-	Failed     int         `json:"failed"`     // 查询失败的库数
-	Snapshots  int         `json:"snapshots"`  // 写入 db_size_snapshot 的项目数（3c 趋势数据源）
-	Alerts     []AlertInfo `json:"alerts"`     // 超 max_total_db_mb 的项目
+	Instances int         `json:"instances"` // 处理的 active 实例数
+	Total     int         `json:"total"`     // 待采库数
+	Updated   int         `json:"updated"`   // 成功更新 size_bytes 的库数
+	Failed    int         `json:"failed"`    // 查询失败的库数
+	Snapshots int         `json:"snapshots"` // 写入 db_size_snapshot 的项目数（3c 趋势数据源）
+	Alerts    []AlertInfo `json:"alerts"`    // 超 max_total_db_mb 的项目
 }
 
 // AlertInfo 单个项目库大小超限告警信息。

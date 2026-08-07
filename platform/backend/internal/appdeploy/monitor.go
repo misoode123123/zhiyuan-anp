@@ -193,8 +193,8 @@ func parseWindowsCombined(out string) (ServerMetric, error) {
 	m.MemTotal = memTotal
 	m.MemUsed = memTotal - memFree
 	diskTotal := extractInt(parts[3], `(\d+)`) // 字节
-	diskFree := extractInt(parts[4], `(\d+)`)   // 字节
-	m.DiskTotal = diskTotal / 1024              // → KB
+	diskFree := extractInt(parts[4], `(\d+)`)  // 字节
+	m.DiskTotal = diskTotal / 1024             // → KB
 	m.DiskUsed = (diskTotal - diskFree) / 1024
 	return m, nil
 }

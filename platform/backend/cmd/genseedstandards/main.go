@@ -29,7 +29,7 @@ func sqlID(scope, module string, idx int) string {
 	return strings.Join(parts, "_")
 }
 
-// sqlLit 把字符串转义为 PG 单引号字面量（' → ''）。
+// sqlLit 把字符串转义为 PG 单引号字面量（' → ”）。
 func sqlLit(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }

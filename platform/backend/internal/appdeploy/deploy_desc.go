@@ -2,7 +2,6 @@ package appdeploy
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -60,10 +59,7 @@ func RenderScript(node *DeployNode, desc *DeployDesc) (string, error) {
 }
 
 func validateDir(dir string) error {
-	clean := filepath.Clean(dir)
-	if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) && !strings.HasPrefix(clean, "/opt/") && !strings.HasPrefix(clean, "C:") {
-		// 允许绝对路径但拒 ../ 越界；简化：拒 ../ 开头
-	}
+	// 拒绝 .. 越界：含 .. 的相对穿越（含 ../ 开头）一律拒，保护部署目标目录不被逃逸。
 	if strings.Contains(dir, "..") {
 		return fmt.Errorf("target.dir 含 .. 越界: %s", dir)
 	}

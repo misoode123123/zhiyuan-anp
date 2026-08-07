@@ -24,9 +24,9 @@ type PGSizeChecker interface {
 
 // Service 配额业务逻辑：4 个 Check + Usage 查询。
 type Service struct {
-	store    *Store
+	store     *Store
 	instances InstanceLookup
-	pg       PGSizeChecker
+	pg        PGSizeChecker
 }
 
 // NewService 构造。instances/pg 可为 nil（相关 check 跳过；用于 appdeploy 等模块只查应用数的场景）。
@@ -295,4 +295,3 @@ func bytesToMb(b int64) int {
 	const mb = 1024 * 1024
 	return int((b + mb - 1) / mb)
 }
-

@@ -61,7 +61,8 @@ func (osDocker) UsedPorts(ctx context.Context) map[int]struct{} {
 }
 
 // redisRunArgs 构造 docker run 参数（纯函数，可单测）。
-//   redis:7-alpine + redis-server --requirepass；-p host:6379 publish；--restart unless-stopped 自恢复。
+//
+//	redis:7-alpine + redis-server --requirepass；-p host:6379 publish；--restart unless-stopped 自恢复。
 func redisRunArgs(name, password string, port int) []string {
 	return []string{
 		"run", "-d", "--name", name,

@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/jackc/pgx/v5/stdlib" // 驱动名 "pgx"
+	"github.com/jmoiron/sqlx"
 
 	"zhiyuan-anp/platform/backend/internal/db"
 )

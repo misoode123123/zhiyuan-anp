@@ -9,10 +9,10 @@ import (
 func TestScanArtifacts_Desktop(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
-		"myapp-1.0.0-win-x64.exe":     "x",
-		"myapp-1.0.0-mac-universal.dmg": "x",
+		"myapp-1.0.0-win-x64.exe":        "x",
+		"myapp-1.0.0-mac-universal.dmg":  "x",
 		"myapp-1.0.0-linux-x64.AppImage": "x",
-		"build.log":                   "x", // 非产物，应忽略
+		"build.log":                      "x", // 非产物，应忽略
 	}
 	for f, c := range files {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte(c), 0644); err != nil {

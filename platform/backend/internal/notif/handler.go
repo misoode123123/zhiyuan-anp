@@ -52,12 +52,12 @@ func (h *Handler) Stream(c *gin.Context) {
 	defer h.store.Unsubscribe(userID, ch)
 
 	// 发心跳（确认连接）
-	c.Writer.WriteString(": connected\n\n")
+	_, _ = c.Writer.WriteString(": connected\n\n")
 	c.Writer.Flush()
 
 	// 发当前未读数
 	count, _ := h.store.UnreadCount(c.Request.Context(), userID)
-	c.Writer.WriteString(fmt.Sprintf("data: {\"type\":\"unread\",\"count\":%d}\n\n", count))
+	_, _ = c.Writer.WriteString(fmt.Sprintf("data: {\"type\":\"unread\",\"count\":%d}\n\n", count))
 	c.Writer.Flush()
 
 	// 阻塞等待通知
@@ -66,7 +66,7 @@ func (h *Handler) Stream(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		case n := <-ch:
-			c.Writer.WriteString(n.SSEData())
+			_, _ = c.Writer.WriteString(n.SSEData())
 			c.Writer.Flush()
 		}
 	}

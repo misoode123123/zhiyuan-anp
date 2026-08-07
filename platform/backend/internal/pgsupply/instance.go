@@ -111,10 +111,10 @@ func waitForReady(ctx context.Context, admin PGAdmin, adminURL string) error {
 
 // TeardownResult TeardownForProject 的累计结果（删项目级联清理用）。
 type TeardownResult struct {
-	Total       int      `json:"total"`         // 项目下 PG 实例数
-	Removed     int      `json:"removed"`       // 成功 docker rm 的容器数
-	NoContainer int      `json:"no_container"`  // 无 container_name（external 或老实例），仅删记录
-	Failed      int      `json:"failed"`        // 容器清理失败数
+	Total       int      `json:"total"`        // 项目下 PG 实例数
+	Removed     int      `json:"removed"`      // 成功 docker rm 的容器数
+	NoContainer int      `json:"no_container"` // 无 container_name（external 或老实例），仅删记录
+	Failed      int      `json:"failed"`       // 容器清理失败数
 	FailedIDs   []string `json:"failed_ids,omitempty"`
 }
 

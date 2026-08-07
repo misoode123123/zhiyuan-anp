@@ -280,13 +280,13 @@ func truncateMsg(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// sshQuote 把 remotePath 转成 bash 单引号安全字面量（'…'），' 转义为 '\''。
+// sshQuote 把 remotePath 转成 bash 单引号安全字面量（'…'），' 转义为 '\”。
 // 用于 SSH PutFile 的重定向目标，防 deploy.yaml 不可信时的 shell 注入。
 func sshQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// psQuote 把 remotePath 转成 PowerShell 单引号字符串字面量，' 转义为 ''。
+// psQuote 把 remotePath 转成 PowerShell 单引号字符串字面量，' 转义为 ”。
 // 用于 WinRM PutFile 的 [IO.File]::WriteAllBytes 路径参数，防注入。
 func psQuote(s string) string {
 	return strings.ReplaceAll(s, "'", "''")

@@ -44,9 +44,9 @@ func (f *fakeAuth) ValidToken(_ context.Context, token string) (string, bool) {
 
 func TestParseAppsPath(t *testing.T) {
 	cases := []struct {
-		in                 string
-		code, env, rest    string
-		ok                 bool
+		in              string
+		code, env, rest string
+		ok              bool
 	}{
 		{"/apps/app_x/api/q", "app_x", "", "api/q", true},
 		{"/apps/app_x~test/", "app_x", "test", "", true},

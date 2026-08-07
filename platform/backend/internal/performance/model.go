@@ -6,18 +6,18 @@ import "time"
 
 // Metrics 单人单周期的产出计数。
 type Metrics struct {
-	ReqClaimed        int `json:"req_claimed"`
-	ReqCompleted      int `json:"req_completed"`
-	CodeTaskDone      int `json:"code_task_done"`
-	CodeTaskFailed    int `json:"code_task_failed"`
-	ChangeSubmitted   int `json:"change_submitted"`
-	ChangeApproved    int `json:"change_approved"`
-	ChangeRejected    int `json:"change_rejected"`
-	Releases          int `json:"releases"`
-	Conversations     int `json:"conversations"`
-	WsSessions        int `json:"ws_sessions"`
-	WsPrompts         int `json:"ws_prompts"`
-	WsSeconds         int `json:"ws_seconds"`
+	ReqClaimed      int `json:"req_claimed"`
+	ReqCompleted    int `json:"req_completed"`
+	CodeTaskDone    int `json:"code_task_done"`
+	CodeTaskFailed  int `json:"code_task_failed"`
+	ChangeSubmitted int `json:"change_submitted"`
+	ChangeApproved  int `json:"change_approved"`
+	ChangeRejected  int `json:"change_rejected"`
+	Releases        int `json:"releases"`
+	Conversations   int `json:"conversations"`
+	WsSessions      int `json:"ws_sessions"`
+	WsPrompts       int `json:"ws_prompts"`
+	WsSeconds       int `json:"ws_seconds"`
 }
 
 // SessionSummary 互动会话摘要（绩效页下钻列表）。
@@ -42,9 +42,9 @@ type SessionRow struct {
 
 // Profile 单人绩效（含指标 + 最近会话）。
 type Profile struct {
-	UserID      string           `json:"user_id"`
-	UserName    string           `json:"user_name"`
-	IsUnassigned bool            `json:"is_unassigned,omitempty"` // user_id 为空的历史行桶
-	Metrics     Metrics          `json:"metrics"`
-	Sessions    []SessionSummary `json:"sessions,omitempty"`
+	UserID       string           `json:"user_id"`
+	UserName     string           `json:"user_name"`
+	IsUnassigned bool             `json:"is_unassigned,omitempty"` // user_id 为空的历史行桶
+	Metrics      Metrics          `json:"metrics"`
+	Sessions     []SessionSummary `json:"sessions,omitempty"`
 }

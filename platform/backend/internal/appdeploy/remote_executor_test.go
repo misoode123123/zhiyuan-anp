@@ -1,20 +1,8 @@
 package appdeploy
 
 import (
-	"context"
 	"testing"
 )
-
-// fakeExecutor 测试用 RemoteExecutor 实现
-type fakeExecutor struct {
-	runOut string
-}
-
-func (f *fakeExecutor) Run(_ context.Context, _ string) (string, string, int, error) {
-	return f.runOut, "", 0, nil
-}
-func (f *fakeExecutor) PutFile(_ context.Context, _, _ string) error { return nil }
-func (f *fakeExecutor) TestConnection(_ context.Context) error       { return nil }
 
 func TestNewRemoteExecutor_Dispatch(t *testing.T) {
 	cases := []struct{ ct, want string }{

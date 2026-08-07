@@ -60,11 +60,6 @@ func runDockerOn(ctx context.Context, dockerHost string, args ...string) (string
 
 var hostPortRe = regexp.MustCompile(`(?::[\d.]+)?:(\d+)->`)
 
-// usedPorts 查询本地运行中容器占用的宿主端口。
-func (d *Deployer) usedPorts(ctx context.Context) map[int]struct{} {
-	return d.usedPortsOn(ctx, "")
-}
-
 // usedPortsOn 查询指定 docker host 上运行中容器占用的宿主端口。
 func (d *Deployer) usedPortsOn(ctx context.Context, dockerHost string) map[int]struct{} {
 	used := map[int]struct{}{}

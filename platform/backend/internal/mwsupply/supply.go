@@ -21,17 +21,18 @@ type EnvWriter interface {
 type Reconciler struct {
 	store   *Store
 	env     EnvWriter
-	flusher DBFlusher     // shared 重分配时清空 redis db（Task 3）
-	ready   ReadyChecker  // dedicated 起容器后轮询 AUTH+PING 至就绪（P3）
+	flusher DBFlusher      // shared 重分配时清空 redis db（Task 3）
+	ready   ReadyChecker   // dedicated 起容器后轮询 AUTH+PING 至就绪（P3）
 	docker  MWDockerRunner // dedicated 容器管理（run/rm）（P3）
-	host    string        // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
-	log     *zap.Logger   // 可选；flush best-effort 失败记 Warn（nil 安全）
+	host    string         // AppDeployHost（dedicated REDIS_ADDR host + 就绪检测拨号）
+	log     *zap.Logger    // 可选；flush best-effort 失败记 Warn（nil 安全）
 }
 
 // NewReconciler 构造。
-//   env 传 appdeploy.Store（满足 EnvWriter）；
-//   flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
-//   docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
+//
+//	env 传 appdeploy.Store（满足 EnvWriter）；
+//	flusher+ready 可传同一 *redisFlusher（NewRedisFlusher 同时满足 DBFlusher+ReadyChecker）；
+//	docker 传 NewOSDocker()（测试传 fake）；host 为 AppDeployHost。
 func NewReconciler(store *Store, env EnvWriter, flusher DBFlusher, ready ReadyChecker, docker MWDockerRunner, host string) *Reconciler {
 	return &Reconciler{store: store, env: env, flusher: flusher, ready: ready, docker: docker, host: host}
 }

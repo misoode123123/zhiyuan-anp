@@ -34,10 +34,10 @@ func (h *Handler) RegisterPublicPost(r gin.IRouter) {
 // Create 前端/Python 回传日志。
 func (h *Handler) Create(c *gin.Context) {
 	var body struct {
-		Level  string                 `json:"level" binding:"required"`
-		Source string                 `json:"source" binding:"required"`
-		Message string                `json:"message" binding:"required"`
-		Fields map[string]interface{} `json:"fields,omitempty"`
+		Level   string                 `json:"level" binding:"required"`
+		Source  string                 `json:"source" binding:"required"`
+		Message string                 `json:"message" binding:"required"`
+		Fields  map[string]interface{} `json:"fields,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		// 日志回传失败不能影响业务，静默丢弃

@@ -21,8 +21,8 @@ func NewDualLogger(zapLogger *zap.Logger, store *Store) *DualLogger {
 
 // LogEntryInput 日志入参（各模块调用）。
 type LogEntryInput struct {
-	Level   string            // ERROR / WARN / INFO
-	Module  string            // requirement / dev / compute / ...
+	Level   string // ERROR / WARN / INFO
+	Module  string // requirement / dev / compute / ...
 	TraceID string
 	UserID  string
 	Msg     string

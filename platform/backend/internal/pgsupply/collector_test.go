@@ -11,15 +11,15 @@ import (
 // DatabaseSizes 用 fakeSizes[adminURL] 查；adminURL 不存在 → 返回 error 模拟连不上。
 type fakePGAdmin struct {
 	fakeSizes map[string]map[string]int64 // adminURL → dbName → bytes
-	failURL   string                       // 模拟连不上的 adminURL
+	failURL   string                      // 模拟连不上的 adminURL
 }
 
-func (f *fakePGAdmin) CreateDatabase(context.Context, string, string) error  { return nil }
+func (f *fakePGAdmin) CreateDatabase(context.Context, string, string) error     { return nil }
 func (f *fakePGAdmin) CreateRole(context.Context, string, string, string) error { return nil }
-func (f *fakePGAdmin) GrantAll(context.Context, string, string, string) error  { return nil }
-func (f *fakePGAdmin) DropDatabase(context.Context, string, string) error     { return nil }
-func (f *fakePGAdmin) DropRole(context.Context, string, string) error         { return nil }
-func (f *fakePGAdmin) Ping(context.Context, string) error                     { return nil }
+func (f *fakePGAdmin) GrantAll(context.Context, string, string, string) error   { return nil }
+func (f *fakePGAdmin) DropDatabase(context.Context, string, string) error       { return nil }
+func (f *fakePGAdmin) DropRole(context.Context, string, string) error           { return nil }
+func (f *fakePGAdmin) Ping(context.Context, string) error                       { return nil }
 
 func (f *fakePGAdmin) DatabaseSizes(_ context.Context, adminURL string, dbNames []string) (map[string]int64, error) {
 	if adminURL == f.failURL {

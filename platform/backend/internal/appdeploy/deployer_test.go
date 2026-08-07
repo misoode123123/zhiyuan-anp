@@ -160,8 +160,8 @@ func TestAllocFreePort_MinGtMax(t *testing.T) {
 // 中文等非 ASCII 字符须被替换；纯中文（替换后为空）退回名 sha256 前缀且稳定。
 func TestDockerSlug(t *testing.T) {
 	cases := map[string]string{
-		"snake":        "snake",      // 纯 ASCII 原样保留
-		"hello-go":     "hello-go",   // 连字符名不变
+		"snake":        "snake",    // 纯 ASCII 原样保留
+		"hello-go":     "hello-go", // 连字符名不变
 		"cli-e2e-test": "cli-e2e-test",
 		"ncc_deploy":   "ncc-deploy", // 下划线 → -
 		"A.B":          "a-b",        // 大写/点 → 小写/-
@@ -207,7 +207,10 @@ func TestDockerSlug_ImageTagValidForChineseName(t *testing.T) {
 }
 
 func TestParseInspectHealth(t *testing.T) {
-	cases := []struct{ in string; want ContainerHealth }{
+	cases := []struct {
+		in   string
+		want ContainerHealth
+	}{
 		{"running|3|0|false", ContainerHealth{Running: true, RestartCount: 3, ExitCode: 0, OOMKilled: false}},
 		{"exited|5|137|true", ContainerHealth{Running: false, RestartCount: 5, ExitCode: 137, OOMKilled: true}},
 		{"restarting|2|0|false", ContainerHealth{Running: false, RestartCount: 2, ExitCode: 0, OOMKilled: false}},

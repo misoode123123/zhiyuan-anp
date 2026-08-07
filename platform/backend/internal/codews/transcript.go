@@ -72,9 +72,9 @@ type fileReader struct {
 // transcriptRecord 兼容 claude(message 嵌套) 与 codex(顶层 role/content) 两种记录形态。
 type transcriptRecord struct {
 	Type      string          `json:"type"`
-	Role      string          `json:"role"`       // 顶层 role（codex）
-	Message   json.RawMessage `json:"message"`    // 嵌套 {role,content}（claude/codex）
-	Content   json.RawMessage `json:"content"`    // 顶层 content（codex）
+	Role      string          `json:"role"`    // 顶层 role（codex）
+	Message   json.RawMessage `json:"message"` // 嵌套 {role,content}（claude/codex）
+	Content   json.RawMessage `json:"content"` // 顶层 content（codex）
 	Cwd       string          `json:"cwd"`
 	SessionID string          `json:"sessionId"`  // claude
 	SessID2   string          `json:"session_id"` // codex

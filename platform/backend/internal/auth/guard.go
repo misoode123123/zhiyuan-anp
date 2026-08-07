@@ -46,12 +46,12 @@ var routeOps = map[string]string{
 	// 删项目空间（admin；级联清理 PG 容器，高风险）
 	"DELETE /api/v1/project-spaces/:id": "config.manage",
 	// 算力中心：供应商/模型/路由管理（admin）
-	"POST /api/v1/compute/providers":   "config.manage",
-	"PUT /api/v1/compute/providers/:id":  "config.manage",
-	"DELETE /api/v1/compute/providers/:id": "config.manage",
-	"POST /api/v1/compute/models":      "config.manage",
-	"PUT /api/v1/compute/models/:id":     "config.manage",
-	"DELETE /api/v1/compute/models/:id":  "config.manage",
+	"POST /api/v1/compute/providers":        "config.manage",
+	"PUT /api/v1/compute/providers/:id":     "config.manage",
+	"DELETE /api/v1/compute/providers/:id":  "config.manage",
+	"POST /api/v1/compute/models":           "config.manage",
+	"PUT /api/v1/compute/models/:id":        "config.manage",
+	"DELETE /api/v1/compute/models/:id":     "config.manage",
 	"PUT /api/v1/compute/routes/:task_type": "config.manage",
 	// 日志标记处理（admin）
 	"PATCH /api/v1/logs/:id/resolve": "config.manage",
@@ -62,7 +62,7 @@ var routeOps = map[string]string{
 	"POST /api/v1/project-spaces/:id/apps/:aid/deploy-commit": "app.deploy-commit._",
 	"POST /api/v1/project-spaces/:id/apps/:aid/stop":          "app.stop._",
 	"POST /api/v1/project-spaces/:id/apps/:aid/start":         "app.start._",
-	"DELETE /api/v1/project-spaces/:id/apps/:aid": "app.delete._",
+	"DELETE /api/v1/project-spaces/:id/apps/:aid":             "app.delete._",
 	// host 网络门禁（set-time）：改 network_mode 需 gatekeeper/admin（op app.net.host，静态 op 故 AutoRequire 直接强制）。
 	"PUT /api/v1/project-spaces/:id/apps/:aid/network-mode": "app.net.host",
 	// 绩效（admin 看全员/某人/互动聊天；me 不登记→任意登录自校验）

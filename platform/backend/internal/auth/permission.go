@@ -11,13 +11,13 @@ const (
 
 // OpRoles 操作 → 允许的角色集合（权限矩阵）。
 var OpRoles = map[string][]string{
-	"requirement.create":     {RoleBusiness, RoleAdmin},
-	"requirement.dispatch":   {RoleDev, RoleAdmin},
-	"code.run":               {RoleDev, RoleAdmin},
-	"change.approve":         {RoleDev, RoleGatekeeper, RoleAdmin},
-	"release.create":         {RoleGatekeeper, RoleAdmin},
-	"rule.manage":            {RoleRuleArchitect, RoleAdmin},
-	"config.manage":          {RoleAdmin},
+	"requirement.create":   {RoleBusiness, RoleAdmin},
+	"requirement.dispatch": {RoleDev, RoleAdmin},
+	"code.run":             {RoleDev, RoleAdmin},
+	"change.approve":       {RoleDev, RoleGatekeeper, RoleAdmin},
+	"release.create":       {RoleGatekeeper, RoleAdmin},
+	"rule.manage":          {RoleRuleArchitect, RoleAdmin},
+	"config.manage":        {RoleAdmin},
 	// 部署权限分离（spec 2026-07-26）：dev 可 test，prod 仅 gatekeeper/admin；business 不可部署
 	"app.deploy.test":        {RoleDev, RoleGatekeeper, RoleAdmin},
 	"app.deploy.prod":        {RoleGatekeeper, RoleAdmin},
@@ -29,7 +29,7 @@ var OpRoles = map[string][]string{
 	"app.start.prod":         {RoleGatekeeper, RoleAdmin},
 	"app.delete":             {RoleAdmin},
 	// host 网络门禁（spec 2026-08-03）：host 削弱隔离，仅 gatekeeper/admin 可开启 + 部署
-	"app.net.host":           {RoleGatekeeper, RoleAdmin},
+	"app.net.host": {RoleGatekeeper, RoleAdmin},
 	// 绩效（admin 看全员/某人/互动聊天；me 自校验不登记）
 	"performance.view.all": {RoleAdmin},
 }
