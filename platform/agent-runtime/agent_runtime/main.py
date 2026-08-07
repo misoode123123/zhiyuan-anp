@@ -42,8 +42,8 @@ class BackendLogHandler(logging.Handler):
                 },
                 timeout=5,
             )
-        except Exception:
-            pass  # 日志回传失败不影响业务
+        except Exception:  # noqa: S110  # 日志回传失败不影响业务，handler 内不递归记日志
+            pass
 
 
 logging.getLogger().addHandler(BackendLogHandler())

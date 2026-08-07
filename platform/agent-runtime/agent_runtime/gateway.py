@@ -85,26 +85,26 @@ async def chat(messages: list[dict], model: str | None = None) -> dict:
             "usage": None,
             "mock": True,
         }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310  # 受信端点: _messages_url() 返回固定 https 智谱地址
         _messages_url(), data=json.dumps(_body(messages)).encode("utf-8"), method="POST"
     )
     for k, v in _headers().items():
         req.add_header(k, v)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
             d = json.loads(resp.read().decode("utf-8", "replace"))
-        text = "".join(
-            b.get("text", "")
-            for b in d.get("content", [])
-            if b.get("type") == "text"
-        )
+        text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
         u = d.get("usage") or {}
         inp, out = u.get("input_tokens", 0), u.get("output_tokens", 0)
         usage = {"prompt_tokens": inp, "completion_tokens": out, "total_tokens": inp + out}
         return {"model": d.get("model", name), "content": text, "usage": usage}
     except urllib.error.HTTPError as e:
         logger.exception("anthropic chat failed: HTTP %s", e.code)
-        return {"model": name, "content": None, "error": f"HTTP {e.code}: {e.read().decode('utf-8','replace')[:200]}"}
+        return {
+            "model": name,
+            "content": None,
+            "error": f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:200]}",
+        }
     except Exception as e:  # noqa: BLE001
         logger.exception("anthropic chat failed")
         return {"model": name, "content": None, "error": str(e)}
@@ -112,17 +112,18 @@ async def chat(messages: list[dict], model: str | None = None) -> dict:
 
 def chat_stream(messages: list[dict], model: str | None = None):
     """流式调用智谱 GLM（Anthropic 兼容端点），yield delta content。"""
-    name = _strip(model or settings.default_model)
     if not _KEY:
         yield "[agent-runtime] mock（ZHIPUAI_API_KEY 未配置）"
         return
-    req = urllib.request.Request(
-        _messages_url(), data=json.dumps(_body(messages, stream=True)).encode("utf-8"), method="POST"
+    req = urllib.request.Request(  # noqa: S310  # 受信端点: _messages_url() 返回固定 https 智谱地址
+        _messages_url(),
+        data=json.dumps(_body(messages, stream=True)).encode("utf-8"),
+        method="POST",
     )
     for k, v in _headers().items():
         req.add_header(k, v)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
             for raw in resp:
                 line = raw.decode("utf-8", "replace").strip()
                 if not line.startswith("data:"):
