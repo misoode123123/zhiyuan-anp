@@ -43,6 +43,15 @@ export default function WorkspaceFrame() {
     modelRef.current = model;
   }, [model]);
 
+  // dispatchRef：把 dispatchReq 用 ref 暴露给 boot effect——新会话(force_new)boot 成功后
+  // 自动注入当前需求（让需求内容直接出现在编码界面）。仿 modelRef 用独立 effect 写 ref，
+  // 满足 react-hooks/refs；不把 dispatchReq 加进 boot effect deps（其函数身份每渲染都变，
+  // 加进去会致 effect 每渲染重跑→双 boot）。
+  const dispatchRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    dispatchRef.current = () => dispatchReq();
+  });
+
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailErr, setDetailErr] = useState("");
 
@@ -171,6 +180,11 @@ export default function WorkspaceFrame() {
           if (r.code === 0 && r.data?.url) {
             setUrl(r.data.deep_url || r.data.url);
             setErr("");
+            if (wantForceNew) {
+              // 新会话：空会话就绪后自动把当前需求注入，需求内容直接出现在编码界面
+              // （用户无需手动点「🤖 AI 编码」；左侧详情仍展示完整规格供核对）。
+              dispatchRef.current();
+            }
           } else {
             setErr(r.message || "启动编码工作台失败");
           }

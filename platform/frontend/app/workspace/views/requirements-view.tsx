@@ -93,10 +93,10 @@ export function RequirementsView({
                         <button
                           onClick={() => {
                             // 丢弃当前对话上下文开空会话（destructive）→ confirm；
-                            // 展开详情让用户看到完整需求规格，再手动点「🤖 AI 编码」注入。
+                            // 空会话就绪后自动注入本需求（编码界面即可见），左侧详情展示完整规格供核对。
                             if (
                               !window.confirm(
-                                "开新会话？当前对话上下文不会带入。需求内容在下方详情可见，可用「🤖 AI 编码」手动注入。"
+                                "开新会话？将丢弃当前对话上下文，重启为空白会话并自动注入本需求规格。"
                               )
                             )
                               return;
@@ -104,7 +104,7 @@ export function RequirementsView({
                             onStartReq(q.id, true);
                           }}
                           className="rounded border border-border bg-surface px-1.5 text-[10px] text-accent hover:bg-accent/10"
-                          title="开新会话：丢弃当前对话上下文，开空白会话"
+                          title="开新会话：丢弃当前对话上下文，重启空白会话并自动注入本需求"
                         >
                           🔄 新会话
                         </button>
