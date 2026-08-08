@@ -58,6 +58,35 @@ jobs:
           COV=$(go tool cover -func=coverage.out | awk '/^total/ {gsub("%",""); print $NF}')
           echo "Total coverage: ${COV}%"
           awk "BEGIN {exit !(${COV} >= 30)}" || { echo "::error::后端总覆盖率 ${COV}% 低于门禁 30%"; exit 1; }
+      - name: 启动冒烟（捕获路由注册 panic/启动 fatal）
+        # go test 装配的是各 handler 独立 router，捕获不到 gin 全路由注册冲突
+        # （如 /users/:id 与 :uid 同段命名冲突只在完整 server boot 时 panic）。
+        # 真启动二进制 + 探测 HTTP 监听：路由冲突/migration/seed/config 任何启动期
+        # fatal 都让进程在 listen 前退出 → 探测拿不到 HTTP 响应（000）→ 失败。
+        # 合 main 前拦住"CI 全绿但首次部署即崩"。判据=已监听（拿到任意 HTTP 状态码），
+        # 不用登录（EnsurePassword 不建用户，go test 残留 user 表无 admin 会假挂）。
+        run: |
+          go build -o /tmp/anp-server ./cmd/server
+          DATABASE_URL="$ANP_TEST_DATABASE_URL" \
+          BACKEND_HTTP_ADDR=":8080" \
+          BACKUP_INTERVAL_HOURS=0 DBSIZE_INTERVAL_HOURS=0 ACCESS_LOG_RETAIN_DAYS=0 \
+            /tmp/anp-server > /tmp/anp-server.log 2>&1 &
+          SRV_PID=$!
+          up=0
+          for i in $(seq 1 30); do
+            if ! kill -0 "$SRV_PID" 2>/dev/null; then break; fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ 2>/dev/null || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then up=1; break; fi
+            sleep 1
+          done
+          if [ "$up" != "1" ]; then
+            echo "::error::backend 启动冒烟失败：30s 内未监听（路由注册 panic 或启动 fatal）"
+            echo "----- server 日志 -----"; cat /tmp/anp-server.log
+            exit 1
+          fi
+          echo "✓ backend 启动冒烟通过（HTTP 已监听，路由装配无冲突）"
+          kill "$SRV_PID" 2>/dev/null || true
+          wait "$SRV_PID" 2>/dev/null || true
       - name: 上传覆盖率
         uses: actions/upload-artifact@v4
         with:
