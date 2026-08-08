@@ -31,7 +31,7 @@ export function Sidebar({
   loading: boolean;
   err: string;
   selectedReq: string;
-  onStartReq: (id: string) => void;
+  onStartReq: (id: string, fresh?: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   reqState: ReqState;

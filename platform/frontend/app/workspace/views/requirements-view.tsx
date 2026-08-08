@@ -15,7 +15,7 @@ export function RequirementsView({
 }: {
   detail: WorkspaceDetail | null;
   selectedReq: string;
-  onStartReq: (id: string) => void;
+  onStartReq: (id: string, fresh?: boolean) => void;
   reqState: ReqState;
   reqActions: ReqActions;
 }) {
@@ -71,7 +71,7 @@ export function RequirementsView({
                       {q.title || "(无标题)"}
                     </span>
                   </button>
-                  {sel ? null : q.assignee && !mine ? (
+                  {q.assignee && !mine ? (
                     <span
                       className="shrink-0 cursor-not-allowed rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted opacity-50"
                       title={`已被 ${q.assignee} 认领`}
@@ -79,13 +79,37 @@ export function RequirementsView({
                       已被认领
                     </span>
                   ) : (
-                    <button
-                      onClick={() => onStartReq(q.id)}
-                      className="shrink-0 rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:bg-surface-2"
-                      title={mine ? "继续开发" : "认领并启动编码工作台"}
-                    >
-                      {mine ? "↩ 继续" : "🚀 启动"}
-                    </button>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {!sel && (
+                        <button
+                          onClick={() => onStartReq(q.id)}
+                          className="rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:bg-surface-2"
+                          title={mine ? "继续开发（复用当前会话）" : "认领并启动编码工作台"}
+                        >
+                          {mine ? "↩ 继续" : "🚀 启动"}
+                        </button>
+                      )}
+                      {mine && (
+                        <button
+                          onClick={() => {
+                            // 丢弃当前对话上下文开空会话（destructive）→ confirm；
+                            // 空会话就绪后自动注入本需求（编码界面即可见），左侧详情展示完整规格供核对。
+                            if (
+                              !window.confirm(
+                                "开新会话？将丢弃当前对话上下文，重启为空白会话并自动注入本需求规格。"
+                              )
+                            )
+                              return;
+                            setOpenId(q.id);
+                            onStartReq(q.id, true);
+                          }}
+                          className="rounded border border-border bg-surface px-1.5 text-[10px] text-accent hover:bg-accent/10"
+                          title="开新会话：丢弃当前对话上下文，重启空白会话并自动注入本需求"
+                        >
+                          🔄 新会话
+                        </button>
+                      )}
+                    </span>
                   )}
                 </div>
                 {open && <ReqDetail q={q} reqState={reqState} reqActions={reqActions} />}
@@ -120,6 +144,11 @@ function ReqDetail({
         <span className="text-[11px] text-text">{statusLabel(q.status)}</span>
       </div>
       {q.user_story && <div className="px-3 pt-1 text-[11px] text-text">📝 {q.user_story}</div>}
+      {q.description && (
+        <div className="whitespace-pre-wrap px-3 pt-1 text-[11px] text-text-muted">
+          📄 {q.description}
+        </div>
+      )}
       {ac.length > 0 && (
         <div className="px-3 pt-1 text-[11px] text-text">
           <div className="text-text-muted">✅ 验收标准</div>

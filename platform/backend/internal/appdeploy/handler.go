@@ -260,9 +260,10 @@ func (h *Handler) Workspace(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Tool          string `json:"tool"`            // opencode(默认) / claude / codex ...
-		RequirementID string `json:"requirement_id"`  // 绑定的需求（工作直播按此关联；空=application 页老入口）
-		Model         string `json:"model,omitempty"` // 授权模型 id（cmd_xxx）；空=未选模型，走全局 config 兜底
+		Tool          string `json:"tool"`                // opencode(默认) / claude / codex ...
+		RequirementID string `json:"requirement_id"`      // 绑定的需求（工作直播按此关联；空=application 页老入口）
+		Model         string `json:"model,omitempty"`     // 授权模型 id（cmd_xxx）；空=未选模型，走全局 config 兜底
+		ForceNew      bool   `json:"force_new,omitempty"` // 前端「🆕 新会话」按钮：强制开空会话
 	}
 	_ = c.ShouldBindJSON(&in)
 	// 模型授权校验：选了模型且 grant 已注入时，校验当前用户是否被授权该模型；越权即拒 403，不 fallback。
@@ -284,7 +285,7 @@ func (h *Handler) Workspace(c *gin.Context) {
 	if user == "" {
 		user = "anonymous"
 	}
-	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID, in.Model)
+	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID, in.Model, in.ForceNew)
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return

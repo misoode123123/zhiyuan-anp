@@ -200,8 +200,9 @@ func (m *Manager) Tools() []string {
 
 // Ensure 启动或复用某开发者在某应用的编码工作台。toolName 空=默认 opencode；
 // model 空=兜底全局 config（未授权任何模型）；非空 → 写 per-user XDG config（仅授权模型）注入子进程。
+// reqForceNew=true 强制开空会话（前端「🆕 新会话」按钮）；冷启动后端重启时按库最近会话跨需求自动新建。
 // 同一开发者切换工具会停旧起新；不同开发者各自独立工作台（可不同工具）。
-func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model string) (*Session, error) {
+func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model string, reqForceNew bool) (*Session, error) {
 	if toolName == "" {
 		toolName = defaultTool
 	}
@@ -215,15 +216,15 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 		m.mu.Unlock()
 		return nil, fmt.Errorf("未知编码工具: %s（已注册: %v）", toolName, m.Tools())
 	}
-	old := m.sessions[key] // 旧会话（可能 nil）；用于判定换需求是否强制新建
-	forceNew := shouldForceNewForRequirement(old, reqID)
-	// 同开发者同工具 且 需求未变 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
-	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && (reqID == "" || s.RequirementID == reqID) {
+	old := m.sessions[key]                                    // 旧会话（可能 nil）；用于判定换需求是否强制新建
+	forceNew := computeForceNew(old, reqID, reqForceNew, nil) // 先按内存+请求级；冷启动查库后重算（见解锁后）
+	// 同开发者同工具 且 需求未变 且 非强制新建 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
+	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && !forceNew && (reqID == "" || s.RequirementID == reqID) {
 		m.mu.Unlock()
 		return s, nil
 	}
-	// 换工具 或 显式换需求（reqID 非空且不同）→ 停旧起新（换需求=新会话，杜绝多需求串台）
-	if old, exists := m.sessions[key]; exists && old.cmd != nil && old.cmd.Process != nil && (old.Tool != toolName || (reqID != "" && old.RequirementID != reqID)) {
+	// 换工具 或 强制新建（换需求/请求级）→ 停旧起新（换需求=新会话，杜绝多需求串台）
+	if old, exists := m.sessions[key]; exists && old.cmd != nil && old.cmd.Process != nil && (old.Tool != toolName || forceNew) {
 		_ = old.cmd.Process.Kill()
 		delete(m.sessions, key)
 	}
@@ -233,6 +234,19 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 		return nil, fmt.Errorf("无可用工作台端口(%d-%d)", portMin, portMax)
 	}
 	m.mu.Unlock()
+
+	// 冷启动(后端重启→内存 old==nil)：查库最近会话绑的需求，若与本次不同则强制新建，
+	// 避免 ensureSession 按 workDir 把上个需求的臃肿会话捞回（跨需求串台 + token 浪费）。
+	if !forceNew && old == nil && reqID != "" && m.sessionLog != nil {
+		if last, err := m.sessionLog.LastSession(context.Background(), psID, appID, userID); err != nil {
+			log.Printf("[codews] 查最近会话失败(非致命): %v", err)
+		} else {
+			forceNew = computeForceNew(old, reqID, reqForceNew, last)
+			if forceNew {
+				log.Printf("[codews] 冷启动跨需求(库=%s 现=%s)→forceNew 新建会话", last.RequirementID, reqID)
+			}
+		}
+	}
 
 	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
 	workDir := ensureWorktree(repoDir, userID)
@@ -339,6 +353,25 @@ var sessionListClient = &http.Client{Timeout: 10 * time.Second}
 // 首次(无旧会话) / 没选需求(reqID 空) / 同需求 → false。
 func shouldForceNewForRequirement(old *Session, reqID string) bool {
 	return old != nil && reqID != "" && old.RequirementID != reqID
+}
+
+// computeForceNew 综合判定是否强制新建 opencode 会话（跳过磁盘复用直接 initSession）：
+//  1. 请求级显式新建 reqForceNew（前端「🆕 新会话」按钮）
+//  2. 内存旧会话绑了不同需求（shouldForceNewForRequirement）
+//  3. 冷启动 old==nil（后端重启后内存空）：库里最近会话(last)绑了不同需求
+//
+// last 仅冷启动时由调用方查库传入；非冷启动或未启用持久化时传 nil。
+func computeForceNew(old *Session, reqID string, reqForceNew bool, last *SessionRecord) bool {
+	if reqForceNew {
+		return true
+	}
+	if shouldForceNewForRequirement(old, reqID) {
+		return true
+	}
+	if old == nil && reqID != "" && last != nil && last.RequirementID != "" && last.RequirementID != reqID {
+		return true
+	}
+	return false
 }
 
 // ensureSession 复用 opencode 已有会话(按 repo 目录匹配,取 updated 最近的一个);无则新建。

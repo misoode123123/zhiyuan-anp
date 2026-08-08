@@ -27,6 +27,11 @@ export default function WorkspaceFrame() {
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // force_new：点「🆕 新会话」时置 true，boot effect 读取后立即复位；
+  // newSessionKey：变更即触发 boot effect 重跑（与 reloadKey 同机制），透传 force_new。
+  const forceNewRef = useRef(false);
+  const [newSessionKey, setNewSessionKey] = useState(0);
+
   // 当前用户授权的编码模型（cmd_xxx）；空=未选/未授权，后端兜底用全局 config。
   const [model, setModel] = useState("");
   // model 固定在 session boot 时读取。ModelSelect 异步 seed model，若把 model 加入 boot
@@ -37,6 +42,15 @@ export default function WorkspaceFrame() {
   useEffect(() => {
     modelRef.current = model;
   }, [model]);
+
+  // dispatchRef：把 dispatchReq 用 ref 暴露给 boot effect——新会话(force_new)boot 成功后
+  // 自动注入当前需求（让需求内容直接出现在编码界面）。仿 modelRef 用独立 effect 写 ref，
+  // 满足 react-hooks/refs；不把 dispatchReq 加进 boot effect deps（其函数身份每渲染都变，
+  // 加进去会致 effect 每渲染重跑→双 boot）。
+  const dispatchRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    dispatchRef.current = () => dispatchReq();
+  });
 
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailErr, setDetailErr] = useState("");
@@ -148,6 +162,8 @@ export default function WorkspaceFrame() {
     if (missingParams || !selectedReq) return;
     let aborted = false;
     const timer = setTimeout(() => {
+      const wantForceNew = forceNewRef.current;
+      forceNewRef.current = false;
       fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -155,6 +171,7 @@ export default function WorkspaceFrame() {
           tool,
           requirement_id: selectedReq,
           model: modelRef.current || undefined,
+          force_new: wantForceNew || undefined,
         }),
       })
         .then((r) => r.json())
@@ -163,6 +180,11 @@ export default function WorkspaceFrame() {
           if (r.code === 0 && r.data?.url) {
             setUrl(r.data.deep_url || r.data.url);
             setErr("");
+            if (wantForceNew) {
+              // 新会话：空会话就绪后自动把当前需求注入，需求内容直接出现在编码界面
+              // （用户无需手动点「🤖 AI 编码」；左侧详情仍展示完整规格供核对）。
+              dispatchRef.current();
+            }
           } else {
             setErr(r.message || "启动编码工作台失败");
           }
@@ -182,7 +204,7 @@ export default function WorkspaceFrame() {
       aborted = true;
       clearTimeout(timer);
     };
-  }, [appID, psID, tool, reloadKey, missingParams, selectedReq]);
+  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selectedReq]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
@@ -495,6 +517,7 @@ export default function WorkspaceFrame() {
         }}
         onReconnect={() => {
           setUrl("");
+          setLoading(true); // 修空白屏：重连 boot 期间显示"启动 opencode 工作台…"，不再白屏
           setReloadKey((k) => k + 1);
         }}
         drawerOpen={drawerOpen}
@@ -509,8 +532,10 @@ export default function WorkspaceFrame() {
             loading={!detail && !detailErr}
             err={detailErr}
             selectedReq={selectedReq}
-            onStartReq={async (id) => {
-              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）
+            onStartReq={async (id, fresh) => {
+              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）。
+              // fresh=true（需求列表「🔄 新会话」）→ force_new 开空会话：丢弃当前上下文；
+              // 需求内容不自动注入（由用户在左侧详情看完后手动点「🤖 AI 编码」）。
               try {
                 const r = await fetch(
                   `${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`,
@@ -524,8 +549,13 @@ export default function WorkspaceFrame() {
                 alert(String(e));
                 return;
               }
+              if (fresh) {
+                forceNewRef.current = true; // boot effect 读取后复位；force_new 跳过磁盘复用开空会话
+                setNewSessionKey((k) => k + 1); // 即使 selectedReq 未变也强制 boot 重跑
+              }
+              setLoading(true); // 修空白屏：boot 期间显示"启动 opencode 工作台…"，不再白屏
               setSelectedReq(id);
-              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq），
+              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq / newSessionKey），
               // 不再内联 POST /workspace——否则与 effect 重跑并发双发，撞 Ensure 跨锁 race 致 opencode 进程/端口泄漏（I1）。
               setTaskMsg("");
               setTestMsg("");

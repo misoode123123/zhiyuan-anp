@@ -2,6 +2,7 @@ package codews
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,8 +31,9 @@ type SessionCounts struct{ PromptCount, MessageCount int }
 
 // SessionStore codews 会话持久化（落库供绩效/互动统计；nil=纯内存兼容，测试/未启用）。
 type SessionStore interface {
-	StartSession(ctx context.Context, s *SessionRecord) error                 // Ensure 启动后调
-	FinishSession(ctx context.Context, id string, counts SessionCounts) error // 进程退出时调
+	StartSession(ctx context.Context, s *SessionRecord) error                                      // Ensure 启动后调
+	FinishSession(ctx context.Context, id string, counts SessionCounts) error                      // 进程退出时调
+	LastSession(ctx context.Context, projectSpaceID, appID, userID string) (*SessionRecord, error) // 最近一行；无历史返 (nil,nil)
 }
 
 type pgSessionStore struct{ db *sqlx.DB }
@@ -60,4 +62,29 @@ func (p *pgSessionStore) FinishSession(ctx context.Context, id string, c Session
 		`UPDATE codews_session SET ended_at=CURRENT_TIMESTAMP, prompt_count=$2, message_count=$3 WHERE id=$1`,
 		id, c.PromptCount, c.MessageCount)
 	return err
+}
+
+// LastSession 返回某开发者×应用最近一次落库的编码会话（started_at 倒序首条）。
+// 用于后端重启后(old==nil)判定上次会话绑的需求：若与本次不同则强制新建，
+// 避免 ensureSession 按 workDir 把上个需求的会话捞回（跨需求串台 + token 浪费）。
+// 无历史行 → (nil, nil)（非错误）。userID 经 nullableStr：与 StartSession 写入口径一致。
+// user_id/session_id/requirement_id 列可空（见迁移 000018/000020），COALESCE 兜空串
+// 以匹配 SessionRecord 的 string 字段（否则 NULL→string 扫描报错）。
+func (p *pgSessionStore) LastSession(ctx context.Context, projectSpaceID, appID, userID string) (*SessionRecord, error) {
+	var r SessionRecord
+	err := p.db.GetContext(ctx, &r,
+		`SELECT id, project_space_id, app_id, COALESCE(user_id,'') AS user_id, tool, repo_dir, port,
+		        COALESCE(session_id,'') AS session_id, COALESCE(requirement_id,'') AS requirement_id,
+		        started_at, ended_at, prompt_count, message_count
+		 FROM codews_session
+		 WHERE project_space_id=$1 AND app_id=$2 AND user_id=$3
+		 ORDER BY started_at DESC LIMIT 1`,
+		projectSpaceID, appID, nullableStr(userID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
