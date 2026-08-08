@@ -29,13 +29,27 @@ const (
 	portMin     = 9400
 	portMax     = 9450
 	defaultTool = "opencode"
+
+	// codewsXDGBase per-user opencode config 的根目录（XDG_CONFIG_HOME 指向其子目录）。
+	// 仅挪 config（opencode.json），不碰共享 1GB 的 opencode.db（HOME 整体覆盖会每用户复制，出局）。
+	// 可用 CODEWS_XDG_BASE env 覆盖（测试/本地调试，见 xdgConfigBase）。
+	codewsXDGBase = "/root/.cache/anp-codews"
 )
+
+// ModelConfigWriter 解耦 codews ↔ compute：codews 不直接 import compute 包，
+// 仅依赖这两个方法（*compute.Store 在 Task 1 已实现）。用于 per-user opencode config
+// 生成 + claude ANTHROPIC_MODEL 名解析。nil=兜底全局 config（未授权任何模型的用户）。
+type ModelConfigWriter interface {
+	WriteOpenCodeConfigForModels(ctx context.Context, modelIDs []string, path string) error
+	ModelName(ctx context.Context, modelID string) (string, error)
+}
 
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
 type Manager struct {
 	host       string
-	cfg        *config.Store // 系统配置（取智谱key/claude端点注入子进程）；nil=不注入
-	sessionLog SessionStore  // 会话持久化（绩效/互动统计）；nil=纯内存兼容
+	cfg        *config.Store     // 系统配置（取智谱key/claude端点注入子进程）；nil=不注入
+	sessionLog SessionStore      // 会话持久化（绩效/互动统计）；nil=纯内存兼容
+	writer     ModelConfigWriter // per-user 模型授权（写 opencode config + 解析模型名）；nil=全局兜底
 	mu         sync.Mutex
 	sessions   map[string]*Session // appID -> 当前活跃工作台
 	ports      map[int]bool        // 端口注册表：allocPort 即刻登记，进程 cmd.Wait 后释放（独立于 sessions，防并发/kill 后重用同端口）
@@ -58,9 +72,12 @@ type Session struct {
 	DeepURL string `json:"deep_url,omitempty"`
 	// RequirementID 绑定的需求（工作直播按此关联；空=application 页老入口）。
 	RequirementID string `json:"-"`
-	cmd           *exec.Cmd
-	started       time.Time
-	logID         string // 落库的 codews_session.id（sessionLog 持久化用）
+	// Model 当前会话注入的授权模型 id（cmd_xxx）；空=走全局 config（未授权/兜底）。
+	// 内存态，不持久化、不进 SessionRecord（每次 Ensure 按入参重生成 per-user config）。
+	Model   string `json:"-"`
+	cmd     *exec.Cmd
+	started time.Time
+	logID   string // 落库的 codews_session.id（sessionLog 持久化用）
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
@@ -76,20 +93,90 @@ func NewManager(host string, cfg *config.Store) *Manager {
 // 单独 setter 避免 NewManager 签名变更波及大量既有调用方与测试。
 func (m *Manager) SetSessionLogger(l SessionStore) { m.sessionLog = l }
 
-// toolEnv 按工具构造子进程环境变量：claude 注入智谱 anthropic 兼容端点
-// （ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL），key 复用 zhipuai_api_key；其他工具返回 nil（继承 os.Environ）。
-func (m *Manager) toolEnv(toolName string) []string {
-	if m.cfg == nil || toolName != "claude" {
+// SetModelAccess 注入 per-user 模型授权（写 per-user opencode config + 解析模型名）。
+// nil=兜底全局 config（未授权任何模型的用户，渐进迁移）。单独 setter 避免 NewManager
+// 签名变更波及既有调用方（Task 3 在 main.go/appdeploy.Register 构造后调用）。
+func (m *Manager) SetModelAccess(w ModelConfigWriter) { m.writer = w }
+
+// buildEnv 按工具构造子进程环境变量（替代旧 toolEnv，加入 per-user 模型注入）。
+//
+// opencode：model 非空且 writer 已注入 → 写 per-user opencode config（仅授权模型）到 XDG
+//
+//	目录，返回 XDG_CONFIG_HOME=<dir>（opencode v1.18.9 认此变量读 config）。
+//	model 空 / writer 未注入 / 写失败 → 返 nil（继承 os.Environ，用全局默认 config，兜底）。
+//
+// claude：注入智谱 anthropic 兼容端点（ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL）；
+//
+//	ANTHROPIC_MODEL 取授权模型名（model→writer.ModelName），空/解析失败 → 沿用全局
+//	claude_model。key(zhipuai_api_key) 空 → 不注入（与旧行为一致）。
+//
+// 其他工具：返回 nil（继承 os.Environ）。
+func (m *Manager) buildEnv(ctx context.Context, toolName, model, appID, userID string) []string {
+	switch toolName {
+	case "opencode":
+		if model == "" || m.writer == nil {
+			return nil // 无授权模型 → 用全局 config（兜底，渐进迁移）
+		}
+		dir := xdgConfigDir(xdgConfigBase(), appID, userID)
+		cfgPath := filepath.Join(dir, "opencode", "opencode.json")
+		if err := m.writer.WriteOpenCodeConfigForModels(ctx, []string{model}, cfgPath); err != nil {
+			// 降级：不阻断会话，回退全局 config（功能可用但模型隔离失效）
+			log.Printf("[codews] 写 per-user opencode config 失败(降级用全局): app=%s user=%s model=%s err=%v", appID, userID, model, err)
+			return nil
+		}
+		return buildOpenCodeEnv(dir)
+	case "claude":
+		if m.cfg == nil {
+			return nil
+		}
+		key := m.cfg.Get("zhipuai_api_key", "")
+		if key == "" {
+			return nil
+		}
+		name := m.cfg.Get("claude_model", "glm-4.6")
+		if model != "" && m.writer != nil {
+			if n, err := m.writer.ModelName(ctx, model); err == nil && n != "" {
+				name = n
+			} else if err != nil {
+				log.Printf("[codews] 解析授权模型名失败(沿用全局 claude_model): model=%s err=%v", model, err)
+			}
+		}
+		return buildClaudeEnv(m.cfg.Get("claude_base_url", "https://open.bigmodel.cn/api/anthropic"), key, name)
+	default:
 		return nil
 	}
-	key := m.cfg.Get("zhipuai_api_key", "")
-	if key == "" {
+}
+
+// xdgConfigBase per-user opencode config 的根目录。CODEWS_XDG_BASE env 可覆盖（测试/本地），
+// 默认 codewsXDGBase（容器内可写；不碰共享 opencode.db）。
+func xdgConfigBase() string {
+	if b := os.Getenv("CODEWS_XDG_BASE"); b != "" {
+		return b
+	}
+	return codewsXDGBase
+}
+
+// xdgConfigDir 推导某 (app,user) 的 per-user XDG 目录：base/<sanitize(appID)>-<sanitize(userID)>。
+// sanitize 复用 sanitizeID（git/文件系统友好），确保跨用户/应用目录稳定可复算。
+func xdgConfigDir(base, appID, userID string) string {
+	return filepath.Join(base, sanitizeID(appID)+"-"+sanitizeID(userID))
+}
+
+// buildOpenCodeEnv opencode 子进程注入 XDG_CONFIG_HOME=<dir>（opencode v1.18.9 认此变量读 config）。
+// dir 空 → 返 nil（继承 os.Environ，用全局默认 config）。
+func buildOpenCodeEnv(xdgDir string) []string {
+	if xdgDir == "" {
 		return nil
 	}
+	return []string{"XDG_CONFIG_HOME=" + xdgDir}
+}
+
+// buildClaudeEnv claude 子进程注入智谱 anthropic 兼容端点（3 个 ANTHROPIC_* 变量）。
+func buildClaudeEnv(baseURL, apiKey, modelName string) []string {
 	return []string{
-		"ANTHROPIC_BASE_URL=" + m.cfg.Get("claude_base_url", "https://open.bigmodel.cn/api/anthropic"),
-		"ANTHROPIC_AUTH_TOKEN=" + key,
-		"ANTHROPIC_MODEL=" + m.cfg.Get("claude_model", "glm-4.6"),
+		"ANTHROPIC_BASE_URL=" + baseURL,
+		"ANTHROPIC_AUTH_TOKEN=" + apiKey,
+		"ANTHROPIC_MODEL=" + modelName,
 	}
 }
 
@@ -112,8 +199,9 @@ func (m *Manager) Tools() []string {
 }
 
 // Ensure 启动或复用某开发者在某应用的编码工作台。toolName 空=默认 opencode；
+// model 空=兜底全局 config（未授权任何模型）；非空 → 写 per-user XDG config（仅授权模型）注入子进程。
 // 同一开发者切换工具会停旧起新；不同开发者各自独立工作台（可不同工具）。
-func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (*Session, error) {
+func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model string) (*Session, error) {
 	if toolName == "" {
 		toolName = defaultTool
 	}
@@ -148,7 +236,10 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 
 	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
 	workDir := ensureWorktree(repoDir, userID)
-	cmd, err := tool.Start(workDir, port, m.toolEnv(toolName))
+	// 模型注入：opencode → 写 per-user XDG config（仅授权模型）并注入 XDG_CONFIG_HOME；
+	// claude → ANTHROPIC_MODEL 取授权模型名。model 空 / writer 未注入 → 兜底全局 config（不阻断）。
+	env := m.buildEnv(context.Background(), toolName, model, appID, userID)
+	cmd, err := tool.Start(workDir, port, env)
 	if err != nil {
 		m.mu.Lock()
 		delete(m.ports, port) // Start 失败：归还预留端口，避免端口表泄漏
@@ -158,6 +249,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID string) (
 	s := &Session{
 		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(),
 		RequirementID: reqID,
+		Model:         model,
 		URL:           fmt.Sprintf("http://%s:%d", m.host, port),
 	}
 	m.mu.Lock()
