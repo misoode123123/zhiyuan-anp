@@ -3027,7 +3027,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description 工作台选项{tool:opencode/claude/codex} */
+            /** @description 工作台选项{tool,model,requirement_id} */
             requestBody?: {
                 content: {
                     "application/json": Record<string, never>;

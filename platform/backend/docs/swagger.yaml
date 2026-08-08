@@ -2270,7 +2270,7 @@ paths:
         name: aid
         required: true
         type: string
-      - description: 工作台选项{tool:opencode/claude/codex}
+      - description: 工作台选项{tool,model,requirement_id}
         in: body
         name: body
         schema:

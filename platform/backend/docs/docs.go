@@ -2740,7 +2740,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "工作台选项{tool:opencode/claude/codex}",
+                        "description": "工作台选项{tool,model,requirement_id}",
                         "name": "body",
                         "in": "body",
                         "schema": {

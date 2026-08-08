@@ -3242,7 +3242,7 @@
                             }
                         }
                     },
-                    "description": "工作台选项{tool:opencode/claude/codex}"
+                    "description": "工作台选项{tool,model,requirement_id}"
                 },
                 "responses": {
                     "200": {
