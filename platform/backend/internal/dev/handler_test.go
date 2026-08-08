@@ -22,6 +22,10 @@ type fakeGrant struct {
 	gotUserID string
 	gotModel  string
 	ret       bool
+	// ResolveOpencodeModelID 捕获 + 返回（cmd_xxx → "provider/name" 解析）。
+	resolveCalled bool
+	gotResolveID  string
+	resolveRet    string
 }
 
 func (f *fakeGrant) IsGranted(_ context.Context, userID, modelID string) (bool, error) {
@@ -29,6 +33,12 @@ func (f *fakeGrant) IsGranted(_ context.Context, userID, modelID string) (bool, 
 	f.gotUserID = userID
 	f.gotModel = modelID
 	return f.ret, nil
+}
+
+func (f *fakeGrant) ResolveOpencodeModelID(_ context.Context, modelID string) (string, error) {
+	f.resolveCalled = true
+	f.gotResolveID = modelID
+	return f.resolveRet, nil
 }
 
 // newCodeRouter 装配仅 /code 的 gin 引擎 + 模拟登录中间件（CtxUserDBID=u_test），
@@ -140,5 +150,49 @@ func TestCode_NilGrantSkipsCheck(t *testing.T) {
 	httpCode, _ := postCode(t, r, body)
 	if httpCode == 403 {
 		t.Fatalf("/code grant=nil 应跳过授权校验（兼容），不应返 403，got %d", httpCode)
+	}
+}
+
+// TestCode_ResolvesModelBeforeSubmit /code 已授权 + model=cmd_xxx → Submit 收到解析后的
+// "provider/name"（而非原始 cmd_xxx）。断言：落库的 code_task.Model == 解析后的 provider/name，
+// 且 ResolveOpencodeModelID 被调用并收到原始 cmd_xxx。
+// 证明 handler 在 IsGranted 通过后、Submit 前完成模型 id 解析。
+func TestCode_ResolvesModelBeforeSubmit(t *testing.T) {
+	agent := newDBBackedAgent(t)
+	grant := &fakeGrant{ret: true, resolveRet: "zai-coding/glm-5.1"}
+	h := NewHandler(agent, grant)
+	r := newCodeRouter(h)
+	body := `{"repo_dir":"/tmp/no-such-repo","prompt":"hi","model":"cmd_abc"}`
+
+	req := httptest.NewRequest("POST", "/code", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("/code 期望 http=200（已授权+解析后 Submit 成功），got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			TaskID string `json:"task_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v body=%s", err, w.Body.String())
+	}
+	if resp.Data.TaskID == "" {
+		t.Fatalf("未返回 task_id: %s", w.Body.String())
+	}
+	// 落库任务的 Model 应为解析后的 provider/name（证明 Submit 收到解析值，非原始 cmd_abc）。
+	// goroutine run 异步执行（panic-safe recover），但不修改 Model 字段，读取安全。
+	got, err := agent.tasks.Get(context.Background(), resp.Data.TaskID)
+	if err != nil {
+		t.Fatalf("读回任务 %s: %v", resp.Data.TaskID, err)
+	}
+	if got.Model != "zai-coding/glm-5.1" {
+		t.Fatalf("任务 Model 期望解析后的 zai-coding/glm-5.1，got %q（cmd_abc 未被解析）", got.Model)
+	}
+	if !grant.resolveCalled || grant.gotResolveID != "cmd_abc" {
+		t.Fatalf("ResolveOpencodeModelID 未被正确调用: called=%v gotID=%q",
+			grant.resolveCalled, grant.gotResolveID)
 	}
 }
