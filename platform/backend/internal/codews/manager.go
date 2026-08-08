@@ -216,7 +216,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 		m.mu.Unlock()
 		return nil, fmt.Errorf("未知编码工具: %s（已注册: %v）", toolName, m.Tools())
 	}
-	old := m.sessions[key] // 旧会话（可能 nil）；用于判定换需求是否强制新建
+	old := m.sessions[key]                                    // 旧会话（可能 nil）；用于判定换需求是否强制新建
 	forceNew := computeForceNew(old, reqID, reqForceNew, nil) // 先按内存+请求级；冷启动查库后重算（见解锁后）
 	// 同开发者同工具 且 需求未变 且 非强制新建 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
 	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && !forceNew && (reqID == "" || s.RequirementID == reqID) {
