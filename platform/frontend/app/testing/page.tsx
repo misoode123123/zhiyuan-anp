@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
+import { ModelSelect } from "@/app/_components/model-select";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
@@ -50,6 +51,7 @@ export default function TestingPage() {
   const [verdictID, setVerdictID] = useState(""); // 正在提交人工验收的 tcid
   const [editTC, setEditTC] = useState(""); // 展开人工验收录入（含改判）的 tcid
   const [note, setNote] = useState(""); // 人工验收备注文本
+  const [model, setModel] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -80,7 +82,11 @@ export default function TestingPage() {
     try {
       const res = await fetch(
         `${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/generate-tests`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: model || undefined }),
+        }
       );
       const r = await res.json();
       setMsg(
@@ -204,6 +210,7 @@ export default function TestingPage() {
             </option>
           ))}
         </select>
+        <ModelSelect value={model} onChange={setModel} taskType="test" className="min-w-[160px]" />
       </div>
 
       {msg && <div className="mb-3 rounded-md bg-accent/10 p-2 text-sm text-accent">{msg}</div>}
