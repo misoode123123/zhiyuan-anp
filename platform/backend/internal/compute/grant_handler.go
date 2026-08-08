@@ -18,11 +18,13 @@ type GrantHandler struct {
 func NewGrantHandler(store *Store) *GrantHandler { return &GrantHandler{store: store} }
 
 // Register 注册授权路由（挂 v1 组，受 AutoRequire 保护）。
-// 注意：/users/me/models 为静态路径，gin 优先匹配静态再匹配 :id，与 /users/:id/models 不冲突。
+// 路径段用 :uid（与既有 auth.Handler 的 /users/:uid 约定一致）——曾用 :id 与 :uid 在
+// 同一段并存触发 gin wildcard 命名冲突 panic，故统一 :uid。
+// /users/me/models 为静态路径，gin 优先匹配静态再匹配 :uid，不冲突。
 func (h *GrantHandler) Register(r gin.IRouter) {
-	r.GET("/users/:id/models", h.list)
-	r.POST("/users/:id/models", h.grant)
-	r.DELETE("/users/:id/models/:model_id", h.revoke)
+	r.GET("/users/:uid/models", h.list)
+	r.POST("/users/:uid/models", h.grant)
+	r.DELETE("/users/:uid/models/:model_id", h.revoke)
 	r.GET("/users/me/models", h.listMine)
 }
 
@@ -31,13 +33,13 @@ func (h *GrantHandler) Register(r gin.IRouter) {
 // @Summary      查用户已授权模型
 // @Tags         compute,grant
 // @Produce      json
-// @Param        id   path  string  true  "用户ID（usr_xxx）"
+// @Param        uid  path  string  true  "用户ID（usr_xxx）"
 // @Success      200  {object}  httpx.Response{data=[]Model}
 // @Failure      500  {object}  httpx.Response
 // @Security     BearerAuth
-// @Router       /users/{id}/models [get]
+// @Router       /users/{uid}/models [get]
 func (h *GrantHandler) list(c *gin.Context) {
-	list, err := h.store.ListGrants(c.Request.Context(), c.Param("id"))
+	list, err := h.store.ListGrants(c.Request.Context(), c.Param("uid"))
 	if err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
 		return
@@ -55,13 +57,13 @@ type grantReq struct {
 // @Tags         compute,grant
 // @Accept       json
 // @Produce      json
-// @Param        id    path  string  true  "用户ID（usr_xxx）"
+// @Param        uid   path  string    true  "用户ID（usr_xxx）"
 // @Param        body  body  grantReq  true  "模型ID列表"
 // @Success      200  {object}  httpx.Response{data=object}
 // @Failure      400  {object}  httpx.Response
 // @Failure      500  {object}  httpx.Response
 // @Security     BearerAuth
-// @Router       /users/{id}/models [post]
+// @Router       /users/{uid}/models [post]
 func (h *GrantHandler) grant(c *gin.Context) {
 	var body grantReq
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -69,7 +71,7 @@ func (h *GrantHandler) grant(c *gin.Context) {
 		return
 	}
 	grantedBy := c.GetString(auth.CtxUserDBID)
-	granted, err := h.store.GrantModels(c.Request.Context(), c.Param("id"), body.ModelIDs, grantedBy)
+	granted, err := h.store.GrantModels(c.Request.Context(), c.Param("uid"), body.ModelIDs, grantedBy)
 	if err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
 		return
@@ -82,14 +84,14 @@ func (h *GrantHandler) grant(c *gin.Context) {
 // @Summary      收回用户某模型授权
 // @Tags         compute,grant
 // @Produce      json
-// @Param        id         path  string  true  "用户ID（usr_xxx）"
+// @Param        uid        path  string  true  "用户ID（usr_xxx）"
 // @Param        model_id   path  string  true  "模型ID（cmd_xxx）"
 // @Success      200  {object}  httpx.Response{data=object}
 // @Failure      500  {object}  httpx.Response
 // @Security     BearerAuth
-// @Router       /users/{id}/models/{model_id} [delete]
+// @Router       /users/{uid}/models/{model_id} [delete]
 func (h *GrantHandler) revoke(c *gin.Context) {
-	if err := h.store.RevokeModel(c.Request.Context(), c.Param("id"), c.Param("model_id")); err != nil {
+	if err := h.store.RevokeModel(c.Request.Context(), c.Param("uid"), c.Param("model_id")); err != nil {
 		httpx.Err(c, 500, 50003, err.Error())
 		return
 	}

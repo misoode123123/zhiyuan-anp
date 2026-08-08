@@ -6564,7 +6564,7 @@
                 }
             }
         },
-        "/users/{id}/models": {
+        "/users/{uid}/models": {
             "get": {
                 "security": [
                     {
@@ -6583,7 +6583,7 @@
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     }
@@ -6639,7 +6639,7 @@
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     },
@@ -6687,7 +6687,7 @@
                 }
             }
         },
-        "/users/{id}/models/{model_id}": {
+        "/users/{uid}/models/{model_id}": {
             "delete": {
                 "security": [
                     {
@@ -6706,7 +6706,7 @@
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     },

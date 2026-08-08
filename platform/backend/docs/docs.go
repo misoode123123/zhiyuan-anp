@@ -6571,7 +6571,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/users/{id}/models": {
+        "/users/{uid}/models": {
             "get": {
                 "security": [
                     {
@@ -6590,7 +6590,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     }
@@ -6646,7 +6646,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     },
@@ -6694,7 +6694,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/users/{id}/models/{model_id}": {
+        "/users/{uid}/models/{model_id}": {
             "delete": {
                 "security": [
                     {
@@ -6713,7 +6713,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "用户ID（usr_xxx）",
-                        "name": "id",
+                        "name": "uid",
                         "in": "path",
                         "required": true
                     },
