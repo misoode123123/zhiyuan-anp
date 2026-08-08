@@ -27,6 +27,11 @@ export default function WorkspaceFrame() {
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // force_new：点「🆕 新会话」时置 true，boot effect 读取后立即复位；
+  // newSessionKey：变更即触发 boot effect 重跑（与 reloadKey 同机制），透传 force_new。
+  const forceNewRef = useRef(false);
+  const [newSessionKey, setNewSessionKey] = useState(0);
+
   // 当前用户授权的编码模型（cmd_xxx）；空=未选/未授权，后端兜底用全局 config。
   const [model, setModel] = useState("");
   // model 固定在 session boot 时读取。ModelSelect 异步 seed model，若把 model 加入 boot
@@ -148,6 +153,8 @@ export default function WorkspaceFrame() {
     if (missingParams || !selectedReq) return;
     let aborted = false;
     const timer = setTimeout(() => {
+      const wantForceNew = forceNewRef.current;
+      forceNewRef.current = false;
       fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -155,6 +162,7 @@ export default function WorkspaceFrame() {
           tool,
           requirement_id: selectedReq,
           model: modelRef.current || undefined,
+          force_new: wantForceNew || undefined,
         }),
       })
         .then((r) => r.json())
@@ -182,7 +190,7 @@ export default function WorkspaceFrame() {
       aborted = true;
       clearTimeout(timer);
     };
-  }, [appID, psID, tool, reloadKey, missingParams, selectedReq]);
+  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selectedReq]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
@@ -496,6 +504,22 @@ export default function WorkspaceFrame() {
         onReconnect={() => {
           setUrl("");
           setReloadKey((k) => k + 1);
+        }}
+        onNewSession={() => {
+          if (!selectedReq) {
+            setErr("请先选择需求");
+            return;
+          }
+          if (
+            !window.confirm(
+              "确认开启新会话？当前对话上下文不会带入新会话，需求内容请用「🤖 AI 编码」重新注入。"
+            )
+          ) {
+            return;
+          }
+          forceNewRef.current = true;
+          setUrl("");
+          setNewSessionKey((k) => k + 1);
         }}
         drawerOpen={drawerOpen}
         onToggleDrawer={toggleDrawer}
