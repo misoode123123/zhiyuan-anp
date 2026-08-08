@@ -27,6 +27,17 @@ export default function WorkspaceFrame() {
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // 当前用户授权的编码模型（cmd_xxx）；空=未选/未授权，后端兜底用全局 config。
+  const [model, setModel] = useState("");
+  // model 固定在 session boot 时读取。ModelSelect 异步 seed model，若把 model 加入 boot
+  // effect 的 deps 会 double-boot，与后端「复用存活会话不重注 model」相撞。故用 ref 暂存
+  // 最新值，boot 读 ref.current；改 model 后点「重连」(reloadKey++) 重新 boot 才生效。
+  // 用独立 effect 写 ref（而非渲染期写），满足 react-hooks/refs；不影响 boot effect deps。
+  const modelRef = useRef(model);
+  useEffect(() => {
+    modelRef.current = model;
+  }, [model]);
+
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailErr, setDetailErr] = useState("");
 
@@ -140,7 +151,11 @@ export default function WorkspaceFrame() {
       fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool, requirement_id: selectedReq }),
+        body: JSON.stringify({
+          tool,
+          requirement_id: selectedReq,
+          model: modelRef.current || undefined,
+        }),
       })
         .then((r) => r.json())
         .then((r) => {
@@ -467,6 +482,8 @@ export default function WorkspaceFrame() {
         appID={appID}
         appName={detail?.application?.name}
         tool={tool}
+        model={model}
+        onModelChange={setModel}
         deployState={deployState}
         testUrl={testUrl}
         deployErr={deployErr}

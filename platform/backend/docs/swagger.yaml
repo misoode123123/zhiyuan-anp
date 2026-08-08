@@ -2270,7 +2270,7 @@ paths:
         name: aid
         required: true
         type: string
-      - description: 工作台选项{tool:opencode/claude/codex}
+      - description: 工作台选项{tool,model,requirement_id}
         in: body
         name: body
         schema:
@@ -4699,12 +4699,12 @@ paths:
       summary: 聚合规范（分层合并）
       tags:
       - standard
-  /users/{id}/models:
+  /users/{uid}/models:
     get:
       parameters:
       - description: 用户ID（usr_xxx）
         in: path
-        name: id
+        name: uid
         required: true
         type: string
       produces:
@@ -4737,7 +4737,7 @@ paths:
       parameters:
       - description: 用户ID（usr_xxx）
         in: path
-        name: id
+        name: uid
         required: true
         type: string
       - description: 模型ID列表
@@ -4772,12 +4772,12 @@ paths:
       tags:
       - compute
       - grant
-  /users/{id}/models/{model_id}:
+  /users/{uid}/models/{model_id}:
     delete:
       parameters:
       - description: 用户ID（usr_xxx）
         in: path
-        name: id
+        name: uid
         required: true
         type: string
       - description: 模型ID（cmd_xxx）

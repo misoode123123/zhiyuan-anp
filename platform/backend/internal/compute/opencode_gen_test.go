@@ -1,0 +1,84 @@
+package compute_test
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	"zhiyuan-anp/platform/backend/internal/compute"
+	"zhiyuan-anp/platform/backend/internal/testutil"
+)
+
+// TestStore_GenerateOpenCodeConfigForModels 覆盖 per-user opencode config 生成 +
+// cmd_xxx → "provider/name" 解析 + 写盘。过滤语义：只含授权模型，同 provider 的
+// 未授权模型必须排除；provider 命中 ≥1 授权模型才出现。
+func TestStore_GenerateOpenCodeConfigForModels(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "compute_model", "compute_provider")
+	s := compute.NewStore(db)
+	ctx := context.Background()
+	prov := &compute.Provider{Name: "ZAI Coding", Type: "api", BaseURL: "http://x", APIKey: "k1", Enabled: true}
+	if err := s.CreateProvider(ctx, prov); err != nil {
+		t.Fatal(err)
+	}
+	m1 := &compute.Model{ProviderID: prov.ID, Name: "glm-5.1", Modality: "code", ContextWindow: 204800, MaxOutput: 131072, Enabled: true}
+	if err := s.CreateModel(ctx, m1); err != nil {
+		t.Fatal(err)
+	}
+	m2 := &compute.Model{ProviderID: prov.ID, Name: "glm-5-turbo", Modality: "code", ContextWindow: 204800, MaxOutput: 131072, Enabled: true}
+	if err := s.CreateModel(ctx, m2); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := s.GenerateOpenCodeConfigForModels(ctx, []string{m1.ID})
+	if err != nil {
+		t.Fatalf("GenerateOpenCodeConfigForModels: %v", err)
+	}
+	p, ok := cfg.Provider["zai-coding"]
+	if !ok {
+		t.Fatalf("期望 provider key zai-coding，got %v", cfg.Provider)
+	}
+	if p.Options.APIKey != "k1" {
+		t.Errorf("apiKey 期望 k1，got %v", p.Options.APIKey)
+	}
+	if _, has := p.Models["glm-5.1"]; !has {
+		t.Error("期望含 glm-5.1")
+	}
+	if _, has := p.Models["glm-5-turbo"]; has {
+		t.Error("不应含 glm-5-turbo（未授权）")
+	}
+
+	id, err := s.ResolveOpencodeModelID(ctx, m1.ID)
+	if err != nil || id != "zai-coding/glm-5.1" {
+		t.Fatalf("ResolveOpencodeModelID 期望 zai-coding/glm-5.1，got %q err=%v", id, err)
+	}
+	name, err := s.ModelName(ctx, m1.ID)
+	if err != nil || name != "glm-5.1" {
+		t.Fatalf("ModelName 期望 glm-5.1，got %q err=%v", name, err)
+	}
+	// 写盘
+	tmp := t.TempDir() + "/opencode/opencode.json"
+	if err := s.WriteOpenCodeConfigForModels(ctx, []string{m1.ID}, tmp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); err != nil {
+		t.Errorf("config 未写入: %v", err)
+	}
+
+	// 未命中：ResolveOpencodeModelID / ModelName 返回 ("", nil)，不报错。
+	if id, err := s.ResolveOpencodeModelID(ctx, "cmd_does_not_exist"); err != nil || id != "" {
+		t.Fatalf("未命中 ResolveOpencodeModelID 期望 (\"\", nil)，got %q err=%v", id, err)
+	}
+	if name, err := s.ModelName(ctx, "cmd_does_not_exist"); err != nil || name != "" {
+		t.Fatalf("未命中 ModelName 期望 (\"\", nil)，got %q err=%v", name, err)
+	}
+
+	// 空 modelIDs → 无 provider（无命中模型）。
+	empty, err := s.GenerateOpenCodeConfigForModels(ctx, nil)
+	if err != nil {
+		t.Fatalf("空 modelIDs GenerateOpenCodeConfigForModels: %v", err)
+	}
+	if len(empty.Provider) != 0 {
+		t.Errorf("空 modelIDs 期望 0 provider，got %d", len(empty.Provider))
+	}
+}

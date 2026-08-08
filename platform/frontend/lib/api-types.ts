@@ -3027,7 +3027,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description 工作台选项{tool:opencode/claude/codex} */
+            /** @description 工作台选项{tool,model,requirement_id} */
             requestBody?: {
                 content: {
                     "application/json": Record<string, never>;
@@ -7067,7 +7067,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/{id}/models": {
+    "/users/{uid}/models": {
         parameters: {
             query?: never;
             header?: never;
@@ -7081,7 +7081,7 @@ export interface paths {
                 header?: never;
                 path: {
                     /** @description 用户ID（usr_xxx） */
-                    id: string;
+                    uid: string;
                 };
                 cookie?: never;
             };
@@ -7117,7 +7117,7 @@ export interface paths {
                 header?: never;
                 path: {
                     /** @description 用户ID（usr_xxx） */
-                    id: string;
+                    uid: string;
                 };
                 cookie?: never;
             };
@@ -7165,7 +7165,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/{id}/models/{model_id}": {
+    "/users/{uid}/models/{model_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -7182,7 +7182,7 @@ export interface paths {
                 header?: never;
                 path: {
                     /** @description 用户ID（usr_xxx） */
-                    id: string;
+                    uid: string;
                     /** @description 模型ID（cmd_xxx） */
                     model_id: string;
                 };

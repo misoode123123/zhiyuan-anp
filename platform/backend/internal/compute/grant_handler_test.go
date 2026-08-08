@@ -163,9 +163,9 @@ func TestGrantHandler_InvalidBody(t *testing.T) {
 func TestGrantHandler_GuardRouteOps(t *testing.T) {
 	ops := auth.RegisteredOps()
 	must := map[string]string{
-		"GET /api/v1/users/:id/models":              "config.manage",
-		"POST /api/v1/users/:id/models":             "config.manage",
-		"DELETE /api/v1/users/:id/models/:model_id": "config.manage",
+		"GET /api/v1/users/:uid/models":              "config.manage",
+		"POST /api/v1/users/:uid/models":             "config.manage",
+		"DELETE /api/v1/users/:uid/models/:model_id": "config.manage",
 	}
 	for k, want := range must {
 		got, ok := ops[k]

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,7 +62,18 @@ type Handler struct {
 	scaffoldsBase   string            // 脚手架种子根目录（建非 web 应用时克隆到 RepoDir；空=不克隆）
 	adaptSubmitter  AdaptSubmitter    // 导入后 AI 编码适配触发器（main.go 经 SetAdaptSubmitter 注入）；nil=不自动适配
 	mwReconciler    MWReconciler      // 中间件依赖供给（部署前注入 REDIS_ADDR 等）；nil=不注入
+	grant           grantChecker      // /workspace 模型授权校验；nil=跳过校验（兼容未注入 computeStore）
 }
+
+// grantChecker 模型授权校验（局部鸭子类型，解耦对 compute.Store 的直接依赖）。
+// *compute.Store 实现了 IsGranted；main.go 经 SetGrantChecker 注入。nil=跳过校验（兜底）。
+type grantChecker interface {
+	IsGranted(ctx context.Context, userID, modelID string) (bool, error)
+}
+
+// SetGrantChecker 注入模型授权校验器（main.go 在 Register 后调，避免改 NewHandler/Register 签名）。
+// nil=跳过 /workspace 的模型授权校验（兼容未接 computeStore 的部署）。
+func (h *Handler) SetGrantChecker(g grantChecker) { h.grant = g }
 
 // AdaptSubmitter 触发 AI 编码适配（导入后让 opencode 把应用适配成可部署）。
 // dev.CodingAgent 经 main.go 的 adapter 实现之；nil=未启用（导入不自动适配，仍可手动用编码工作台）。
@@ -229,7 +241,7 @@ func (h *Handler) Detail(c *gin.Context) {
 // @Produce      json
 // @Param        id     path    string  true   "项目空间ID"
 // @Param        aid    path    string  true   "应用ID"
-// @Param        body   body    object  false  "工作台选项{tool:opencode/claude/codex}"
+// @Param        body   body    object  false  "工作台选项{tool,model,requirement_id}"
 // @Param        X-User header  string  false  "开发者身份"
 // @Success      200    {object}  map[string]interface{}  "工作台信息(url/session_id等)"
 // @Failure      404    {object}  map[string]interface{}  "应用不存在"
@@ -248,15 +260,31 @@ func (h *Handler) Workspace(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Tool          string `json:"tool"`           // opencode(默认) / claude / codex ...
-		RequirementID string `json:"requirement_id"` // 绑定的需求（工作直播按此关联；空=application 页老入口）
+		Tool          string `json:"tool"`            // opencode(默认) / claude / codex ...
+		RequirementID string `json:"requirement_id"`  // 绑定的需求（工作直播按此关联；空=application 页老入口）
+		Model         string `json:"model,omitempty"` // 授权模型 id（cmd_xxx）；空=未选模型，走全局 config 兜底
 	}
 	_ = c.ShouldBindJSON(&in)
-	user := c.GetString(auth.CtxUserID) // 开发者身份（不同开发者可各选各的工具）
+	// 模型授权校验：选了模型且 grant 已注入时，校验当前用户是否被授权该模型；越权即拒 403，不 fallback。
+	// 用 CtxUserDBID(usr_xxx，grant 表 user_id) 校验，不要用 CtxUserID(用户名)。
+	// Model 空=走默认路由（兼容旧调用）；grant nil=未注入 computeStore（跳过，兼容）。
+	if in.Model != "" && h.grant != nil {
+		uid := c.GetString(auth.CtxUserDBID)
+		ok, err := h.grant.IsGranted(c.Request.Context(), uid, in.Model)
+		if err != nil {
+			// fail-closed：DB 校验出错时保守按未授权拒绝（err 时 ok=false → 落入 !ok 分支返 403）。
+			log.Printf("warn: IsGranted 校验出错 user=%s model=%s: %v", uid, in.Model, err)
+		}
+		if !ok {
+			httpx.Err(c, 403, 40302, "无权使用该模型")
+			return
+		}
+	}
+	user := c.GetString(auth.CtxUserID) // 开发者身份（用户名，不同开发者可各选各的工具；worktree/session 用，保持不变）
 	if user == "" {
 		user = "anonymous"
 	}
-	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID)
+	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID, in.Model)
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return

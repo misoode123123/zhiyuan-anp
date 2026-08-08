@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import { ModelSelect } from "@/app/_components/model-select";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type ProjectSpace = { id: string; name: string; slug: string };
@@ -35,6 +36,7 @@ export default function RequirementsPage() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [dispatching, setDispatching] = useState("");
+  const [model, setModel] = useState("");
   const dispatchingRef = useRef(false); // 同步锁：堵住 dispatching state 堵不住的同 tick 连点竞态
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function RequirementsPage() {
           description: desc + textPart,
           images,
           application_id: selApp || undefined,
+          model: model || undefined,
         }),
       });
       const r = await res.json();
@@ -260,6 +263,7 @@ export default function RequirementsPage() {
             <span className="ml-2 text-xs text-text-muted">先去「应用部署」创建应用</span>
           )}
         </div>
+        <ModelSelect value={model} onChange={setModel} taskType="spec" className="min-w-[160px]" />
       </div>
 
       <label className="text-xs text-text-muted">业务描述</label>

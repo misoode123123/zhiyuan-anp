@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
+import { ModelSelect } from "@/app/_components/model-select";
 import { FlowStepper } from "../_components/stepper";
 
 type Envelope<T> = { code: number; data: T; message?: string };
@@ -32,7 +33,7 @@ export default function DevPage() {
   const [psID, setPsID] = useState("");
   const [repoDir, setRepoDir] = useState("D:/Projects/智源-ANP平台/pilots/oc-pilot");
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState("zai-coding/glm-5.1");
+  const [model, setModel] = useState("");
   const [list, setList] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -74,7 +75,7 @@ export default function DevPage() {
       const res = await fetch(`${API_BASE_URL}/code`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Project-Space-Id": psID },
-        body: JSON.stringify({ repo_dir: repoDir, prompt, model }),
+        body: JSON.stringify({ repo_dir: repoDir, prompt, model: model || undefined }),
       });
       const r = await res.json();
       if (r.data?.task_id) {
@@ -98,8 +99,8 @@ export default function DevPage() {
       <h1 className="mb-1 text-xl font-bold">研发工作台</h1>
       <FlowStepper current={1} />
       <p className="mb-4 text-sm text-text-muted">
-        异步编码引擎：opencode + 智谱 GLM-5.1。需求工作台点「⚡
-        派发编码」的任务会自动出现在下方看板，<b>无需在此重复录入</b>
+        异步编码引擎：opencode + 授权模型。需求工作台点「⚡ 派发编码」的任务会自动出现在下方看板，
+        <b>无需在此重复录入</b>
         ；下方输入框用于无需求规格的独立编码。
       </p>
 
@@ -132,12 +133,7 @@ export default function DevPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted">模型</label>
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full rounded-md border border-border px-2 py-1.5 text-sm"
-            />
+            <ModelSelect taskType="code" value={model} onChange={setModel} className="w-full" />
           </div>
         </div>
         <label className="text-xs text-text-muted">编码任务</label>

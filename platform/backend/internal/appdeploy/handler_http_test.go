@@ -18,6 +18,7 @@ import (
 
 	"zhiyuan-anp/platform/backend/internal/auth"
 	"zhiyuan-anp/platform/backend/internal/change"
+	"zhiyuan-anp/platform/backend/internal/codews"
 	"zhiyuan-anp/platform/backend/internal/requirement"
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
@@ -1752,5 +1753,87 @@ func TestHandler_DeployCommit_HostApp_Dev_Forbidden(t *testing.T) {
 		map[string]string{"env": "test", "sha": "deadbeef"})
 	if code != 403 {
 		t.Fatalf("dev deploy-commit host 应用应 403，得 %d", code)
+	}
+}
+
+// ============================================================
+// /workspace 模型授权校验（Task 3）
+// ============================================================
+
+// fakeGrantChecker grantChecker 的测试桩：捕获 IsGranted 入参，按 ret 返回。
+// 越权（ret=false）→ handler fail-closed 返 403/40302，Ensure 不被触达。
+type fakeGrantChecker struct {
+	called    bool
+	gotUserID string
+	gotModel  string
+	ret       bool
+}
+
+func (f *fakeGrantChecker) IsGranted(_ context.Context, userID, modelID string) (bool, error) {
+	f.called = true
+	f.gotUserID = userID
+	f.gotModel = modelID
+	return f.ret, nil
+}
+
+// newRouterWithDBID 同 newRouterWith 但注入 CtxUserDBID（usr_xxx，grant 校验用）。
+// grant 校验用 CtxUserDBID（grant 表 user_id），与 worktree 用的 CtxUserID（用户名）区分。
+func newRouterWithDBID(h *Handler, dbID string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("roles", []string{"admin"})
+		c.Set(auth.CtxUserDBID, dbID)
+		c.Set(auth.CtxUserID, "tester") // worktree/session 用用户名（Ensure 不应被触达，但保持真实）
+		c.Next()
+	})
+	h.Register(r.Group("/api/v1"))
+	return r
+}
+
+// TestHandler_Workspace_modelGrantDenied 安全路径核心：/workspace 选了未授权模型 → 403/40302，
+// 且 Ensure 不被触达（grant 拒绝即 return，codeWS.Manager 不启动进程）。
+// codeWS 非空（过第一道 gate）+ grant 返 false → 命中 fail-closed 拒绝分支。
+// happy path（Ensure 启动 opencode）依赖真实进程，不在单测覆盖（.28 实测验证）。
+func TestHandler_Workspace_modelGrantDenied(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	h.codeWS = codews.NewManager("test", nil) // codeWS 非空，过 h.codeWS==nil gate
+	grant := &fakeGrantChecker{ret: false}
+	h.SetGrantChecker(grant)
+	a := seedApp(t, h, "ps_1", "snake", "/tmp/snake")
+	r := newRouterWithDBID(h, "usr_test")
+
+	code, resp := doReq(t, r, http.MethodPost, "/api/v1/project-spaces/ps_1/apps/"+a.ID+"/workspace",
+		map[string]string{"tool": "opencode", "model": "cmd_unauth"})
+	if code != 403 {
+		t.Fatalf("越权模型应 403，got %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40302 {
+		t.Fatalf("biz code 应 40302（无权使用该模型），got %v", resp["code"])
+	}
+	if !grant.called {
+		t.Fatal("grantChecker.IsGranted 未被调用，授权校验逻辑缺失")
+	}
+	// 校验用 CtxUserDBID(usr_xxx)，不是 CtxUserID(用户名)
+	if grant.gotUserID != "usr_test" || grant.gotModel != "cmd_unauth" {
+		t.Fatalf("IsGranted 入参期望 (usr_test, cmd_unauth)，got (%q, %q)",
+			grant.gotUserID, grant.gotModel)
+	}
+	// Ensure 未被触达：无会话创建（grant 拒绝即 return，未到 Ensure 调用）
+	if s := h.codeWS.Get(a.ID, "tester"); s != nil {
+		t.Fatalf("Ensure 不应被触达，但发现会话: %+v", s)
+	}
+}
+
+// TestHandler_SetGrantChecker 注入 grantChecker（main.go 装配用）。
+func TestHandler_SetGrantChecker(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	if h.grant != nil {
+		t.Fatal("初始应为 nil")
+	}
+	g := &fakeGrantChecker{}
+	h.SetGrantChecker(g)
+	if h.grant != g {
+		t.Fatal("SetGrantChecker 未注入")
 	}
 }

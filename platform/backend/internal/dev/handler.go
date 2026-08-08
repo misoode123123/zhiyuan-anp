@@ -11,9 +11,11 @@ import (
 )
 
 // computeGrantChecker 授权校验接口（局部，鸭子类型解耦对 compute.Store 的直接依赖）。
-// *compute.Store 实现了 IsGranted，满足此接口；测试可传 fake。
+// *compute.Store 实现了 IsGranted + ResolveOpencodeModelID，满足此接口；测试可传 fake。
 type computeGrantChecker interface {
 	IsGranted(ctx context.Context, userID, modelID string) (bool, error)
+	// ResolveOpencodeModelID 把 cmd_xxx 解析成 opencode 的 "provider/name"（供 opencode run -m）。
+	ResolveOpencodeModelID(ctx context.Context, modelID string) (string, error)
 }
 
 // Handler 研发工作台 HTTP 接口（异步编码）。
@@ -80,8 +82,19 @@ func (h *Handler) Code(c *gin.Context) {
 			return
 		}
 	}
+	// 模型 id 解析：把 cmd_xxx（compute_model.id）解析成 opencode 的 "provider/name"，
+	// 供 headless opencode run -m 使用。解析失败/未命中 → 保持 cmd_xxx 原值（由 opencode 报错暴露，
+	// post-grant 不应发生）。grant nil=未注入 computeStore，直接用 req.Model（兼容）。
+	modelForRun := req.Model
+	if req.Model != "" && h.grant != nil {
+		if id, err := h.grant.ResolveOpencodeModelID(c.Request.Context(), req.Model); err != nil {
+			log.Printf("warn: 解析 opencode model id 失败 model=%s: %v", req.Model, err)
+		} else if id != "" {
+			modelForRun = id
+		}
+	}
 	psID := c.GetString("project_space_id")
-	t, err := h.agent.Submit(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), "code", "", req.RepoDir, req.Prompt, req.Model)
+	t, err := h.agent.Submit(c.Request.Context(), psID, c.GetString(auth.CtxUserDBID), "code", "", req.RepoDir, req.Prompt, modelForRun)
 	if err != nil {
 		httpx.Err(c, 500, 50002, err.Error())
 		return

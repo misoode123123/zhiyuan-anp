@@ -32,6 +32,36 @@ export default function UsersPage() {
   const [selUser, setSelUser] = useState("");
   const [role, setRole] = useState("business");
   const [msg, setMsg] = useState("");
+  const [grantUserId, setGrantUserId] = useState(""); // usr_xxx
+  const [allModels, setAllModels] = useState<{ id: string; name: string; display_name?: string }[]>(
+    []
+  );
+  const [grantedIds, setGrantedIds] = useState<Set<string>>(new Set());
+  const [grantMsg, setGrantMsg] = useState("");
+
+  // 加载全量模型（一次）
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/compute/models`)
+      .then((r) => r.json())
+      .then((r: Envelope<typeof allModels>) => setAllModels(r.data ?? []))
+      .catch(() => {});
+  }, []);
+
+  // 选中某用户时加载其已授权模型
+  useEffect(() => {
+    if (!grantUserId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 有意重置派生授权状态：用户取消选中时清空上一人的 grants/msg
+      setGrantedIds(new Set());
+      setGrantMsg("");
+      return;
+    }
+    fetch(`${API_BASE_URL}/users/${grantUserId}/models`)
+      .then((r) => r.json())
+      .then((r: Envelope<{ id: string }[]>) =>
+        setGrantedIds(new Set((r.data ?? []).map((x) => x.id)))
+      )
+      .catch(() => setGrantedIds(new Set()));
+  }, [grantUserId]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/project-spaces`)
@@ -87,6 +117,26 @@ export default function UsersPage() {
     }
   }
 
+  function toggleGrant(mid: string) {
+    setGrantedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(mid)) next.delete(mid);
+      else next.add(mid);
+      return next;
+    });
+  }
+
+  async function saveGrants() {
+    if (!grantUserId) return;
+    const res = await fetch(`${API_BASE_URL}/users/${grantUserId}/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_ids: Array.from(grantedIds) }),
+    });
+    const r = await res.json();
+    setGrantMsg(r.code === 0 ? `✓ 已保存 ${grantedIds.size} 个模型` : `✗ ${r.message}`);
+  }
+
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold">🔐 用户与权限</h1>
@@ -136,6 +186,12 @@ export default function UsersPage() {
                   >
                     {u.status}
                   </span>
+                  <button
+                    onClick={() => setGrantUserId(grantUserId === u.id ? "" : u.id)}
+                    className={`ml-auto rounded px-1.5 py-0.5 text-xs ${grantUserId === u.id ? "bg-accent text-white" : "bg-surface-2"}`}
+                  >
+                    模型授权
+                  </button>
                 </div>
                 {u.spaces && u.spaces.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
@@ -151,6 +207,37 @@ export default function UsersPage() {
             ))}
             {users.length === 0 && <div className="text-sm text-text-muted">暂无用户</div>}
           </div>
+          {grantUserId && (
+            <div className="mb-3 rounded-lg border border-border bg-surface p-2">
+              <div className="mb-1 text-xs font-medium">
+                授权模型 — {users.find((u) => u.id === grantUserId)?.name}
+              </div>
+              <div className="max-h-48 overflow-auto">
+                {allModels.map((m) => (
+                  <label key={m.id} className="flex items-center gap-2 py-0.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={grantedIds.has(m.id)}
+                      onChange={() => toggleGrant(m.id)}
+                    />
+                    <span>{m.display_name || m.name}</span>
+                  </label>
+                ))}
+                {allModels.length === 0 && (
+                  <span className="text-xs text-text-muted">无可用模型（先在算力中心添加）</span>
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  onClick={saveGrants}
+                  className="rounded bg-accent px-3 py-1 text-xs text-white"
+                >
+                  保存
+                </button>
+                {grantMsg && <span className="text-xs text-text-muted">{grantMsg}</span>}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 空间成员管理 */}

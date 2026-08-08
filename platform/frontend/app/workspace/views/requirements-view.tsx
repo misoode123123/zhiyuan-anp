@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { WorkspaceDetail, Req, ReqState, ReqActions } from "../types";
 import { statusColor, statusLabel } from "@/lib/workspace";
+import { currentUser } from "@/lib/api";
 
 // 需求视图：IDE 风格需求列表（状态色条 + 优先级标签 + 标题），展开详情 + 操作按钮。
 export function RequirementsView({
@@ -20,6 +21,8 @@ export function RequirementsView({
 }) {
   const [openId, setOpenId] = useState<string | null>(selectedReq || null);
   const reqs = detail?.requirements ?? [];
+  // 当前登录用户名（与 requirement.assignee 同为 username），用于区分"我认领的" vs "别人认领的"。
+  const me = currentUser();
 
   const priClass = (p?: string) =>
     !p || p === "P2"
@@ -41,6 +44,7 @@ export function RequirementsView({
           reqs.map((q) => {
             const sel = selectedReq === q.id;
             const open = openId === q.id;
+            const mine = !!q.assignee && q.assignee === me;
             return (
               <div key={q.id}>
                 <div
@@ -67,13 +71,20 @@ export function RequirementsView({
                       {q.title || "(无标题)"}
                     </span>
                   </button>
-                  {sel ? null : (
+                  {sel ? null : q.assignee && !mine ? (
+                    <span
+                      className="shrink-0 cursor-not-allowed rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted opacity-50"
+                      title={`已被 ${q.assignee} 认领`}
+                    >
+                      已被认领
+                    </span>
+                  ) : (
                     <button
                       onClick={() => onStartReq(q.id)}
                       className="shrink-0 rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:bg-surface-2"
-                      title={q.assignee ? "继续开发" : "认领并开发"}
+                      title={mine ? "继续开发" : "认领并启动编码工作台"}
                     >
-                      {q.assignee ? "继续" : "认领"}
+                      {mine ? "↩ 继续" : "🚀 启动"}
                     </button>
                   )}
                 </div>
