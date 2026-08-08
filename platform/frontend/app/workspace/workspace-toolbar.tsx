@@ -20,7 +20,6 @@ export function WorkspaceToolbar({
   registering,
   onOpenWindow,
   onReconnect,
-  onNewSession,
   drawerOpen,
   onToggleDrawer,
 }: {
@@ -37,7 +36,6 @@ export function WorkspaceToolbar({
   registering: boolean;
   onOpenWindow: () => void;
   onReconnect: () => void;
-  onNewSession: () => void;
   drawerOpen: boolean;
   onToggleDrawer: () => void;
 }) {
@@ -83,13 +81,6 @@ export function WorkspaceToolbar({
           </button>
           <button onClick={onReconnect} className="text-text-muted" title="重连工作台">
             重连
-          </button>
-          <button
-            onClick={onNewSession}
-            className="text-accent"
-            title="开新会话（丢弃当前上下文，需求内容用「🤖 AI 编码」重新注入）"
-          >
-            🆕 新会话
           </button>
           <a href="/applications" className="text-accent" title="返回应用部署">
             ← 应用

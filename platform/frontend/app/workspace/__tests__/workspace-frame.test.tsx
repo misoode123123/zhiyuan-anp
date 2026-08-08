@@ -13,8 +13,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../sidebar", () => ({
-  Sidebar: ({ onStartReq }: { onStartReq: (id: string) => void }) => (
-    <button onClick={() => onStartReq("req1")}>start-req</button>
+  Sidebar: ({ onStartReq }: { onStartReq: (id: string, fresh?: boolean) => void }) => (
+    <div>
+      <button onClick={() => onStartReq("req1")}>start-req</button>
+      <button onClick={() => onStartReq("req1", true)}>start-req-fresh</button>
+    </div>
   ),
 }));
 
@@ -69,5 +72,37 @@ describe("WorkspaceFrame 编码工作台", () => {
     expect(body.tool).toBe("opencode");
     expect(body.requirement_id).toBe("req1");
     expect(body.model).toBe("cmd_glm51");
+  });
+
+  it("需求列表「新会话」→ /workspace POST body.force_new = true", async () => {
+    const fetchMock = installFetchMock();
+    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      const method = init?.method ?? "GET";
+      if (u.endsWith("/detail"))
+        return ok({ application: {}, requirements: [], changes: [], releases: [] });
+      if (u.includes("/assign") && method === "POST") return ok({});
+      if (u.endsWith("/users/me/models")) return ok([]);
+      if (u.endsWith("/workspace") && method === "POST") return ok({ url: "http://ws/x" });
+      return ok({});
+    });
+
+    render(<WorkspaceFrame />);
+
+    // 点 mock 的「fresh」入口 → onStartReq("req1", true) → force_new 透传到 boot body
+    fireEvent.click(await screen.findByText("start-req-fresh"));
+
+    await waitFor(() => {
+      const ws = fetchMock.mock.calls.find(
+        (c) => String(c[0]).endsWith("/workspace") && (c[1] as RequestInit)?.method === "POST"
+      );
+      expect(ws).toBeDefined();
+    });
+
+    const wsCall = fetchMock.mock.calls.find(
+      (c) => String(c[0]).endsWith("/workspace") && (c[1] as RequestInit)?.method === "POST"
+    );
+    const body = JSON.parse(String((wsCall![1] as RequestInit).body));
+    expect(body.force_new).toBe(true);
   });
 });

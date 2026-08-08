@@ -503,23 +503,8 @@ export default function WorkspaceFrame() {
         }}
         onReconnect={() => {
           setUrl("");
+          setLoading(true); // 修空白屏：重连 boot 期间显示"启动 opencode 工作台…"，不再白屏
           setReloadKey((k) => k + 1);
-        }}
-        onNewSession={() => {
-          if (!selectedReq) {
-            setErr("请先选择需求");
-            return;
-          }
-          if (
-            !window.confirm(
-              "确认开启新会话？当前对话上下文不会带入新会话，需求内容请用「🤖 AI 编码」重新注入。"
-            )
-          ) {
-            return;
-          }
-          forceNewRef.current = true;
-          setUrl("");
-          setNewSessionKey((k) => k + 1);
         }}
         drawerOpen={drawerOpen}
         onToggleDrawer={toggleDrawer}
@@ -533,8 +518,10 @@ export default function WorkspaceFrame() {
             loading={!detail && !detailErr}
             err={detailErr}
             selectedReq={selectedReq}
-            onStartReq={async (id) => {
-              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）
+            onStartReq={async (id, fresh) => {
+              // 认领 + 建/复用工作区（原 onStartReq 逻辑整体迁入）。
+              // fresh=true（需求列表「🔄 新会话」）→ force_new 开空会话：丢弃当前上下文；
+              // 需求内容不自动注入（由用户在左侧详情看完后手动点「🤖 AI 编码」）。
               try {
                 const r = await fetch(
                   `${API_BASE_URL}/project-spaces/${psID}/requirements/${id}/assign`,
@@ -548,8 +535,13 @@ export default function WorkspaceFrame() {
                 alert(String(e));
                 return;
               }
+              if (fresh) {
+                forceNewRef.current = true; // boot effect 读取后复位；force_new 跳过磁盘复用开空会话
+                setNewSessionKey((k) => k + 1); // 即使 selectedReq 未变也强制 boot 重跑
+              }
+              setLoading(true); // 修空白屏：boot 期间显示"启动 opencode 工作台…"，不再白屏
               setSelectedReq(id);
-              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq），
+              // 认领后工作台由上方 boot useEffect 重新拉起（其 deps 含 selectedReq / newSessionKey），
               // 不再内联 POST /workspace——否则与 effect 重跑并发双发，撞 Ensure 跨锁 race 致 opencode 进程/端口泄漏（I1）。
               setTaskMsg("");
               setTestMsg("");
