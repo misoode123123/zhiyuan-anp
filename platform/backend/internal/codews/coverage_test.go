@@ -254,7 +254,7 @@ func TestEnsureSession_PicksMatchingNewest(t *testing.T) {
         ]}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "new" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false, ""); got != "new" {
 		t.Errorf("ensureSession 应选 updated 最大的匹配项 new, got %q", got)
 	}
 }
@@ -269,7 +269,7 @@ func TestEnsureSession_NoMatchCallsInit(t *testing.T) {
 		fmt.Fprint(w, `{"id":"fresh"}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "fresh" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false, ""); got != "fresh" {
 		t.Errorf("无匹配应调 initSession 返回 fresh, got %q", got)
 	}
 }
@@ -284,7 +284,7 @@ func TestEnsureSession_EmptyList(t *testing.T) {
 		fmt.Fprint(w, `{"id":"empty_new"}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "empty_new" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false, ""); got != "empty_new" {
 		t.Errorf("空列表应走 initSession 返回 empty_new, got %q", got)
 	}
 }
@@ -301,7 +301,7 @@ func TestEnsureSession_ForceNewBypassesReuse(t *testing.T) {
 		fmt.Fprint(w, `{"id":"fresh"}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r", true); got != "fresh" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", true, ""); got != "fresh" {
 		t.Errorf("forceNew=true 应跳过 reuse_me 走 initSession 返回 fresh, got %q", got)
 	}
 }
@@ -312,7 +312,7 @@ func TestEnsureSession_ForceNewFalseStillReuses(t *testing.T) {
 		fmt.Fprint(w, `{"data":[{"id":"new","time":{"updated":5000},"location":{"directory":"/r"}}]}`)
 	}))
 	defer srv.Close()
-	if got := ensureSession(portOf(t, srv.URL), "/r", false); got != "new" {
+	if got := ensureSession(portOf(t, srv.URL), "/r", false, ""); got != "new" {
 		t.Errorf("forceNew=false 应复用 new, got %q", got)
 	}
 }

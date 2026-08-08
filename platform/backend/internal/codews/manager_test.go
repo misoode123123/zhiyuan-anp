@@ -28,7 +28,7 @@ func TestInitSession(t *testing.T) {
 	defer srv.Close()
 	port := portOf(t, srv.URL)
 
-	id := initSession(port)
+	id := initSession(port, "")
 	if gotMethod != "POST" || gotPath != "/session" {
 		t.Errorf("请求 = %s %s, want POST /session", gotMethod, gotPath)
 	}
@@ -37,6 +37,30 @@ func TestInitSession(t *testing.T) {
 	}
 	if id != "ses_abc" {
 		t.Errorf("initSession = %q, want ses_abc", id)
+	}
+}
+
+// TestInitSessionModelRef 传 modelRef="providerID/modelID" 时，POST /session body 带
+// {"model":{"providerID","id"}}，让 opencode 用授权模型而非内置免费默认模型。
+// 空串仍发 {}（TestInitSession 已覆盖）。
+func TestInitSessionModelRef(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 256)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ses_xyz"}`)
+	}))
+	defer srv.Close()
+	port := portOf(t, srv.URL)
+
+	id := initSession(port, "maas/hy3")
+	if id != "ses_xyz" {
+		t.Fatalf("initSession = %q, want ses_xyz", id)
+	}
+	if !strings.Contains(gotBody, `"providerID":"maas"`) || !strings.Contains(gotBody, `"id":"hy3"`) {
+		t.Errorf("modelRef 非空时 body 应含 model ref 对象, got %q", gotBody)
 	}
 }
 
@@ -54,7 +78,7 @@ func TestInitSessionRetryTransient(t *testing.T) {
 	defer srv.Close()
 	port := portOf(t, srv.URL)
 
-	id := initSession(port)
+	id := initSession(port, "")
 	if id != "ses_after_retry" {
 		t.Errorf("initSession = %q, want ses_after_retry(应重试后成功)", id)
 	}
@@ -70,14 +94,14 @@ func TestInitSessionFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := portOf(t, srv.URL)
-	if id := initSession(port); id != "" {
+	if id := initSession(port, ""); id != "" {
 		t.Errorf("持续失败时应返回空串, got %q", id)
 	}
 }
 
 // TestInitSessionUnreachable 端口无服务 → 返回空串(非致命)。
 func TestInitSessionUnreachable(t *testing.T) {
-	if id := initSession(1); id != "" {
+	if id := initSession(1, ""); id != "" {
 		t.Errorf("不可达端口应返回空串, got %q", id)
 	}
 }
@@ -131,6 +155,11 @@ type stubModelWriter struct {
 	nameErr error  // ModelName 返回的错误
 
 	gotNameID string // 捕获传入的 modelID
+
+	ref    string // ResolveOpencodeModelID 返回值（"providerID/modelID"）
+	refErr error  // ResolveOpencodeModelID 返回的错误
+
+	gotRefID string // 捕获传入的 modelID
 }
 
 var _ ModelConfigWriter = (*stubModelWriter)(nil)
@@ -144,6 +173,11 @@ func (s *stubModelWriter) WriteOpenCodeConfigForModels(_ context.Context, modelI
 func (s *stubModelWriter) ModelName(_ context.Context, modelID string) (string, error) {
 	s.gotNameID = modelID
 	return s.name, s.nameErr
+}
+
+func (s *stubModelWriter) ResolveOpencodeModelID(_ context.Context, modelID string) (string, error) {
+	s.gotRefID = modelID
+	return s.ref, s.refErr
 }
 
 // TestXDGConfigDir per-(app,user) XDG 目录推导：稳定可复算 + sanitizeID 清洗。
