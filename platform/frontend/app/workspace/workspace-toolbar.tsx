@@ -1,5 +1,7 @@
 "use client";
 
+import { ModelSelect } from "@/app/_components/model-select";
+
 export type DeployState = "idle" | "building" | "running" | "failed";
 
 // 编码工作台顶部工具条:应用名/工具 + 抽屉开关 + 构建部署(test)+ 部署状态 + opencode 新窗口/重连。
@@ -8,6 +10,8 @@ export function WorkspaceToolbar({
   appID,
   appName,
   tool,
+  model,
+  onModelChange,
   deployState,
   testUrl,
   deployErr,
@@ -22,6 +26,8 @@ export function WorkspaceToolbar({
   appID: string;
   appName?: string;
   tool: string;
+  model: string;
+  onModelChange: (v: string) => void;
   deployState: DeployState;
   testUrl: string;
   deployErr: string;
@@ -48,6 +54,12 @@ export function WorkspaceToolbar({
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-3">
+          <ModelSelect
+            taskType="code"
+            value={model}
+            onChange={onModelChange}
+            className="min-w-[140px]"
+          />
           <button
             onClick={onDeploy}
             disabled={deployState === "building"}

@@ -1,23 +1,39 @@
 // Vitest 配置（Next 16 + React 19 项目）。
 // 依据 node_modules/next/dist/docs/01-app/02-guides/testing/vitest.md：
-//   - Vitest 暂不支持 async Server Components，组件测试需谨慎；
-//   - 本项目当前只跑「纯函数」单元测试（不依赖 Next 运行时/DOM），
-//     故 environment 用默认 node，未引入 @vitejs/plugin-react / jsdom / @testing-library。
-//   - 后续要做组件测试时，再按官方文档补齐上述依赖并把 environment 改 jsdom。
+//   - Vitest 暂不支持 async Server Components；
+//   - 纯函数测试用 node 环境（最轻量、与 Next/DOM 解耦）；
+//   - 组件测试用 jsdom + @vitejs/plugin-react + @testing-library/react（Next 16 官方指南）。
 //
-// 注：Next 16 文档示例用 vite-tsconfig-paths 插件解析 @/* 别名；Vitest 4 / Vite 7+ 已
+// 用 projects 拆分两类测试：lib/** 纯函数跑 node（无 setup、不污染 fetch）；
+// app/**/*.test.tsx 组件跑 jsdom（带 setup 装 fetch mock + jest-dom 匹配器）。
+// 每个项目显式声明 resolve.tsconfigPaths + plugins（projects 模式下顶层 resolve 不自动继承）。
+//
+// 注：Next 16 文档示例用 vite-tsconfig-paths 插件解析 @/* 别名；Vitest 4 / Vite 8+ 已
 // 内置 tsconfig paths 解析（resolve.tsconfigPaths），故采用原生方案，少一个依赖。
 import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  resolve: {
-    // 让 @/* 等 tsconfig.paths 别名在测试中生效（读取本目录 tsconfig.json）。
-    tsconfigPaths: true,
-  },
   test: {
-    // 纯函数测试无需 DOM；保持 node 环境最轻量、与 Next 运行时解耦。
-    environment: "node",
-    // 收集 lib 下 *.test.ts（兼容 __tests__/ 与 *.spec.ts 命名，便于后续扩展）。
-    include: ["lib/**/*.test.ts", "__tests__/**/*.test.{ts,tsx}"],
+    projects: [
+      {
+        resolve: { tsconfigPaths: true },
+        test: {
+          name: "node",
+          environment: "node",
+          include: ["lib/**/*.test.ts", "__tests__/**/*.test.ts"],
+        },
+      },
+      {
+        plugins: [react()],
+        resolve: { tsconfigPaths: true },
+        test: {
+          name: "components",
+          environment: "jsdom",
+          setupFiles: ["./vitest.setup.ts"],
+          include: ["app/**/*.test.tsx", "__tests__/**/*.test.tsx"],
+        },
+      },
+    ],
   },
 });
