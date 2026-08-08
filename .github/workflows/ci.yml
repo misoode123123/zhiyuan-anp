@@ -104,7 +104,11 @@ jobs:
           version: 10.31.0
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 24+：Next 16 内置 @edge-runtime/primitives 解构
+          # worker_threads.markAsUncloneable（Node 20 无此 API → vitest jsdom
+          # forks worker 启动崩 "webidl.util.markAsUncloneable is not a function"）。
+          # 本地 v24.14.0 验证 vitest 41/41 全绿，故与本地环境对齐。
+          node-version: "24"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: eslint
