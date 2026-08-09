@@ -7,17 +7,17 @@
 
 ## 一、生产环境一览
 
-| 项 | 值 |
-|---|---|
-| 服务器 | **10.10.0.28**（⚠️ 共享服务器，还跑 lowcode/帆软/腾讯微搭等，**只动 `deploy_` 前缀容器**） |
-| 平台入口 | **http://10.10.0.28:8088**（nginx 暴露 :8088；公网 IP 不通，只能内网/SSH 隧道） |
-| 登录 | `admin / admin123`（真实账号密码 + token 鉴权） |
-| 源码位置 | `.28:/opt/anp/`（tar 包解压，**非 git 仓库**） |
-| 编排 | `/opt/anp/deploy/docker-compose.prod.yml`（用 `docker-compose` v1，非 `docker compose`） |
-| 容器 | `deploy_backend_1` / `deploy_frontend_1` / `deploy_agent-runtime_1` / `deploy_nginx_1` |
-| 端口段 | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9450` |
-| 生产库 | `/opt/anp/data/anp.db`（SQLite） |
-| 密钥 | `/opt/anp/deploy/.env.prod`（含 `ZHIPUAI_API_KEY`、`APPDEPLOY_HOST=10.10.0.28` 等） |
+| 项       | 值                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------ |
+| 服务器   | **10.10.0.28**（⚠️ 共享服务器，还跑 lowcode/帆软/腾讯微搭等，**只动 `deploy_` 前缀容器**） |
+| 平台入口 | **http://10.10.0.28:8088**（nginx 暴露 :8088；公网 IP 不通，只能内网/SSH 隧道）            |
+| 登录     | `admin / admin123`（真实账号密码 + token 鉴权）                                            |
+| 源码位置 | `.28:/opt/anp/`（tar 包解压，**非 git 仓库**）                                             |
+| 编排     | `/opt/anp/deploy/docker-compose.prod.yml`（用 `docker-compose` v1，非 `docker compose`）   |
+| 容器     | `deploy_backend_1` / `deploy_frontend_1` / `deploy_agent-runtime_1` / `deploy_nginx_1`     |
+| 端口段   | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9499` |
+| 生产库   | `/opt/anp/data/anp.db`（SQLite）                                                           |
+| 密钥     | `/opt/anp/deploy/.env.prod`（含 `ZHIPUAI_API_KEY`、`APPDEPLOY_HOST=10.10.0.28` 等）        |
 
 ---
 
@@ -26,17 +26,19 @@
 opencode 编码工作台前端 JS 约 **2.8MB**，且 opencode 官方 web UI **不对静态资源做 gzip 压缩**——
 同局域网秒开（.28 内网约 10ms），但**远程 / 窄带宽 / 经公网就会很慢**。
 
-> 工作台 URL 形如 `http://10.10.0.28:9400`，端口 **9400-9450 动态分配**（每应用一个）。
+> 工作台 URL 形如 `http://10.10.0.28:9400`，端口 **9400-9499 动态分配**（每应用一个）。
 > 因此 `-L` 单端口映射覆盖不了，**远程推荐用 SSH 动态代理（SOCKS）**。
 
 ### 方案 A：SSH 动态代理（推荐——覆盖所有端口 + 压缩）
 
 本地终端起一条压缩隧道（保持窗口开着）：
+
 ```bash
 ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 ```
+
 - `-C` 启用压缩 → 2.8MB JS 经压缩约 **→ 600KB**
-- `-D 1080` 本地 SOCKS5 代理（任意端口都走它，含动态的 9400-9450）
+- `-D 1080` 本地 SOCKS5 代理（任意端口都走它，含动态的 9400-9499）
 - `-N` 不开远端 shell
 
 浏览器配 **SOCKS5 代理 `127.0.0.1:1080`**（Chrome 装 SwitchyOmega，或系统代理），
@@ -47,7 +49,7 @@ ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 与 .28 同网段：浏览器直接开 `http://10.10.0.28:8088`，工作台 `http://10.10.0.28:<port>` 直达，无需隧道。
 
 > ⚠️ 不要用 `-L 8088:localhost:8088` 单端口映射：平台能开，但点「编码」弹出的工作台 URL 仍是
-> `10.10.0.28:9400`，你的 `-L` 没映射 9400 → 打不开。要么用方案 A（SOCKS），要么把 9400-9450 也 `-L` 逐个映射。
+> `10.10.0.28:9400`，你的 `-L` 没映射 9400 → 打不开。要么用方案 A（SOCKS），要么把 9400-9499 也 `-L` 逐个映射。
 
 ---
 
@@ -142,24 +144,24 @@ curl -s -o /dev/null -w "spaces: %{http_code}\n" -H "Authorization: Bearer $TOK"
 
 ## 七、保护事项（部署时勿碰）
 
-| 资产 | 路径 | 保护方式 |
-|---|---|---|
-| 生产数据库 | `/opt/anp/data/anp.db` | 全量同步排除 `data/`；迁移用幂等 `ALTER`（addColumnIfMissing） |
-| 密钥 | `/opt/anp/deploy/.env.prod` | 全量同步排除 `deploy/.env.prod` |
-| 他人容器 | lowcode/帆软/腾讯等 | `docker` 操作只认 `deploy_` 前缀，别 `docker rm -f` 陌生容器 |
+| 资产       | 路径                        | 保护方式                                                       |
+| ---------- | --------------------------- | -------------------------------------------------------------- |
+| 生产数据库 | `/opt/anp/data/anp.db`      | 全量同步排除 `data/`；迁移用幂等 `ALTER`（addColumnIfMissing） |
+| 密钥       | `/opt/anp/deploy/.env.prod` | 全量同步排除 `deploy/.env.prod`                                |
+| 他人容器   | lowcode/帆软/腾讯等         | `docker` 操作只认 `deploy_` 前缀，别 `docker rm -f` 陌生容器   |
 
 ---
 
 ## 八、历史踩坑（避免重蹈覆辙）
 
-| 坑 | 现象 | 解法（已修入仓库） |
-|---|---|---|
-| 前端 `--frozen-lockfile` | 构建报 `ERR_PNPM_OUTDATED_LOCKFILE` | `Dockerfile.frontend` 用 `--no-frozen-lockfile` |
-| 后端 apk 装包卡死 | `docker build` 9min+ 无响应 | `Dockerfile.backend` `sed` 换阿里云 alpine 源 |
-| nginx 重建后 502 | 重建 backend 后接口 502（IP 变了） | `nginx.conf` 加 `resolver 127.0.0.11 valid=10s` |
-| `repo_dir` 路径 | build 找不到上下文 | repo_dir 用**容器内**路径 `/data/repos/x`，非宿主路径 |
-| opencode 工作台卡转圈 | serve 无 provider | serve 只读 `$HOME/.config/opencode/opencode.json`；backend 启动时把 `opencode.json` 复制过去（见 `main.go`） |
-| buildpack 空仓库/端口 | 应用白屏 | 空仓库兜底 `static`；static 类型 nginx `listen` 指定端口 |
+| 坑                       | 现象                                | 解法（已修入仓库）                                                                                           |
+| ------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 前端 `--frozen-lockfile` | 构建报 `ERR_PNPM_OUTDATED_LOCKFILE` | `Dockerfile.frontend` 用 `--no-frozen-lockfile`                                                              |
+| 后端 apk 装包卡死        | `docker build` 9min+ 无响应         | `Dockerfile.backend` `sed` 换阿里云 alpine 源                                                                |
+| nginx 重建后 502         | 重建 backend 后接口 502（IP 变了）  | `nginx.conf` 加 `resolver 127.0.0.11 valid=10s`                                                              |
+| `repo_dir` 路径          | build 找不到上下文                  | repo_dir 用**容器内**路径 `/data/repos/x`，非宿主路径                                                        |
+| opencode 工作台卡转圈    | serve 无 provider                   | serve 只读 `$HOME/.config/opencode/opencode.json`；backend 启动时把 `opencode.json` 复制过去（见 `main.go`） |
+| buildpack 空仓库/端口    | 应用白屏                            | 空仓库兜底 `static`；static 类型 nginx `listen` 指定端口                                                     |
 
 ---
 

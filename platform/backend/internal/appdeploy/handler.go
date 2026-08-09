@@ -132,6 +132,7 @@ func Register(r gin.IRouter, store *Store, appDeployHost string, changeStore *ch
 	if store != nil {
 		codeWS.SetSessionLogger(codews.NewPGSessionStore(store.db)) // 会话落库供绩效/互动统计
 	}
+	codeWS.Start() // 启动后台空闲会话驱逐（reaper），回收 9400-9499 端口池容量
 	h := NewHandler(store, NewDeployer(appDeployHost), codeWS, changeStore, configStore, reqRepo, provisioner, routeWriter, standards, quota, buildCfgStore, artifactStore, artifactStorage, scaffoldsBase, monitor, metricStore)
 	h.Register(r)
 	return h

@@ -2,14 +2,17 @@
 // 不造轮子：复用各工具自带的 web/headless 服务，开发者浏览器访问即得原生编码体验。
 //
 // 工作模型：为每个应用启动一个工具实例（cwd=应用 repo），监听 0.0.0.0:<port>；
-// compose 把 9400-9450 映射到宿主；开发者访问 http://<host>:<port> 即该工具的官方界面，
+// compose 把 9400-9499 映射到宿主；开发者访问 http://<host>:<port> 即该工具的官方界面，
 // 编码产出 commit 到 repo，无缝衔接 ANP 的版本/发布流程。
+// 端口池 9400-9499（100 个）是全局容量上限；Start() 启后台 reaper 驱逐空闲会话以回收端口。
 package codews
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -27,7 +30,7 @@ import (
 
 const (
 	portMin     = 9400
-	portMax     = 9450
+	portMax     = 9499 // 端口池上限（含）；100 个并发工作台（原 9450=51 个）。须与 compose 端口映射保持一致。
 	defaultTool = "opencode"
 
 	// codewsXDGBase per-user opencode config 的根目录（XDG_CONFIG_HOME 指向其子目录）。
@@ -78,10 +81,11 @@ type Session struct {
 	RequirementID string `json:"-"`
 	// Model 当前会话注入的授权模型 id（cmd_xxx）；空=走全局 config（未授权/兜底）。
 	// 内存态，不持久化、不进 SessionRecord（每次 Ensure 按入参重生成 per-user config）。
-	Model   string `json:"-"`
-	cmd     *exec.Cmd
-	started time.Time
-	logID   string // 落库的 codews_session.id（sessionLog 持久化用）
+	Model    string `json:"-"`
+	cmd      *exec.Cmd
+	started  time.Time
+	lastUsed time.Time // 最近一次活动（Ensure/Get 刷新）；reaper 据此驱逐空闲会话回收端口
+	logID    string    // 落库的 codews_session.id（sessionLog 持久化用）
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
@@ -224,6 +228,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 	forceNew := computeForceNew(old, reqID, reqForceNew, nil) // 先按内存+请求级；冷启动查库后重算（见解锁后）
 	// 同开发者同工具 且 需求未变 且 非强制新建 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
 	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && !forceNew && (reqID == "" || s.RequirementID == reqID) {
+		s.lastUsed = time.Now() // 复用即视为活动，刷新以免被 reaper 误驱逐
 		m.mu.Unlock()
 		return s, nil
 	}
@@ -253,7 +258,13 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 	}
 
 	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
-	workDir := ensureWorktree(repoDir, userID)
+	workDir, err := ensureWorktree(repoDir, userID)
+	if err != nil {
+		m.mu.Lock()
+		delete(m.ports, port) // worktree 建不起来：归还预留端口（与 Start 失败同处理）
+		m.mu.Unlock()
+		return nil, err
+	}
 	// 模型注入：opencode → 写 per-user XDG config（仅授权模型）并注入 XDG_CONFIG_HOME；
 	// claude → ANTHROPIC_MODEL 取授权模型名。model 空 / writer 未注入 → 兜底全局 config（不阻断）。
 	env := m.buildEnv(context.Background(), toolName, model, appID, userID)
@@ -265,7 +276,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 		return nil, err
 	}
 	s := &Session{
-		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(),
+		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(), lastUsed: time.Now(),
 		RequirementID: reqID,
 		Model:         model,
 		URL:           fmt.Sprintf("http://%s:%d", m.host, port),
@@ -484,6 +495,7 @@ func (m *Manager) Get(appID, userID string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.sessions[appID+":"+userID]; ok && s.alive() {
+		s.lastUsed = time.Now() // 读取即活动（SendPrompt/SessionMessages/handler 都经此），刷新免被驱逐
 		return s
 	}
 	return nil
@@ -511,15 +523,25 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 // opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。
 // 不自动轮转/截断——为保能力，token 控制交给"按需求隔离"（换需求自动新开会话）
 // + 任务完成时前端提醒用户认领下一需求新开会话，避免硬切清零上下文。
+//
+// 端点必须用 opencode web SPA 同款的 POST /session/<id>/prompt_async + parts 结构。
+// 旧实现用 /api/session/<id>/prompt {prompt:{text}}——该端点虽返回 admitted，但实测
+// 不落任何消息（headless 探针 probe9：ANP 精确流程建会+发送后全程 0 条消息），会话
+// 深链接打开即一片空白。改用 prompt_async 后消息真正写入、AI 流式回复、深链渲染可见
+// （probe8/9/10 验证：最小 body {messageID, parts:[{type:"text",text}]} 即生效，模型
+// 由会话建会时继承，发送无需重传 agent/model）。
 func (m *Manager) SendPrompt(appID, userID, text string) error {
 	s := m.Get(appID, userID)
 	if s == nil || s.SessionID == "" {
 		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"prompt": map[string]string{"text": text},
+		"messageID": opencodeClientID("msg_"),
+		"parts": []map[string]interface{}{
+			{"id": opencodeClientID("prt_"), "type": "text", "text": text},
+		},
 	})
-	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/prompt", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
+	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/session/%s/prompt_async", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -527,13 +549,25 @@ func (m *Manager) SendPrompt(appID, userID, text string) error {
 	return nil
 }
 
+// opencodeClientID 生成 opencode web SPA 同款 client 侧 ID（prefix + 16 hex，如 msg_/prt_）。
+// prompt_async 的 messageID / parts[].id 由 client 自生成；仅需唯一，格式无强约束（探针实测）。
+func opencodeClientID(prefix string) string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
+	return prefix + hex.EncodeToString(b)
+}
+
 // ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。
 // 健壮处理：merge 后 worktree 目录被删但 git 仍注册为 prunable、且 dev-<user> 分支保留 →
-// 直接 `worktree add -b` 会失败。先 prune 清残留，分支已存在时 checkout 已有分支，仍失败则回退主仓。
-func ensureWorktree(repoDir, userID string) string {
+// 直接 `worktree add -b` 会失败。先 prune 清残留，分支已存在时 checkout 已有分支。
+// 两步都建不成（主仓非 git 仓库/异常）→ 返回 error：不再静默回退主仓（旧实现 return repoDir 会让
+// opencode 把改动直接 commit 进主线、污染他人分支），改由 Ensure 向上抛，启动失败可见可修。
+func ensureWorktree(repoDir, userID string) (string, error) {
 	wt := filepath.Join(repoDir, ".worktrees", sanitizeID(userID))
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
-		return wt // worktree 已存在且有效
+		return wt, nil // worktree 已存在且有效
 	}
 	// wt 目录存在但无 .git（merge 后残留空目录）→ 删掉，让 worktree add 干净建
 	if _, err := os.Stat(wt); err == nil {
@@ -548,13 +582,12 @@ func ensureWorktree(repoDir, userID string) string {
 		_ = exec.Command("git", "-C", repoDir, "worktree", "add", wt, branch).Run()
 	}
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
-		// 兜底：两步都没建成（主仓异常等）→ 回退主仓，避免 opencode chdir 到无效目录整个起不来
-		log.Printf("[codews] ensureWorktree 建立失败，回退主仓: %s", repoDir)
-		return repoDir
+		log.Printf("[codews] ensureWorktree 建立失败(不回退主仓): repoDir=%s user=%s", repoDir, userID)
+		return "", fmt.Errorf("建立开发者 worktree 失败(user=%s)：请确认应用仓库 %s 已初始化为有效 git 仓库", userID, repoDir)
 	}
 	_ = exec.Command("git", "-C", wt, "config", "user.email", "anp@platform").Run()
 	_ = exec.Command("git", "-C", wt, "config", "user.name", "ANP "+userID).Run()
-	return wt
+	return wt, nil
 }
 
 // sanitizeID 把 userID 转为 git 友好的分支/目录名(小写字母数字,-分隔)。
@@ -605,4 +638,64 @@ func waitListen(port int, timeout time.Duration) bool {
 // alive 进程是否仍在运行（Wait 未返回）。
 func (s *Session) alive() bool {
 	return s != nil && s.cmd != nil && s.cmd.ProcessState == nil
+}
+
+// idleTimeout 返回空闲会话驱逐阈值（CODEWS_IDLE_TIMEOUT env 可调，如 "2h"/"90m"；默认 2h，≤0 禁用）。
+// 开发者在 opencode 内纯编码（不经 ANP HTTP 路径）时不刷新 lastUsed，故默认值不宜过短——2h 兼顾
+// 回收隔夜/长闲置会话与不误杀长时间专注编码。被驱逐后会话/分支/worktree 持久在磁盘，开发者再开
+// 工作台即自动重连（非破坏性），仅回收 opencode 进程与端口。
+func idleTimeout() time.Duration {
+	d := 2 * time.Hour
+	if v := os.Getenv("CODEWS_IDLE_TIMEOUT"); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil {
+			d = parsed
+		}
+	}
+	return d
+}
+
+// idleVictims 返回超阈值未活动的活跃会话（纯决策，不 kill，便于单测）。
+// 由后台 reaper 调用，不在请求路径调用。
+func (m *Manager) idleVictims(now time.Time) []*Session {
+	timeout := idleTimeout()
+	if timeout <= 0 {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var victims []*Session
+	for _, s := range m.sessions {
+		if s.alive() && now.Sub(s.lastUsed) > timeout {
+			victims = append(victims, s)
+		}
+	}
+	return victims
+}
+
+// reapIdle kill 空闲会话的 opencode 进程以回收端口。端口/会话 map 的回收交给 Ensure 的 cmd.Wait
+// 清理 goroutine（保持"端口仅在进程真正退出后释放"不变量，避免新会话复用未死进程端口撞 EADDRINUSE）。
+// 测试用 &exec.Cmd{} 占位的会话 cmd.Process==nil，此处守 nil 不 kill。
+func (m *Manager) reapIdle(now time.Time) int {
+	victims := m.idleVictims(now)
+	for _, s := range victims {
+		if s.cmd != nil && s.cmd.Process != nil {
+			log.Printf("[codews] idle-evict 回收空闲工作台: app=%s user=%s idle=%s port=%d", s.AppID, s.UserID, now.Sub(s.lastUsed).Round(time.Minute), s.Port)
+			_ = s.cmd.Process.Kill()
+		}
+	}
+	return len(victims)
+}
+
+// Start 启动后台空闲会话驱逐（reaper）。生产装配调一次（appdeploy.Register 构造 Manager 后）；
+// 测试不调，避免 goroutine 泄漏。每 10 分钟扫一次，kill 超 idleTimeout 未活动的会话以回收端口。
+func (m *Manager) Start() {
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			if n := m.reapIdle(time.Now()); n > 0 {
+				log.Printf("[codews] reaper 本轮驱逐 %d 个空闲工作台", n)
+			}
+		}
+	}()
 }

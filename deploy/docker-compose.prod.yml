@@ -48,7 +48,7 @@ services:
     expose:
       - "8080"
     ports:
-      - "9400-9450:9400-9450" # opencode 交互编码工作台（每应用一个 serve 实例）
+      - "9400-9499:9400-9499" # opencode 交互编码工作台（每应用一个 serve 实例；100 个并发，空闲自动驱逐回收）
     restart: unless-stopped
 
   frontend:

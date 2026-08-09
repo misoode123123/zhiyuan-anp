@@ -480,8 +480,10 @@ func TestSendPrompt_NoSession(t *testing.T) {
 	}
 }
 
-// TestSendPrompt_PostsPrompt 向 /api/session/<id>/prompt 发 POST,
-// body 形如 {"prompt":{"text":...}}；2xx → nil。
+// TestSendPrompt_PostsPrompt 向 /session/<id>/prompt_async 发 POST（opencode web SPA 同款），
+// body 形如 {"messageID":...,"parts":[{"type":"text","text":...}]}；2xx → nil。
+// 旧实现用 /api/session/<id>/prompt {prompt:{text}}——该端点虽 admitted 但实测不落任何消息，
+// 会话深链打开即空白（headless 探针 probe9 Flow A 证实），故改用 prompt_async。
 func TestSendPrompt_PostsPrompt(t *testing.T) {
 	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -501,16 +503,26 @@ func TestSendPrompt_PostsPrompt(t *testing.T) {
 	if err := m.SendPrompt("app", "user", "implement feature X"); err != nil {
 		t.Fatalf("SendPrompt 错误: %v", err)
 	}
-	wantPath := "/api/session/ses_1/prompt"
+	wantPath := "/session/ses_1/prompt_async"
 	if gotPath != wantPath {
-		t.Errorf("请求路径 = %q, want %q", gotPath, wantPath)
+		t.Errorf("请求路径 = %q, want %q（旧 /api/session/<id>/prompt 不落消息→空白）", gotPath, wantPath)
 	}
-	var got map[string]map[string]string
+	var got struct {
+		MessageID string `json:"messageID"`
+		Parts     []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"parts"`
+	}
 	if err := json.Unmarshal([]byte(gotBody), &got); err != nil {
 		t.Fatalf("body 不是合法 JSON: %v (%s)", err, gotBody)
 	}
-	if got["prompt"]["text"] != "implement feature X" {
-		t.Errorf(`prompt.text = %q, want "implement feature X"`, got["prompt"]["text"])
+	if got.MessageID == "" {
+		t.Errorf("body 缺 messageID: %s", gotBody)
+	}
+	if len(got.Parts) != 1 || got.Parts[0].Type != "text" || got.Parts[0].Text != "implement feature X" {
+		t.Errorf("parts 应为 [{type:text,text:\"implement feature X\"}], got %+v (%s)", got.Parts, gotBody)
 	}
 }
 
@@ -659,7 +671,11 @@ func TestEnsureWorktree_PathConstruction(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(wtDir, ".git"), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if got := ensureWorktree(repoDir, "alice"); got != wtDir {
+	got, err := ensureWorktree(repoDir, "alice")
+	if err != nil {
+		t.Fatalf("ensureWorktree(alice) 意外失败: %v", err)
+	}
+	if got != wtDir {
 		t.Errorf("ensureWorktree 路径 = %q, want %q", got, wtDir)
 	}
 }
@@ -669,17 +685,25 @@ func TestEnsureWorktree_SanitizesUserID(t *testing.T) {
 	repoDir := t.TempDir()
 	wtDir := filepath.Join(repoDir, ".worktrees", "a-b")
 	_ = os.MkdirAll(filepath.Join(wtDir, ".git"), 0755)
-	if got := ensureWorktree(repoDir, "A.B"); got != wtDir {
+	got, err := ensureWorktree(repoDir, "A.B")
+	if err != nil {
+		t.Fatalf("ensureWorktree(A.B) 意外失败: %v", err)
+	}
+	if got != wtDir {
 		t.Errorf("userID 'A.B' 应 sanitize 为 'a-b', path = %q, want %q", got, wtDir)
 	}
 }
 
 // TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库时 git worktree add 必失败；
-// ensureWorktree 兜底回退主仓 repoDir（避免 opencode chdir 到无效 .worktrees 目录起不来）。
+// ensureWorktree 不再静默回退主仓（会污染主线），改为返回 error，启动失败可见可修。
 func TestEnsureWorktree_NoGitRepo(t *testing.T) {
 	repoDir := t.TempDir()
-	if got := ensureWorktree(repoDir, "Bob"); got != repoDir {
-		t.Errorf("非 git 仓库应回退主仓 %q, got %q", repoDir, got)
+	got, err := ensureWorktree(repoDir, "Bob")
+	if err == nil {
+		t.Errorf("非 git 仓库应返回 error（不再回退主仓）, got path=%q err=nil", got)
+	}
+	if got != "" {
+		t.Errorf("失败时应返回空路径, got %q", got)
 	}
 }
 
@@ -703,5 +727,39 @@ func TestAllocPort_ReservesAndFrees(t *testing.T) {
 	delete(m.ports, p1)
 	if p3 := m.allocPortLocked(); p3 != p1 {
 		t.Errorf("释放后应重新分配最低空闲端口 %d, got %d", p1, p3)
+	}
+}
+
+// ============================================================
+// idleVictims（空闲会话驱逐决策纯函数）
+// ============================================================
+
+// TestIdleVictims 仅超阈值未活动的活跃会话被判为驱逐对象；已退出(dead)的不算；阈值≤0 禁用。
+// 用 &exec.Cmd{} 占位（alive 但 Process nil），idleVictims 纯决策不 kill，安全。
+func TestIdleVictims(t *testing.T) {
+	m := NewManager("h", nil)
+	now := time.Now()
+	t.Setenv("CODEWS_IDLE_TIMEOUT", "60m") // 60 分钟阈值
+
+	add := func(user string, lastUsed time.Time) {
+		m.sessions["app:"+user] = &Session{AppID: "app", UserID: user, cmd: &exec.Cmd{}, lastUsed: lastUsed}
+	}
+	add("idle", now.Add(-2*time.Hour))      // 空闲 2h > 60min → 命中
+	add("active", now.Add(-10*time.Minute)) // 10min < 60min → 不命中
+	// dead：cmd 为空（已退出/未启动 → alive()=false）即使空闲也不应被驱逐
+	m.sessions["app:dead"] = &Session{AppID: "app", UserID: "dead", lastUsed: now.Add(-2 * time.Hour)}
+
+	got := m.idleVictims(now)
+	if len(got) != 1 {
+		t.Fatalf("idleVictims 命中数 = %d, want 1（仅 idle）", len(got))
+	}
+	if got[0].UserID != "idle" {
+		t.Errorf("命中用户 = %q, want idle", got[0].UserID)
+	}
+
+	// 阈值≤0 禁用驱逐
+	t.Setenv("CODEWS_IDLE_TIMEOUT", "0")
+	if v := m.idleVictims(now); len(v) != 0 {
+		t.Errorf("阈值≤0 应禁用驱逐, got %d 命中", len(v))
 	}
 }
