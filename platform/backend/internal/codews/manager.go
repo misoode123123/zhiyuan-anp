@@ -2,8 +2,9 @@
 // 不造轮子：复用各工具自带的 web/headless 服务，开发者浏览器访问即得原生编码体验。
 //
 // 工作模型：为每个应用启动一个工具实例（cwd=应用 repo），监听 0.0.0.0:<port>；
-// compose 把 9400-9450 映射到宿主；开发者访问 http://<host>:<port> 即该工具的官方界面，
+// compose 把 9400-9499 映射到宿主；开发者访问 http://<host>:<port> 即该工具的官方界面，
 // 编码产出 commit 到 repo，无缝衔接 ANP 的版本/发布流程。
+// 端口池 9400-9499（100 个）是全局容量上限；Start() 启后台 reaper 驱逐空闲会话以回收端口。
 package codews
 
 import (
@@ -29,7 +30,7 @@ import (
 
 const (
 	portMin     = 9400
-	portMax     = 9450
+	portMax     = 9499 // 端口池上限（含）；100 个并发工作台（原 9450=51 个）。须与 compose 端口映射保持一致。
 	defaultTool = "opencode"
 
 	// codewsXDGBase per-user opencode config 的根目录（XDG_CONFIG_HOME 指向其子目录）。
@@ -80,10 +81,11 @@ type Session struct {
 	RequirementID string `json:"-"`
 	// Model 当前会话注入的授权模型 id（cmd_xxx）；空=走全局 config（未授权/兜底）。
 	// 内存态，不持久化、不进 SessionRecord（每次 Ensure 按入参重生成 per-user config）。
-	Model   string `json:"-"`
-	cmd     *exec.Cmd
-	started time.Time
-	logID   string // 落库的 codews_session.id（sessionLog 持久化用）
+	Model    string `json:"-"`
+	cmd      *exec.Cmd
+	started  time.Time
+	lastUsed time.Time // 最近一次活动（Ensure/Get 刷新）；reaper 据此驱逐空闲会话回收端口
+	logID    string    // 落库的 codews_session.id（sessionLog 持久化用）
 }
 
 // NewManager 构造，预注册 opencode（已接入）+ claude/codex（接口预留）。
@@ -226,6 +228,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 	forceNew := computeForceNew(old, reqID, reqForceNew, nil) // 先按内存+请求级；冷启动查库后重算（见解锁后）
 	// 同开发者同工具 且 需求未变 且 非强制新建 → 复用（reqID 空=沿用现有，刷新不破坏已绑定会话）
 	if s, exists := m.sessions[key]; exists && s.alive() && s.Tool == toolName && !forceNew && (reqID == "" || s.RequirementID == reqID) {
+		s.lastUsed = time.Now() // 复用即视为活动，刷新以免被 reaper 误驱逐
 		m.mu.Unlock()
 		return s, nil
 	}
@@ -273,7 +276,7 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 		return nil, err
 	}
 	s := &Session{
-		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(),
+		AppID: appID, UserID: userID, Tool: toolName, Port: port, RepoDir: workDir, cmd: cmd, started: time.Now(), lastUsed: time.Now(),
 		RequirementID: reqID,
 		Model:         model,
 		URL:           fmt.Sprintf("http://%s:%d", m.host, port),
@@ -492,6 +495,7 @@ func (m *Manager) Get(appID, userID string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.sessions[appID+":"+userID]; ok && s.alive() {
+		s.lastUsed = time.Now() // 读取即活动（SendPrompt/SessionMessages/handler 都经此），刷新免被驱逐
 		return s
 	}
 	return nil
@@ -634,4 +638,64 @@ func waitListen(port int, timeout time.Duration) bool {
 // alive 进程是否仍在运行（Wait 未返回）。
 func (s *Session) alive() bool {
 	return s != nil && s.cmd != nil && s.cmd.ProcessState == nil
+}
+
+// idleTimeout 返回空闲会话驱逐阈值（CODEWS_IDLE_TIMEOUT env 可调，如 "2h"/"90m"；默认 2h，≤0 禁用）。
+// 开发者在 opencode 内纯编码（不经 ANP HTTP 路径）时不刷新 lastUsed，故默认值不宜过短——2h 兼顾
+// 回收隔夜/长闲置会话与不误杀长时间专注编码。被驱逐后会话/分支/worktree 持久在磁盘，开发者再开
+// 工作台即自动重连（非破坏性），仅回收 opencode 进程与端口。
+func idleTimeout() time.Duration {
+	d := 2 * time.Hour
+	if v := os.Getenv("CODEWS_IDLE_TIMEOUT"); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil {
+			d = parsed
+		}
+	}
+	return d
+}
+
+// idleVictims 返回超阈值未活动的活跃会话（纯决策，不 kill，便于单测）。
+// 由后台 reaper 调用，不在请求路径调用。
+func (m *Manager) idleVictims(now time.Time) []*Session {
+	timeout := idleTimeout()
+	if timeout <= 0 {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var victims []*Session
+	for _, s := range m.sessions {
+		if s.alive() && now.Sub(s.lastUsed) > timeout {
+			victims = append(victims, s)
+		}
+	}
+	return victims
+}
+
+// reapIdle kill 空闲会话的 opencode 进程以回收端口。端口/会话 map 的回收交给 Ensure 的 cmd.Wait
+// 清理 goroutine（保持"端口仅在进程真正退出后释放"不变量，避免新会话复用未死进程端口撞 EADDRINUSE）。
+// 测试用 &exec.Cmd{} 占位的会话 cmd.Process==nil，此处守 nil 不 kill。
+func (m *Manager) reapIdle(now time.Time) int {
+	victims := m.idleVictims(now)
+	for _, s := range victims {
+		if s.cmd != nil && s.cmd.Process != nil {
+			log.Printf("[codews] idle-evict 回收空闲工作台: app=%s user=%s idle=%s port=%d", s.AppID, s.UserID, now.Sub(s.lastUsed).Round(time.Minute), s.Port)
+			_ = s.cmd.Process.Kill()
+		}
+	}
+	return len(victims)
+}
+
+// Start 启动后台空闲会话驱逐（reaper）。生产装配调一次（appdeploy.Register 构造 Manager 后）；
+// 测试不调，避免 goroutine 泄漏。每 10 分钟扫一次，kill 超 idleTimeout 未活动的会话以回收端口。
+func (m *Manager) Start() {
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			if n := m.reapIdle(time.Now()); n > 0 {
+				log.Printf("[codews] reaper 本轮驱逐 %d 个空闲工作台", n)
+			}
+		}
+	}()
 }
