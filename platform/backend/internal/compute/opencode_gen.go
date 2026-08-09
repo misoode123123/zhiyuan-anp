@@ -11,8 +11,10 @@ import (
 
 // OpenCodeConfig opencode.json 的 Go 表示。
 type OpenCodeConfig struct {
-	Schema   string                       `json:"$schema"`
-	Provider map[string]*OpenCodeProvider `json:"provider"`
+	Schema     string                       `json:"$schema"`
+	Provider   map[string]*OpenCodeProvider `json:"provider"`
+	Model      string                       `json:"model,omitempty"`       // 顶层默认模型(provider/model)；空→opencode 回退内置免费模型
+	SmallModel string                       `json:"small_model,omitempty"` // 后台任务(标题/摘要)用的小模型；空→opencode 内置免费 big-pickle(易 429)
 }
 
 // OpenCodeProvider opencode 的 provider 配置。
@@ -185,6 +187,15 @@ func (s *Store) GenerateOpenCodeConfigForModels(ctx context.Context, modelIDs []
 				om.Limit = &OpenCodeLimit{Context: cw, Output: out}
 			}
 			provider.Models[m.Name] = om
+			// 默认模型：首个授权模型作为 opencode 顶层 model + small_model 默认。不设则
+			// opencode 回退其内置免费模型(如 big-pickle)当默认/后台小模型 → 界面默认显示免费
+			// 模型 + 后台任务 429 FreeUsageLimitError，用户以为"模型不对/没反应"。ref 格式与
+			// ResolveOpencodeModelID 一致：slugify(providerName)/modelName。
+			if cfg.Model == "" {
+				ref := key + "/" + m.Name
+				cfg.Model = ref
+				cfg.SmallModel = ref
+			}
 		}
 		// 至少有 1 个命中 model 才加入
 		if len(provider.Models) > 0 {

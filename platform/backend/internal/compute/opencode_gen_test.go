@@ -47,6 +47,14 @@ func TestStore_GenerateOpenCodeConfigForModels(t *testing.T) {
 	if _, has := p.Models["glm-5-turbo"]; has {
 		t.Error("不应含 glm-5-turbo（未授权）")
 	}
+	// 默认模型：首个授权模型写入顶层 model + small_model，杜绝 opencode 回退内置免费模型
+	// (big-pickle) 当默认/后台小模型 → 界面默认显示免费模型 + 后台任务 429 FreeUsageLimitError。
+	if cfg.Model != "zai-coding/glm-5.1" {
+		t.Errorf("默认 model 期望 zai-coding/glm-5.1，got %q", cfg.Model)
+	}
+	if cfg.SmallModel != "zai-coding/glm-5.1" {
+		t.Errorf("默认 small_model 期望 zai-coding/glm-5.1，got %q", cfg.SmallModel)
+	}
 
 	id, err := s.ResolveOpencodeModelID(ctx, m1.ID)
 	if err != nil || id != "zai-coding/glm-5.1" {
@@ -80,5 +88,9 @@ func TestStore_GenerateOpenCodeConfigForModels(t *testing.T) {
 	}
 	if len(empty.Provider) != 0 {
 		t.Errorf("空 modelIDs 期望 0 provider，got %d", len(empty.Provider))
+	}
+	// 空 modelIDs → 无默认 model（无命中模型，不写顶层默认）。
+	if empty.Model != "" || empty.SmallModel != "" {
+		t.Errorf("空 modelIDs 期望无默认 model，got model=%q small_model=%q", empty.Model, empty.SmallModel)
 	}
 }
