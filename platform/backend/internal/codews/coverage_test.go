@@ -344,6 +344,39 @@ func TestShouldForceNewForRequirement(t *testing.T) {
 }
 
 // ============================================================
+// computeForceNew（请求级 + 热切换 + 冷启动跨需求 综合判定纯函数）
+// ============================================================
+
+// TestComputeForceNew 综合判定是否强制新建 opencode 会话（跳过磁盘复用直接 initSession）。
+// 覆盖：① 请求级显式 reqForceNew；② 内存热会话换需求；③ 冷启动(old==nil)库最近会话跨需求。
+func TestComputeForceNew(t *testing.T) {
+	warm := &Session{RequirementID: "reqA"} // old != nil
+	cases := []struct {
+		name        string
+		old         *Session
+		reqID       string
+		reqForceNew bool
+		last        *SessionRecord
+		want        bool
+	}{
+		{"请求级强制", nil, "reqA", true, nil, true},
+		{"热切换需求", warm, "reqB", false, nil, true},
+		{"热同需求不强制", warm, "reqA", false, nil, false},
+		{"热无需求不强制", warm, "", false, nil, false},
+		{"冷启动跨需求", nil, "reqB", false, &SessionRecord{RequirementID: "reqA"}, true},
+		{"冷启动同需求不强制", nil, "reqA", false, &SessionRecord{RequirementID: "reqA"}, false},
+		{"冷启动无历史不强制", nil, "reqA", false, nil, false},
+		{"冷启动无需求不强制", nil, "", false, &SessionRecord{RequirementID: "reqA"}, false},
+		{"冷启动历史无req不强制", nil, "reqB", false, &SessionRecord{RequirementID: ""}, false},
+	}
+	for _, c := range cases {
+		if got := computeForceNew(c.old, c.reqID, c.reqForceNew, c.last); got != c.want {
+			t.Errorf("%s: want %v got %v", c.name, c.want, got)
+		}
+	}
+}
+
+// ============================================================
 // SessionMessages（HTTP 拉取 + 纯解析拼装）
 // ============================================================
 
@@ -501,7 +534,7 @@ func TestSendPrompt_HTTPError(t *testing.T) {
 // TestEnsure_UnknownTool 未注册的工具名 → 立即返回错误, 不启动进程。
 func TestEnsure_UnknownTool(t *testing.T) {
 	m := NewManager("h", nil)
-	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "no-such-tool", "", "")
+	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "no-such-tool", "", "", false)
 	if err == nil {
 		t.Fatal("未知工具应返回错误")
 	}
@@ -517,7 +550,7 @@ func TestEnsure_PortExhausted(t *testing.T) {
 	for p := portMin; p <= portMax; p++ {
 		m.ports[p] = true // 经端口注册表占满（F-1）
 	}
-	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "")
+	_, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "", false)
 	if err == nil {
 		t.Fatal("端口耗尽应返回错误")
 	}
@@ -535,7 +568,7 @@ func TestEnsure_ReuseAliveSameTool(t *testing.T) {
 		cmd:  &exec.Cmd{}, // alive
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "", false)
 	if err != nil {
 		t.Fatalf("Ensure 复用错误: %v", err)
 	}
@@ -552,7 +585,7 @@ func TestEnsure_DefaultUserID(t *testing.T) {
 		cmd: &exec.Cmd{},
 	}
 	m.sessions["app:anonymous"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "", "opencode", "", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "", "opencode", "", "", false)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -569,7 +602,7 @@ func TestEnsure_DefaultToolName(t *testing.T) {
 		cmd: &exec.Cmd{},
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "", "", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "", "", "", false)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -587,7 +620,7 @@ func TestEnsure_ReuseSameRequirement(t *testing.T) {
 		cmd:           &exec.Cmd{},
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "reqA", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "reqA", "", false)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -605,7 +638,7 @@ func TestEnsure_RefreshEmptyReqReusesBound(t *testing.T) {
 		cmd:           &exec.Cmd{},
 	}
 	m.sessions["app:u"] = existing
-	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "")
+	got, err := m.Ensure("ps_1", "app", "/tmp/repo", "u", "opencode", "", "", false)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
