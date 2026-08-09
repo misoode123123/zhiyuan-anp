@@ -76,6 +76,10 @@ export default function WorkspaceFrame() {
   const [deployErr, setDeployErr] = useState("");
   const [registering, setRegistering] = useState(false);
   const [selectedReq, setSelectedReq] = useState(""); // 当前驱动开发的需求
+  // 自主发起编码（无需求绑定）：true 时即使无 selectedReq 也 boot。
+  // 后端在 force_new + 无 requirement_id 时注入应用上下文（AppContextPrompt）；
+  // 公司开发规范由 RefreshAgentsMD 写进 worktree AGENTS.md，opencode 自动加载。
+  const [selfInitiated, setSelfInitiated] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [taskMsg, setTaskMsg] = useState("");
   const [testing, setTesting] = useState(false);
@@ -166,9 +170,11 @@ export default function WorkspaceFrame() {
 
   // 拉起 opencode 工作台（F-2：未选需求不 boot——避免进页面空 boot 一次、认领需求又被
   // forceNew kill+reboot 浪费 ~6s 且触发并发 Ensure；selectedReq 变化加 400ms 防抖，rapid
-  // 切需求合并为一次 Ensure，配合后端端口注册表不再并发抢端口/泄漏。）
+  // 切需求合并为一次 Ensure，配合后端端口注册表不再并发抢端口/泄漏。
+  // 自主发起编码（selfInitiated）：无需求时也 boot，发 force_new 但不发 requirement_id/prompt，
+  // 后端据此注入应用上下文 AppContextPrompt（应用名/仓库结构/依赖/开发规范指引）。）
   useEffect(() => {
-    if (missingParams || !selectedReq) return;
+    if (missingParams || (!selectedReq && !selfInitiated)) return;
     let aborted = false;
     const timer = setTimeout(() => {
       const wantForceNew = forceNewRef.current;
@@ -200,11 +206,13 @@ export default function WorkspaceFrame() {
             setUrl(r.data.deep_url || r.data.url);
             setErr("");
             if (wantForceNew) {
-              // 需求已由后端在 boot 时注入（会话即活动会话），右侧工作台直接可见 AI 实时编码。
+              // 需求/应用上下文已由后端在 boot 时注入（会话即活动会话），右侧工作台直接可见 AI 实时编码。
               setTaskMsg(
                 bootPrompt
                   ? "✅ 需求已发给 opencode → 在右侧工作台看 AI 实时编码,可随时介入/纠偏"
-                  : "新会话已就绪（未取到需求规格，可点「🤖 AI 编码」手动注入）"
+                  : selfInitiated
+                    ? "✅ 应用上下文已注入（开发规范见 worktree AGENTS.md）→ 在右侧工作台开始编码"
+                    : "新会话已就绪（未取到需求规格，可点「🤖 AI 编码」手动注入）"
               );
             }
           } else {
@@ -226,7 +234,7 @@ export default function WorkspaceFrame() {
       aborted = true;
       clearTimeout(timer);
     };
-  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selectedReq]);
+  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selectedReq, selfInitiated]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
@@ -572,19 +580,34 @@ export default function WorkspaceFrame() {
               }
               fetchDetail();
             }}
-            onApprove={(id) => decideChange(id, "approve")}
-            onReject={(id) => decideChange(id, "reject")}
             reqState={reqState}
             reqActions={reqActions}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col">
-          {!missingParams && !selectedReq && !url && (
+          {!missingParams && !selectedReq && !selfInitiated && !url && (
             <div className="p-4 text-sm text-neutral-500">
-              请先在左侧认领一个需求，将自动启动该需求的编码工作台
+              <div className="mb-2">两种方式开始编码：</div>
+              <button
+                type="button"
+                onClick={() => {
+                  // 自主发起：无需求绑定开新会话，后端注入应用上下文（AppContextPrompt），
+                  // 公司开发规范由 RefreshAgentsMD 写进 worktree AGENTS.md，opencode 自动加载。
+                  forceNewRef.current = true;
+                  setSelfInitiated(true);
+                  setNewSessionKey((k) => k + 1);
+                  setLoading(true);
+                  setErr("");
+                  setTaskMsg("");
+                }}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+              >
+                🚀 自由编码（无需求）
+              </button>
+              <span className="ml-2">或在左侧认领一个需求，按需求开发。</span>
             </div>
           )}
-          {loading && !missingParams && selectedReq && !url && (
+          {loading && !missingParams && (selectedReq || selfInitiated) && !url && (
             <div className="p-4 text-sm text-neutral-500">
               启动 opencode 工作台…（首次约 3-5 秒）
             </div>

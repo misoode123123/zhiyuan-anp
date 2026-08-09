@@ -292,13 +292,21 @@ func (h *Handler) Workspace(c *gin.Context) {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
 	}
-	// 新会话即时注入需求：Ensure 已创建会话，立即 SendPrompt → 会话成为活动会话且已含需求，
-	// 且在 deep_url 返回前完成 → iframe 加载时"活动会话==deep_url会话==已含需求"，消除 SPA
+	// 新会话即时注入上下文：Ensure 已创建会话，立即 SendPrompt → 会话成为活动会话且已含上下文，
+	// 且在 deep_url 返回前完成 → iframe 加载时"活动会话==deep_url会话==已含上下文"，消除 SPA
 	// 读到旧空/临时会话的竞态（旧流程先 setUrl 后异步注入，iframe 加载瞬间活动会话可能仍是旧的）。
-	// prompt 仅前端 force_new 时发送，复用会话不注入、不重复。best-effort：失败不阻断 boot。
-	if in.Prompt != "" && s.Tool == "opencode" {
-		if err := h.codeWS.SendPrompt(aid, user, in.Prompt); err != nil {
-			log.Printf("[appdeploy] boot 即时注入需求失败(会话已就绪,可手动点AI编码重试): app=%s user=%s err=%v", aid, user, err)
+	// 两类注入（force_new 新会话才注入，复用会话不注入、不重复）：
+	//   ① 需求驱动：前端拼好需求规格随 Prompt 发送（buildReqPrompt）。
+	//   ② 自主发起（无 RequirementID）：注入应用上下文 AppContextPrompt——这是什么应用/仓库结构/
+	//      依赖中间件/部署态。公司开发规范不在此处注入（已由 RefreshAgentsMD 写进 worktree AGENTS.md）。
+	// best-effort：失败不阻断 boot。
+	prompt := in.Prompt
+	if prompt == "" && in.RequirementID == "" && in.ForceNew {
+		prompt = AppContextPrompt(a)
+	}
+	if prompt != "" && s.Tool == "opencode" {
+		if err := h.codeWS.SendPrompt(aid, user, prompt); err != nil {
+			log.Printf("[appdeploy] boot 即时注入上下文失败(会话已就绪,可手动点AI编码重试): app=%s user=%s err=%v", aid, user, err)
 		}
 	}
 	// 刷新 AGENTS.md：opencode 的 cwd 是 dev-<user> worktree，规范须写进 worktree 才被加载
