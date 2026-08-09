@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -56,6 +57,12 @@ func (s *Store) GenerateOpenCodeConfig(ctx context.Context) (*OpenCodeConfig, er
 	}
 	for _, p := range providers {
 		if !p.Enabled {
+			continue
+		}
+		// 无 key provider 不进 config：opencode 会用空 key 调用 → 401 空白（#30）。
+		// 跳过该 provider，用户在 opencode 里看不到/用不了其模型，从源头杜绝 401。
+		if p.APIKey == "" {
+			log.Printf("[compute] 跳过无 APIKey 的 provider(不进 opencode config): id=%s name=%s", p.ID, p.Name)
 			continue
 		}
 		// provider key：取 name 的 slug 化（去空格、小写、- 分隔）
@@ -145,6 +152,12 @@ func (s *Store) GenerateOpenCodeConfigForModels(ctx context.Context, modelIDs []
 	}
 	for _, p := range providers {
 		if !p.Enabled {
+			continue
+		}
+		// 无 key provider 不进 config：opencode 会用空 key 调用 → 401 空白（#30）。
+		// 跳过该 provider，用户在 opencode 里看不到/用不了其模型，从源头杜绝 401。
+		if p.APIKey == "" {
+			log.Printf("[compute] 跳过无 APIKey 的 provider(不进 opencode config): id=%s name=%s", p.ID, p.Name)
 			continue
 		}
 		key := slugify(p.Name)
@@ -246,6 +259,12 @@ func (s *Store) ResolveOpencodeModelID(ctx context.Context, modelID string) (str
 			return "", nil
 		}
 		return "", err
+	}
+	// 无 key 不解析为可用模型 ref：建会话时 modelRef="" → initSession 不指定该模型，
+	// 避免 opencode 用空 key 调用 → 401 空白（#30）。改用 config 顶层默认（首个有 key 模型）。
+	if p.APIKey == "" {
+		log.Printf("[compute] 模型 %s 的 provider %s 无 APIKey，不解析为 opencode 模型(建会话不注入)", modelID, p.Name)
+		return "", nil
 	}
 	return slugify(p.Name) + "/" + m.Name, nil
 }

@@ -94,3 +94,40 @@ func TestStore_GenerateOpenCodeConfigForModels(t *testing.T) {
 		t.Errorf("空 modelIDs 期望无默认 model，got model=%q small_model=%q", empty.Model, empty.SmallModel)
 	}
 }
+
+// TestStore_NoKeyProviderGuard #30：无 APIKey 的 provider 不进 opencode config，
+// 其模型也不解析为可用 ref（建会话不注入），从源头杜绝 opencode 用空 key → 401 空白。
+func TestStore_NoKeyProviderGuard(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "compute_model", "compute_provider")
+	s := compute.NewStore(db)
+	ctx := context.Background()
+	// 无 key provider（典型：glm-coding-plan 忘填 key）
+	noKey := &compute.Provider{Name: "NoKey Prov", Type: "api", BaseURL: "http://x", APIKey: "", Enabled: true}
+	if err := s.CreateProvider(ctx, noKey); err != nil {
+		t.Fatal(err)
+	}
+	m := &compute.Model{ProviderID: noKey.ID, Name: "glm-coding-plan", Modality: "code", ContextWindow: 204800, MaxOutput: 131072, Enabled: true}
+	if err := s.CreateModel(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	// 即便授权了该模型，config 也不应含其 provider（无 key → 跳过）
+	cfg, err := s.GenerateOpenCodeConfigForModels(ctx, []string{m.ID})
+	if err != nil {
+		t.Fatalf("GenerateOpenCodeConfigForModels: %v", err)
+	}
+	if len(cfg.Provider) != 0 {
+		t.Errorf("无 key provider 不应进 config，got %d provider: %v", len(cfg.Provider), cfg.Provider)
+	}
+	if cfg.Model != "" {
+		t.Errorf("无 key provider 不应作为默认 model，got %q", cfg.Model)
+	}
+	// ResolveOpencodeModelID：无 key 不解析为可用 ref → 建会话不注入
+	id, err := s.ResolveOpencodeModelID(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("ResolveOpencodeModelID: %v", err)
+	}
+	if id != "" {
+		t.Errorf("无 key provider 的模型不应解析为 ref，got %q（应为空→建会话不注入）", id)
+	}
+}
