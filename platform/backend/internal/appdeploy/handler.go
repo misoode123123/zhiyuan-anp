@@ -259,6 +259,24 @@ func (h *Handler) Detail(c *gin.Context) {
 // @Failure      500    {object}  map[string]interface{}  "工作台未启用/启动失败"
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid}/workspace [post]
+// validateRepoDir 校验应用代码仓库可编码：非空、存在、是有效 git 仓库。
+// 缺失/损坏时返明确错误——防 opencode 以无效 cwd 启动 → /api/reference 500 → 进程崩 →
+// ERR_CONNECTION_REFUSED → 空白 iframe。典型触发：repo 被外部清理删除、或导入失败后目录被
+// RemoveAll 但 DB 记录仍在（repo_dir 列非空、磁盘无目录）。在此最早拦截，不分配端口/不留
+// .worktrees 残留/不起子进程。Ensure 的生产唯一调用方即 Workspace，覆盖足够（#31）。
+func validateRepoDir(repoDir string) error {
+	if repoDir == "" {
+		return fmt.Errorf("应用未托管代码仓库（外部应用不支持交互编码）")
+	}
+	if _, err := os.Stat(repoDir); err != nil {
+		return fmt.Errorf("应用代码仓库不存在（%s），可能已被清理或导入失败，请重新创建或导入应用", repoDir)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
+		return fmt.Errorf("应用代码仓库未初始化为 git 仓库（%s），请重新创建应用", repoDir)
+	}
+	return nil
+}
+
 func (h *Handler) Workspace(c *gin.Context) {
 	psID, aid := c.Param("id"), c.Param("aid")
 	if h.codeWS == nil {
@@ -296,6 +314,12 @@ func (h *Handler) Workspace(c *gin.Context) {
 	user := c.GetString(auth.CtxUserID) // 开发者身份（用户名，不同开发者可各选各的工具；worktree/session 用，保持不变）
 	if user == "" {
 		user = "anonymous"
+	}
+	// 闸门（#31）：Ensure 前校验 repo 存在且有效。repo 缺失/损坏时 opencode 以无效 cwd 启动 →
+	// 空白 iframe；在此返清晰错误（409，前端 r.message 红字），最早拦截、不分配端口/不留残留。
+	if err := validateRepoDir(a.RepoDir); err != nil {
+		httpx.Err(c, 409, 40961, err.Error())
+		return
 	}
 	s, err := h.codeWS.Ensure(psID, aid, a.RepoDir, user, in.Tool, in.RequirementID, in.Model, in.ForceNew)
 	if err != nil {
