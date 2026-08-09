@@ -1887,7 +1887,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	// docker run 限 3 分钟：镜像已构建，run 卡住通常是端口/挂载问题，无需长等；超时同走 failed。
 	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
 	// config.yaml 挂载(spec ①):仓库根有 config.yaml 则挂到 /app/config.yaml(ro) + 注入 CONFIG_PATH。
-	configPath := detectConfigPath(a.RepoDir)
+	// configPath 须转宿主路径(toHostRepoDir)：Deploy 的 docker -v 源在宿主解析，容器内
+	// /data/repos/<app>/config.yaml 在宿主不存在→Docker 自动建空目录→挂成目录→应用读
+	// /app/config.yaml 报 "is a directory"→exit 1 崩（yxt-eino-v2 即此）。build context 同理已转。
+	configPath := toHostRepoDir(detectConfigPath(a.RepoDir))
 	if configPath != "" {
 		envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
 	}
