@@ -480,8 +480,10 @@ func TestSendPrompt_NoSession(t *testing.T) {
 	}
 }
 
-// TestSendPrompt_PostsPrompt 向 /api/session/<id>/prompt 发 POST,
-// body 形如 {"prompt":{"text":...}}；2xx → nil。
+// TestSendPrompt_PostsPrompt 向 /session/<id>/prompt_async 发 POST（opencode web SPA 同款），
+// body 形如 {"messageID":...,"parts":[{"type":"text","text":...}]}；2xx → nil。
+// 旧实现用 /api/session/<id>/prompt {prompt:{text}}——该端点虽 admitted 但实测不落任何消息，
+// 会话深链打开即空白（headless 探针 probe9 Flow A 证实），故改用 prompt_async。
 func TestSendPrompt_PostsPrompt(t *testing.T) {
 	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -501,16 +503,26 @@ func TestSendPrompt_PostsPrompt(t *testing.T) {
 	if err := m.SendPrompt("app", "user", "implement feature X"); err != nil {
 		t.Fatalf("SendPrompt 错误: %v", err)
 	}
-	wantPath := "/api/session/ses_1/prompt"
+	wantPath := "/session/ses_1/prompt_async"
 	if gotPath != wantPath {
-		t.Errorf("请求路径 = %q, want %q", gotPath, wantPath)
+		t.Errorf("请求路径 = %q, want %q（旧 /api/session/<id>/prompt 不落消息→空白）", gotPath, wantPath)
 	}
-	var got map[string]map[string]string
+	var got struct {
+		MessageID string `json:"messageID"`
+		Parts     []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"parts"`
+	}
 	if err := json.Unmarshal([]byte(gotBody), &got); err != nil {
 		t.Fatalf("body 不是合法 JSON: %v (%s)", err, gotBody)
 	}
-	if got["prompt"]["text"] != "implement feature X" {
-		t.Errorf(`prompt.text = %q, want "implement feature X"`, got["prompt"]["text"])
+	if got.MessageID == "" {
+		t.Errorf("body 缺 messageID: %s", gotBody)
+	}
+	if len(got.Parts) != 1 || got.Parts[0].Type != "text" || got.Parts[0].Text != "implement feature X" {
+		t.Errorf("parts 应为 [{type:text,text:\"implement feature X\"}], got %+v (%s)", got.Parts, gotBody)
 	}
 }
 

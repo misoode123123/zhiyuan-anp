@@ -9,7 +9,9 @@ package codews
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -511,20 +513,40 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 // opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。
 // 不自动轮转/截断——为保能力，token 控制交给"按需求隔离"（换需求自动新开会话）
 // + 任务完成时前端提醒用户认领下一需求新开会话，避免硬切清零上下文。
+//
+// 端点必须用 opencode web SPA 同款的 POST /session/<id>/prompt_async + parts 结构。
+// 旧实现用 /api/session/<id>/prompt {prompt:{text}}——该端点虽返回 admitted，但实测
+// 不落任何消息（headless 探针 probe9：ANP 精确流程建会+发送后全程 0 条消息），会话
+// 深链接打开即一片空白。改用 prompt_async 后消息真正写入、AI 流式回复、深链渲染可见
+// （probe8/9/10 验证：最小 body {messageID, parts:[{type:"text",text}]} 即生效，模型
+// 由会话建会时继承，发送无需重传 agent/model）。
 func (m *Manager) SendPrompt(appID, userID, text string) error {
 	s := m.Get(appID, userID)
 	if s == nil || s.SessionID == "" {
 		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"prompt": map[string]string{"text": text},
+		"messageID": opencodeClientID("msg_"),
+		"parts": []map[string]interface{}{
+			{"id": opencodeClientID("prt_"), "type": "text", "text": text},
+		},
 	})
-	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/prompt", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
+	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/session/%s/prompt_async", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+// opencodeClientID 生成 opencode web SPA 同款 client 侧 ID（prefix + 16 hex，如 msg_/prt_）。
+// prompt_async 的 messageID / parts[].id 由 client 自生成；仅需唯一，格式无强约束（探针实测）。
+func opencodeClientID(prefix string) string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
+	return prefix + hex.EncodeToString(b)
 }
 
 // ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。
