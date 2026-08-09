@@ -1,6 +1,9 @@
 package standard
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildPromptSection_Empty(t *testing.T) {
 	if got := BuildPromptSection(nil); got != "" {
@@ -18,5 +21,16 @@ func TestBuildPromptSection_Mix(t *testing.T) {
 	want := "\n\n【编码规范·必须遵循】\n[全局][general] 五约束\n[项目][language] 用 FastAPI"
 	if got != want {
 		t.Fatalf("\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// TestBuildAgentsMarkdown_DeploySpecSection 部署适配规范固定段须含 .anp/deploy.yaml
+// 回写指引（needs/actual 两段 + config.yaml 挂载声明要求），opencode 据此维护部署清单。
+func TestBuildAgentsMarkdown_DeploySpecSection(t *testing.T) {
+	got := BuildAgentsMarkdown(nil, "")
+	for _, want := range []string{".anp/deploy.yaml", "needs", "actual", "mounts", "config.yaml"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("BuildAgentsMarkdown 固定段应含 %q\n输出:\n%s", want, got)
+		}
 	}
 }

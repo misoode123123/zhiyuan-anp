@@ -101,6 +101,7 @@ func BuildAgentsMarkdown(list []Standard, module string) string {
 	b.WriteString("- **构建**：仓库根须有 Dockerfile（推荐多阶段）；`EXPOSE` 应用监听端口；构建上下文 = 仓库根。\n")
 	b.WriteString("- **依赖**：中间件由 ANP 供给或绑定已有，连接信息经环境变量注入；应用读 env，不写死地址。\n")
 	b.WriteString("- **依赖声明（回写 `.anp/deps.yaml`）**：若应用用到 redis/milvus 等中间件，在仓库根写 `.anp/deps.yaml` 声明依赖，ANP 据此注入连接 env（`REDIS_ADDR`/`MILVUS_ADDR`）。格式：`services: [{kind: redis}, {kind: milvus}]`（kind 必填；strategy 可选，不写走默认 `bind_existing`）。无中间件依赖则不写此文件。\n")
+	b.WriteString("- **部署需求回写（`.anp/deploy.yaml`）**：声明应用的部署需求，ANP 据此确定性重放部署（每次升级保持原先部署方式，不因引擎变更而漂移）。文件分两段：`needs`（**你维护**：`mounts`/`env_keys`/`ports`/`command`）+ `actual`（**引擎成功后自动回填，你只读别改**：`image_digest`/`mounts_src`/`host_port`/`engine_version`）。`mounts` 用于密钥/配置文件挂载（`src` 仓库相对路径 → `dst` 容器内路径，不进镜像层）。**仓库根有 `config.yaml` 的应用务必声明** `mounts: [{src: config.yaml, dst: /app/config.yaml, readonly: true}]`，否则挂载缺失/错位。无特殊部署需求（普通 web 无 config）可不写此文件，引擎自动探测。\n")
 	b.WriteString("- **网络**：默认 bridge（隔离）；需 host 网络须审批，优先改配置走 env。\n")
 	b.WriteString("- **形态**：web（HTTP，有端口+URL）/ headless（bot/worker 等长驻外发，无 URL，健康=进程或外连）。\n")
 	b.WriteString("- **缺失服务**：若部署机缺某依赖，在变更里报明（kind/原因），由 ANP 经审批后受控安装（白名单内），连接回填注入 env。\n\n")

@@ -1905,12 +1905,21 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	envPairs, _ := h.store.EnvPairs(ctx, a.ID) // 应用运行时环境变量（含密钥）注入容器
 	// docker run 限 3 分钟：镜像已构建，run 卡住通常是端口/挂载问题，无需长等；超时同走 failed。
 	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
-	// config.yaml 挂载(spec ①):仓库根有 config.yaml 则挂到 /app/config.yaml(ro) + 注入 CONFIG_PATH。
-	configPath := detectConfigPath(a.RepoDir)
-	if configPath != "" {
+	// #44 部署清单：读 .anp/deploy.yaml（needs=声明 actual=已记录实际值）。读失败不阻塞（回退自动探测）。
+	mf, mfErr := LoadDeployManifest(a.RepoDir)
+	if mfErr != nil {
+		zap.L().Warn("读取 .anp/deploy.yaml 失败（不阻塞，回退自动探测）",
+			zap.String("app", a.Name), zap.Error(mfErr))
+	}
+	// config.yaml 挂载(#44 resolved-priority)：manifest 声明优先（actual 记录的宿主路径且可读→用记录=确定性
+	// 抗引擎回归；否则 toHostRepoDir(src) 重算）；无 manifest/无声明→detectConfigPath+toHostRepoDir。
+	// 修回归：原 detectConfigPath 返容器路径 /data/repos/... 直接作 -v 源，宿主不存在致 docker 建空目录，
+	// 应用读 config.yaml 得「is a directory」exit 1（yxt-eino-v2 崩溃根因）。
+	configHostPath, configSrc, hasConfig := ResolveConfigMount(a.RepoDir, mf)
+	if hasConfig {
 		envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
 	}
-	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, configPath)
+	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, configHostPath)
 	deployCancel()
 	if dErr != nil {
 		ins.Status = "failed"
@@ -1925,6 +1934,12 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	ins.RestartCount = 0 // 新容器 docker RestartCount=0,重置 DB 基线避免上轮 reconcile 残留
 	_ = h.store.UpdateInstance(ctx, ins)
 	_ = h.store.UpdateRestartCount(ctx, ins.AppID, ins.Env, 0) // 持久化新基线(UpdateInstance 不写 restart_count)
+	// #44 部署成功回填 .anp/deploy.yaml.actual（镜像/已解析宿主源/宿主端口/引擎版本）。
+	// 下次部署优先用 actual.mounts_src 重放（确定性）；needs 段不动（opencode 维护）。失败仅 warn，不阻塞已成功的部署。
+	if rErr := RecordActuals(a.RepoDir, mf, ins.Image, ins.HostPort, configSrc, time.Now().Format(time.RFC3339)); rErr != nil {
+		zap.L().Warn("回填 .anp/deploy.yaml actual 失败（不阻塞部署）",
+			zap.String("app", a.Name), zap.Error(rErr))
+	}
 	// 写 appgw 路由表:部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
 	// headless 无端口/无 URL,不写 HTTP 路由。失败不阻塞部署;routeWriter nil = 未启用 appgw。
 	if h.routeWriter != nil && a.AppKind != AppKindHeadless {
