@@ -58,6 +58,10 @@ func TestToHostRepoDir(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"/data/repos/app_1", "/opt/anp/data/repos/app_1"},
 		{"/data/repos/app_1/sub", "/opt/anp/data/repos/app_1/sub"},
+		// 回归守卫(yxt-eino-v2 崩溃)：config.yaml 是 repo 下的文件，detectConfigPath 返回
+		// /data/repos/<app>/config.yaml，必须被 toHostRepoDir 翻译成宿主路径，否则 Deploy 的
+		// docker -v 源指向宿主不存在的容器路径→Docker 建空目录→挂成目录→应用读 "is a directory"→exit 1。
+		{"/data/repos/yxt-eino-v2/config.yaml", "/opt/anp/data/repos/yxt-eino-v2/config.yaml"},
 		{"/other/path", "/other/path"}, // 非 repos 前缀原样返回
 	}
 	for _, c := range cases {
