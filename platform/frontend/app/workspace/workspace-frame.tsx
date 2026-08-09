@@ -208,6 +208,16 @@ export default function WorkspaceFrame() {
     }, 3000);
   }
 
+  // 进入编码：forceNew=false 复用上次会话（继续，不重发应用上下文）；
+  // true 强制新建 + 后端注入应用上下文 AppContextPrompt（丢弃当前上下文从头开始）。
+  const startCoding = (forceNew: boolean) => {
+    forceNewRef.current = forceNew;
+    setSelfInitiated(true);
+    setNewSessionKey((k) => k + 1);
+    setLoading(true);
+    setErr("");
+  };
+
   const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
 
   return (
@@ -241,22 +251,26 @@ export default function WorkspaceFrame() {
       />
       <div className="flex min-h-0 flex-1 flex-col">
         {!missingParams && !selfInitiated && !url && (
-          <div className="p-4 text-sm text-neutral-500">
-            <button
-              type="button"
-              onClick={() => {
-                // 自主发起：无需求绑定开新会话，后端注入应用上下文（AppContextPrompt），
-                // 公司开发规范由 RefreshAgentsMD 写进 worktree AGENTS.md，opencode 自动加载。
-                forceNewRef.current = true;
-                setSelfInitiated(true);
-                setNewSessionKey((k) => k + 1);
-                setLoading(true);
-                setErr("");
-              }}
-              className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-            >
-              🚀 开始编码
-            </button>
+          <div className="flex flex-col gap-2 p-4 text-sm text-neutral-500">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => startCoding(false)}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+              >
+                ▶ 继续编码
+              </button>
+              <button
+                type="button"
+                onClick={() => startCoding(true)}
+                className="rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-2"
+              >
+                🆕 新会话
+              </button>
+            </div>
+            <div className="text-xs text-text-muted">
+              继续编码 = 接着上次的进度（不重发上下文）；新会话 = 丢弃上下文从头开始。
+            </div>
           </div>
         )}
         {loading && !missingParams && selfInitiated && !url && (
