@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 )
 
 // OpenCodeConfig opencode.json 的 Go 表示。
 type OpenCodeConfig struct {
-	Schema   string                       `json:"$schema"`
-	Provider map[string]*OpenCodeProvider `json:"provider"`
+	Schema     string                       `json:"$schema"`
+	Provider   map[string]*OpenCodeProvider `json:"provider"`
+	Model      string                       `json:"model,omitempty"`       // 顶层默认模型(provider/model)；空→opencode 回退内置免费模型
+	SmallModel string                       `json:"small_model,omitempty"` // 后台任务(标题/摘要)用的小模型；空→opencode 内置免费 big-pickle(易 429)
 }
 
 // OpenCodeProvider opencode 的 provider 配置。
@@ -54,6 +57,12 @@ func (s *Store) GenerateOpenCodeConfig(ctx context.Context) (*OpenCodeConfig, er
 	}
 	for _, p := range providers {
 		if !p.Enabled {
+			continue
+		}
+		// 无 key provider 不进 config：opencode 会用空 key 调用 → 401 空白（#30）。
+		// 跳过该 provider，用户在 opencode 里看不到/用不了其模型，从源头杜绝 401。
+		if p.APIKey == "" {
+			log.Printf("[compute] 跳过无 APIKey 的 provider(不进 opencode config): id=%s name=%s", p.ID, p.Name)
 			continue
 		}
 		// provider key：取 name 的 slug 化（去空格、小写、- 分隔）
@@ -145,6 +154,12 @@ func (s *Store) GenerateOpenCodeConfigForModels(ctx context.Context, modelIDs []
 		if !p.Enabled {
 			continue
 		}
+		// 无 key provider 不进 config：opencode 会用空 key 调用 → 401 空白（#30）。
+		// 跳过该 provider，用户在 opencode 里看不到/用不了其模型，从源头杜绝 401。
+		if p.APIKey == "" {
+			log.Printf("[compute] 跳过无 APIKey 的 provider(不进 opencode config): id=%s name=%s", p.ID, p.Name)
+			continue
+		}
 		key := slugify(p.Name)
 		provider := &OpenCodeProvider{
 			NPM:  "@ai-sdk/openai-compatible",
@@ -185,6 +200,15 @@ func (s *Store) GenerateOpenCodeConfigForModels(ctx context.Context, modelIDs []
 				om.Limit = &OpenCodeLimit{Context: cw, Output: out}
 			}
 			provider.Models[m.Name] = om
+			// 默认模型：首个授权模型作为 opencode 顶层 model + small_model 默认。不设则
+			// opencode 回退其内置免费模型(如 big-pickle)当默认/后台小模型 → 界面默认显示免费
+			// 模型 + 后台任务 429 FreeUsageLimitError，用户以为"模型不对/没反应"。ref 格式与
+			// ResolveOpencodeModelID 一致：slugify(providerName)/modelName。
+			if cfg.Model == "" {
+				ref := key + "/" + m.Name
+				cfg.Model = ref
+				cfg.SmallModel = ref
+			}
 		}
 		// 至少有 1 个命中 model 才加入
 		if len(provider.Models) > 0 {
@@ -235,6 +259,12 @@ func (s *Store) ResolveOpencodeModelID(ctx context.Context, modelID string) (str
 			return "", nil
 		}
 		return "", err
+	}
+	// 无 key 不解析为可用模型 ref：建会话时 modelRef="" → initSession 不指定该模型，
+	// 避免 opencode 用空 key 调用 → 401 空白（#30）。改用 config 顶层默认（首个有 key 模型）。
+	if p.APIKey == "" {
+		log.Printf("[compute] 模型 %s 的 provider %s 无 APIKey，不解析为 opencode 模型(建会话不注入)", modelID, p.Name)
+		return "", nil
 	}
 	return slugify(p.Name) + "/" + m.Name, nil
 }
