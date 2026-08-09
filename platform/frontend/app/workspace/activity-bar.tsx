@@ -1,14 +1,13 @@
 "use client";
 
-// 编码工作台活动栏：4 视图图标，选中项左侧蓝色竖条，右上角红点 badge。
-// 浅色风格：白底 + 右细分隔线与 #f3f3f3 面板区分；选中态深色图标 + 左蓝条，未选中灰图标 + hover 浅灰底。
-export type ViewKey = "requirements" | "source-control" | "releases" | "files";
+// 编码工作台活动栏：2 视图图标，选中项左侧蓝色竖条，右上角红点 badge。
+// 浅色风格：白底 + 右细分隔线与 #f3f3f3 靮板区分；选中态深色图标 + 左蓝条，未选中灰图标 + hover 浅灰底。
+// 仅保留「需求 + 发布」：文件浏览/源代码管理 opencode 自带，ANP 侧不再重复暴露。
+export type ViewKey = "requirements" | "releases";
 
 const VIEWS: { key: ViewKey; icon: string; label: string }[] = [
   { key: "requirements", icon: "📋", label: "需求" },
-  { key: "source-control", icon: "🔀", label: "源代码管理" },
   { key: "releases", icon: "🚀", label: "发布" },
-  { key: "files", icon: "📁", label: "文件" },
 ];
 
 export function ActivityBar({

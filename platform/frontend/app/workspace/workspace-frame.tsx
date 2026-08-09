@@ -315,21 +315,6 @@ export default function WorkspaceFrame() {
     setRegistering(false);
   }
 
-  // 变更审批（approve/reject）：pending 变更可直接在抽屉审批
-  async function decideChange(id: string, decision: "approve" | "reject") {
-    try {
-      const res = await fetch(`${API_BASE_URL}/changes/${id}/${decision}`, { method: "POST" });
-      const r = await res.json();
-      if (r.code !== 0) {
-        alert(r.message);
-        return;
-      }
-      await fetchDetail();
-    } catch (e) {
-      alert(String(e));
-    }
-  }
-
   // 需求驱动:把需求规格注入 opencode 会话,AI 在工作台实时编码(看过程,可介入)。
   async function dispatchReq(taskIdx?: number) {
     if (!selectedReq) return;
@@ -546,10 +531,7 @@ export default function WorkspaceFrame() {
       <div className="flex min-h-0 flex-1">
         {drawerOpen && !missingParams && (
           <Sidebar
-            psID={psID}
-            appID={appID}
             detail={detail}
-            loading={!detail && !detailErr}
             err={detailErr}
             selectedReq={selectedReq}
             onStartReq={async (id, fresh) => {

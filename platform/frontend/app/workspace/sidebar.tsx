@@ -1,54 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { API_BASE_URL } from "@/lib/api";
+import { useState } from "react";
 import { ActivityBar, type ViewKey } from "./activity-bar";
-import { DiffDrawer } from "./diff-drawer";
 import { RequirementsView } from "./views/requirements-view";
-import { SourceControlView } from "./views/source-control-view";
 import { ReleasesView } from "./views/releases-view";
-import { FilesView } from "./views/files-view";
-import type { GitStatus, WorkspaceDetail, ReqState, ReqActions } from "./types";
+import type { WorkspaceDetail, ReqState, ReqActions } from "./types";
 
-// 编码工作台左面板：活动栏 + 当前视图 + diff 浮层抽屉。
-// git 数据与需求操作状态由 WorkspaceFrame 注入。
+// 编码工作台左面板：活动栏 + 当前视图。
+// 仅「需求 + 发布」两个视图：文件浏览/源代码管理 opencode 自带，ANP 侧不再重复暴露
+// （原 git-status 轮询 / diff 抽屉 / 变更审批 UI 随 source-control 视图一并移除）。
+// 需求操作状态由 WorkspaceFrame 注入。
 export function Sidebar({
-  psID,
-  appID,
   detail,
-  loading,
   err,
   selectedReq,
   onStartReq,
-  onApprove,
-  onReject,
   reqState,
   reqActions,
 }: {
-  psID: string;
-  appID: string;
   detail: WorkspaceDetail | null;
-  loading: boolean;
   err: string;
   selectedReq: string;
   onStartReq: (id: string, fresh?: boolean) => void;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
   reqState: ReqState;
   reqActions: ReqActions;
 }) {
   const [view, setView] = useState<ViewKey>(() => {
     if (typeof window === "undefined") return "requirements";
-    return (window.localStorage.getItem("anp.workspace.view") as ViewKey) || "requirements";
+    const saved = window.localStorage.getItem("anp.workspace.view");
+    // 兼容旧值：历史可能存 "source-control"/"files"（视图已移除），回退到 requirements。
+    return saved === "releases" ? "releases" : "requirements";
   });
-  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
-  const [gitLoading, setGitLoading] = useState(true);
-  const [gitErr, setGitErr] = useState("");
-  const [diffPath, setDiffPath] = useState("");
-  const [diffSha, setDiffSha] = useState<string | undefined>(undefined);
-  const [diffText, setDiffText] = useState("");
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffTrunc, setDiffTrunc] = useState(false);
 
   function selectView(k: ViewKey) {
     setView(k);
@@ -57,57 +39,9 @@ export function Sidebar({
     } catch {}
   }
 
-  const fetchGit = () => {
-    fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/git-status`)
-      .then((r) => r.json())
-      .then((r) => {
-        if (r.code === 0 && r.data) {
-          setGitStatus(r.data);
-          setGitErr("");
-        } else {
-          setGitErr(r.message || "加载失败");
-        }
-      })
-      .catch((e) => setGitErr(String(e)))
-      .finally(() => setGitLoading(false));
-  };
-
-  // 首次 + 10s 轮询 git-status（编码时看实时工作区改动）。
-  useEffect(() => {
-    if (!psID || !appID) return;
-    fetchGit();
-    const t = setInterval(fetchGit, 10000);
-    return () => clearInterval(t);
-  }, [psID, appID]);
-
-  async function openFile(path: string, sha?: string) {
-    setDiffPath(path);
-    setDiffSha(sha);
-    setDiffText("");
-    setDiffTrunc(false);
-    setDiffLoading(true);
-    try {
-      const q = `path=${encodeURIComponent(path)}${sha ? `&sha=${encodeURIComponent(sha)}` : ""}`;
-      const r = await fetch(
-        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/file-diff?${q}`
-      ).then((rr) => rr.json());
-      if (r.code === 0 && r.data) {
-        setDiffText(r.data.diff || "");
-        setDiffTrunc(!!r.data.truncated);
-      } else {
-        setDiffText(r.message || "加载失败");
-      }
-    } catch (e) {
-      setDiffText(String(e));
-    }
-    setDiffLoading(false);
-  }
-
   const badges: Record<ViewKey, number> = {
     requirements: (detail?.requirements ?? []).filter((q) => !q.assignee).length,
-    "source-control": gitStatus?.changes?.length ?? 0,
     releases: detail?.releases?.length ?? 0,
-    files: 0,
   };
 
   return (
@@ -124,34 +58,10 @@ export function Sidebar({
             reqState={reqState}
             reqActions={reqActions}
           />
-        ) : view === "source-control" ? (
-          <SourceControlView
-            psID={psID}
-            appID={appID}
-            gitStatus={gitStatus}
-            gitLoading={gitLoading}
-            gitErr={gitErr}
-            detail={detail}
-            onApprove={onApprove}
-            onReject={onReject}
-            onOpenFile={openFile}
-            onCommitted={fetchGit}
-          />
-        ) : view === "releases" ? (
-          <ReleasesView detail={detail} />
         ) : (
-          <FilesView psID={psID} appID={appID} />
+          <ReleasesView detail={detail} />
         )}
       </div>
-      {diffPath && (
-        <DiffDrawer
-          path={diffPath}
-          diff={diffText}
-          loading={diffLoading}
-          truncated={diffTrunc}
-          onClose={() => setDiffPath("")}
-        />
-      )}
     </aside>
   );
 }
