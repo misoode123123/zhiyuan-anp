@@ -671,7 +671,11 @@ func TestEnsureWorktree_PathConstruction(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(wtDir, ".git"), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if got := ensureWorktree(repoDir, "alice"); got != wtDir {
+	got, err := ensureWorktree(repoDir, "alice")
+	if err != nil {
+		t.Fatalf("ensureWorktree(alice) 意外失败: %v", err)
+	}
+	if got != wtDir {
 		t.Errorf("ensureWorktree 路径 = %q, want %q", got, wtDir)
 	}
 }
@@ -681,17 +685,25 @@ func TestEnsureWorktree_SanitizesUserID(t *testing.T) {
 	repoDir := t.TempDir()
 	wtDir := filepath.Join(repoDir, ".worktrees", "a-b")
 	_ = os.MkdirAll(filepath.Join(wtDir, ".git"), 0755)
-	if got := ensureWorktree(repoDir, "A.B"); got != wtDir {
+	got, err := ensureWorktree(repoDir, "A.B")
+	if err != nil {
+		t.Fatalf("ensureWorktree(A.B) 意外失败: %v", err)
+	}
+	if got != wtDir {
 		t.Errorf("userID 'A.B' 应 sanitize 为 'a-b', path = %q, want %q", got, wtDir)
 	}
 }
 
 // TestEnsureWorktree_NoGitRepo repoDir 非 git 仓库时 git worktree add 必失败；
-// ensureWorktree 兜底回退主仓 repoDir（避免 opencode chdir 到无效 .worktrees 目录起不来）。
+// ensureWorktree 不再静默回退主仓（会污染主线），改为返回 error，启动失败可见可修。
 func TestEnsureWorktree_NoGitRepo(t *testing.T) {
 	repoDir := t.TempDir()
-	if got := ensureWorktree(repoDir, "Bob"); got != repoDir {
-		t.Errorf("非 git 仓库应回退主仓 %q, got %q", repoDir, got)
+	got, err := ensureWorktree(repoDir, "Bob")
+	if err == nil {
+		t.Errorf("非 git 仓库应返回 error（不再回退主仓）, got path=%q err=nil", got)
+	}
+	if got != "" {
+		t.Errorf("失败时应返回空路径, got %q", got)
 	}
 }
 
