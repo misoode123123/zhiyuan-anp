@@ -7,17 +7,17 @@
 
 ## 一、生产环境一览
 
-| 项 | 值 |
-|---|---|
-| 服务器 | **10.10.0.28**（⚠️ 共享服务器，还跑 lowcode/帆软/腾讯微搭等，**只动 `deploy_` 前缀容器**） |
-| 平台入口 | **http://10.10.0.28:8088**（nginx 暴露 :8088；公网 IP 不通，只能内网/SSH 隧道） |
-| 登录 | `admin / admin123`（真实账号密码 + token 鉴权） |
-| 源码位置 | `.28:/opt/anp/`（tar 包解压，**非 git 仓库**） |
-| 编排 | `/opt/anp/deploy/docker-compose.prod.yml`（用 `docker-compose` v1，非 `docker compose`） |
-| 容器 | `deploy_backend_1` / `deploy_frontend_1` / `deploy_agent-runtime_1` / `deploy_nginx_1` |
-| 端口段 | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9450` |
-| 生产库 | `/opt/anp/data/anp.db`（SQLite） |
-| 密钥 | `/opt/anp/deploy/.env.prod`（含 `ZHIPUAI_API_KEY`、`APPDEPLOY_HOST=10.10.0.28` 等） |
+| 项       | 值                                                                                                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 服务器   | **10.10.0.28**（⚠️ 共享服务器，还跑 lowcode/帆软/腾讯微搭等，**只动 `deploy_` 前缀容器**）                                                                                |
+| 平台入口 | **http://10.10.0.28:8088**（nginx 暴露 :8088；公网 IP 不通，只能内网/SSH 隧道）                                                                                           |
+| 登录     | `admin / admin123`（真实账号密码 + token 鉴权）                                                                                                                           |
+| 源码位置 | `.28:/opt/anp/`（tar 包解压，**非 git 仓库**）                                                                                                                            |
+| 编排     | `/opt/anp/deploy/docker-compose.prod.yml`（用 `docker-compose` v1，非 `docker compose`）                                                                                  |
+| 容器     | `deploy_backend_1` / `deploy_frontend_1` / `deploy_agent-runtime_1` / `deploy_nginx_1` / `deploy_postgres_1`（数据库）                                                    |
+| 端口段   | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9450`                                                                                |
+| 生产库   | **Postgres**（容器 `deploy_postgres_1`，镜像 `pgvector/pgvector:pg16`）；库名 `anp`，数据卷 `/opt/anp/data/pgdata`（⚠️ 全程 PG，非 SQLite；早期文档里的 `anp.db` 已废弃） |
+| 密钥     | `/opt/anp/deploy/.env.prod`（含 `ZHIPUAI_API_KEY`、`APPDEPLOY_HOST=10.10.0.28` 等）                                                                                       |
 
 ---
 
@@ -32,9 +32,11 @@ opencode 编码工作台前端 JS 约 **2.8MB**，且 opencode 官方 web UI **�
 ### 方案 A：SSH 动态代理（推荐——覆盖所有端口 + 压缩）
 
 本地终端起一条压缩隧道（保持窗口开着）：
+
 ```bash
 ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 ```
+
 - `-C` 启用压缩 → 2.8MB JS 经压缩约 **→ 600KB**
 - `-D 1080` 本地 SOCKS5 代理（任意端口都走它，含动态的 9400-9450）
 - `-N` 不开远端 shell
@@ -102,7 +104,7 @@ ssh  -i ~/.ssh/miscode root@10.10.0.28 "tar -xzf /root/anp.tar.gz -C /opt/anp &&
 # 再按方式 A 第 2 步重建容器
 ```
 
-> ⚠️ **必须排除 `data/` 和 `deploy/.env.prod`**——否则会覆盖生产 SQLite 库与密钥。
+> ⚠️ **必须排除 `data/` 和 `deploy/.env.prod`**——否则会覆盖生产 Postgres 数据卷（`data/pgdata`）与密钥。
 
 ---
 
@@ -142,24 +144,24 @@ curl -s -o /dev/null -w "spaces: %{http_code}\n" -H "Authorization: Bearer $TOK"
 
 ## 七、保护事项（部署时勿碰）
 
-| 资产 | 路径 | 保护方式 |
-|---|---|---|
-| 生产数据库 | `/opt/anp/data/anp.db` | 全量同步排除 `data/`；迁移用幂等 `ALTER`（addColumnIfMissing） |
-| 密钥 | `/opt/anp/deploy/.env.prod` | 全量同步排除 `deploy/.env.prod` |
-| 他人容器 | lowcode/帆软/腾讯等 | `docker` 操作只认 `deploy_` 前缀，别 `docker rm -f` 陌生容器 |
+| 资产       | 路径                                                                         | 保护方式                                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 生产数据库 | Postgres `deploy_postgres_1`（pgvector/pg16，数据卷 `/opt/anp/data/pgdata`） | 全量同步排除 `data/`；schema 由后端启动时自动跑 embed 迁移（`internal/db/migrations/pg/*.sql`，事务包裹 + 幂等 + `schema_migrations` 版本表），勿手改库 |
+| 密钥       | `/opt/anp/deploy/.env.prod`                                                  | 全量同步排除 `deploy/.env.prod`                                                                                                                         |
+| 他人容器   | lowcode/帆软/腾讯等                                                          | `docker` 操作只认 `deploy_` 前缀，别 `docker rm -f` 陌生容器                                                                                            |
 
 ---
 
 ## 八、历史踩坑（避免重蹈覆辙）
 
-| 坑 | 现象 | 解法（已修入仓库） |
-|---|---|---|
-| 前端 `--frozen-lockfile` | 构建报 `ERR_PNPM_OUTDATED_LOCKFILE` | `Dockerfile.frontend` 用 `--no-frozen-lockfile` |
-| 后端 apk 装包卡死 | `docker build` 9min+ 无响应 | `Dockerfile.backend` `sed` 换阿里云 alpine 源 |
-| nginx 重建后 502 | 重建 backend 后接口 502（IP 变了） | `nginx.conf` 加 `resolver 127.0.0.11 valid=10s` |
-| `repo_dir` 路径 | build 找不到上下文 | repo_dir 用**容器内**路径 `/data/repos/x`，非宿主路径 |
-| opencode 工作台卡转圈 | serve 无 provider | serve 只读 `$HOME/.config/opencode/opencode.json`；backend 启动时把 `opencode.json` 复制过去（见 `main.go`） |
-| buildpack 空仓库/端口 | 应用白屏 | 空仓库兜底 `static`；static 类型 nginx `listen` 指定端口 |
+| 坑                       | 现象                                | 解法（已修入仓库）                                                                                           |
+| ------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 前端 `--frozen-lockfile` | 构建报 `ERR_PNPM_OUTDATED_LOCKFILE` | `Dockerfile.frontend` 用 `--no-frozen-lockfile`                                                              |
+| 后端 apk 装包卡死        | `docker build` 9min+ 无响应         | `Dockerfile.backend` `sed` 换阿里云 alpine 源                                                                |
+| nginx 重建后 502         | 重建 backend 后接口 502（IP 变了）  | `nginx.conf` 加 `resolver 127.0.0.11 valid=10s`                                                              |
+| `repo_dir` 路径          | build 找不到上下文                  | repo_dir 用**容器内**路径 `/data/repos/x`，非宿主路径                                                        |
+| opencode 工作台卡转圈    | serve 无 provider                   | serve 只读 `$HOME/.config/opencode/opencode.json`；backend 启动时把 `opencode.json` 复制过去（见 `main.go`） |
+| buildpack 空仓库/端口    | 应用白屏                            | 空仓库兜底 `static`；static 类型 nginx `listen` 指定端口                                                     |
 
 ---
 
@@ -177,7 +179,7 @@ SSH       : ssh -i ~/.ssh/miscode root@10.10.0.28
 源码      : /opt/anp
 编排      : /opt/anp/deploy/docker-compose.prod.yml
 重建命令  : cd /opt/anp && docker-compose -f deploy/docker-compose.prod.yml up --build -d <backend|frontend|...>
-生产库    : /opt/anp/data/anp.db
+生产库    : Postgres deploy_postgres_1 (pgvector/pg16)，库 anp，数据卷 /opt/anp/data/pgdata
 密钥      : /opt/anp/deploy/.env.prod
 平台入口  : http://10.10.0.28:8088     登录 admin / admin123
 ```
