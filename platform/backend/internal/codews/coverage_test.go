@@ -729,3 +729,37 @@ func TestAllocPort_ReservesAndFrees(t *testing.T) {
 		t.Errorf("释放后应重新分配最低空闲端口 %d, got %d", p1, p3)
 	}
 }
+
+// ============================================================
+// idleVictims（空闲会话驱逐决策纯函数）
+// ============================================================
+
+// TestIdleVictims 仅超阈值未活动的活跃会话被判为驱逐对象；已退出(dead)的不算；阈值≤0 禁用。
+// 用 &exec.Cmd{} 占位（alive 但 Process nil），idleVictims 纯决策不 kill，安全。
+func TestIdleVictims(t *testing.T) {
+	m := NewManager("h", nil)
+	now := time.Now()
+	t.Setenv("CODEWS_IDLE_TIMEOUT", "60m") // 60 分钟阈值
+
+	add := func(user string, lastUsed time.Time) {
+		m.sessions["app:"+user] = &Session{AppID: "app", UserID: user, cmd: &exec.Cmd{}, lastUsed: lastUsed}
+	}
+	add("idle", now.Add(-2*time.Hour))      // 空闲 2h > 60min → 命中
+	add("active", now.Add(-10*time.Minute)) // 10min < 60min → 不命中
+	// dead：cmd 为空（已退出/未启动 → alive()=false）即使空闲也不应被驱逐
+	m.sessions["app:dead"] = &Session{AppID: "app", UserID: "dead", lastUsed: now.Add(-2 * time.Hour)}
+
+	got := m.idleVictims(now)
+	if len(got) != 1 {
+		t.Fatalf("idleVictims 命中数 = %d, want 1（仅 idle）", len(got))
+	}
+	if got[0].UserID != "idle" {
+		t.Errorf("命中用户 = %q, want idle", got[0].UserID)
+	}
+
+	// 阈值≤0 禁用驱逐
+	t.Setenv("CODEWS_IDLE_TIMEOUT", "0")
+	if v := m.idleVictims(now); len(v) != 0 {
+		t.Errorf("阈值≤0 应禁用驱逐, got %d 命中", len(v))
+	}
+}

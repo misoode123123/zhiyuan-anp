@@ -15,7 +15,7 @@
 | 源码位置 | `.28:/opt/anp/`（tar 包解压，**非 git 仓库**） |
 | 编排 | `/opt/anp/deploy/docker-compose.prod.yml`（用 `docker-compose` v1，非 `docker compose`） |
 | 容器 | `deploy_backend_1` / `deploy_frontend_1` / `deploy_agent-runtime_1` / `deploy_nginx_1` |
-| 端口段 | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9450` |
+| 端口段 | 平台 `8088`；产出应用 test `9100-9199` / prod `9200-9300`；opencode 编码工作台 `9400-9499` |
 | 生产库 | `/opt/anp/data/anp.db`（SQLite） |
 | 密钥 | `/opt/anp/deploy/.env.prod`（含 `ZHIPUAI_API_KEY`、`APPDEPLOY_HOST=10.10.0.28` 等） |
 
@@ -26,7 +26,7 @@
 opencode 编码工作台前端 JS 约 **2.8MB**，且 opencode 官方 web UI **不对静态资源做 gzip 压缩**——
 同局域网秒开（.28 内网约 10ms），但**远程 / 窄带宽 / 经公网就会很慢**。
 
-> 工作台 URL 形如 `http://10.10.0.28:9400`，端口 **9400-9450 动态分配**（每应用一个）。
+> 工作台 URL 形如 `http://10.10.0.28:9400`，端口 **9400-9499 动态分配**（每应用一个）。
 > 因此 `-L` 单端口映射覆盖不了，**远程推荐用 SSH 动态代理（SOCKS）**。
 
 ### 方案 A：SSH 动态代理（推荐——覆盖所有端口 + 压缩）
@@ -36,7 +36,7 @@ opencode 编码工作台前端 JS 约 **2.8MB**，且 opencode 官方 web UI **�
 ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 ```
 - `-C` 启用压缩 → 2.8MB JS 经压缩约 **→ 600KB**
-- `-D 1080` 本地 SOCKS5 代理（任意端口都走它，含动态的 9400-9450）
+- `-D 1080` 本地 SOCKS5 代理（任意端口都走它，含动态的 9400-9499）
 - `-N` 不开远端 shell
 
 浏览器配 **SOCKS5 代理 `127.0.0.1:1080`**（Chrome 装 SwitchyOmega，或系统代理），
@@ -47,7 +47,7 @@ ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 与 .28 同网段：浏览器直接开 `http://10.10.0.28:8088`，工作台 `http://10.10.0.28:<port>` 直达，无需隧道。
 
 > ⚠️ 不要用 `-L 8088:localhost:8088` 单端口映射：平台能开，但点「编码」弹出的工作台 URL 仍是
-> `10.10.0.28:9400`，你的 `-L` 没映射 9400 → 打不开。要么用方案 A（SOCKS），要么把 9400-9450 也 `-L` 逐个映射。
+> `10.10.0.28:9400`，你的 `-L` 没映射 9400 → 打不开。要么用方案 A（SOCKS），要么把 9400-9499 也 `-L` 逐个映射。
 
 ---
 
