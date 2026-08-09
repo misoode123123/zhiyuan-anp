@@ -264,6 +264,7 @@ func (h *Handler) Workspace(c *gin.Context) {
 		RequirementID string `json:"requirement_id"`      // 绑定的需求（工作直播按此关联；空=application 页老入口）
 		Model         string `json:"model,omitempty"`     // 授权模型 id（cmd_xxx）；空=未选模型，走全局 config 兜底
 		ForceNew      bool   `json:"force_new,omitempty"` // 前端「🆕 新会话」按钮：强制开空会话
+		Prompt        string `json:"prompt,omitempty"`    // 新会话(force_new)时前端拼好的需求规格文本：Ensure 建会话后立即注入，使该会话成为活动会话且已含需求，deep_url 返回前就绪 → iframe 加载即可见（消除"先空会话后异步注入"导致的会话错位/空窗）
 	}
 	_ = c.ShouldBindJSON(&in)
 	// 模型授权校验：选了模型且 grant 已注入时，校验当前用户是否被授权该模型；越权即拒 403，不 fallback。
@@ -289,6 +290,15 @@ func (h *Handler) Workspace(c *gin.Context) {
 	if err != nil {
 		httpx.Err(c, 500, 50021, err.Error())
 		return
+	}
+	// 新会话即时注入需求：Ensure 已创建会话，立即 SendPrompt → 会话成为活动会话且已含需求，
+	// 且在 deep_url 返回前完成 → iframe 加载时"活动会话==deep_url会话==已含需求"，消除 SPA
+	// 读到旧空/临时会话的竞态（旧流程先 setUrl 后异步注入，iframe 加载瞬间活动会话可能仍是旧的）。
+	// prompt 仅前端 force_new 时发送，复用会话不注入、不重复。best-effort：失败不阻断 boot。
+	if in.Prompt != "" && s.Tool == "opencode" {
+		if err := h.codeWS.SendPrompt(aid, user, in.Prompt); err != nil {
+			log.Printf("[appdeploy] boot 即时注入需求失败(会话已就绪,可手动点AI编码重试): app=%s user=%s err=%v", aid, user, err)
+		}
 	}
 	// 刷新 AGENTS.md：opencode 的 cwd 是 dev-<user> worktree，规范须写进 worktree 才被加载
 	// （写主仓工作区，worktree 看不到）。Ensure 已建 worktree；失败不阻塞编码。

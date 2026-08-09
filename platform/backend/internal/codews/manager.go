@@ -9,7 +9,9 @@ package codews
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -42,6 +44,10 @@ const (
 type ModelConfigWriter interface {
 	WriteOpenCodeConfigForModels(ctx context.Context, modelIDs []string, path string) error
 	ModelName(ctx context.Context, modelID string) (string, error)
+	// ResolveOpencodeModelID 把 compute_model.id（cmd_xxx）解析为 opencode 的 "providerID/modelID"
+	// （provider 段=slugify(providerName)，与 opencode.json 的 provider key 一致）。
+	// 建会话时据此指定 model，否则 opencode 退回内置默认（免费）模型。未命中返 ("", nil)。
+	ResolveOpencodeModelID(ctx context.Context, modelID string) (string, error)
 }
 
 // Manager 管理各应用的编码工作台进程（可插拔多工具）。
@@ -289,11 +295,21 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 	}
 	// opencode 专属：复用/预创建会话（claude/codex 走 ttyd，无对等 session API，跳过——靠工具自身 --continue 恢复）
 	if toolName == "opencode" {
+		// 解析授权模型为 opencode Model.Ref（"providerID/modelID"），建会话时带上，确保用真模型而非
+		// opencode 内置免费默认模型。空/解析失败 → modelRef=""，initSession 退回 body={}（向后兼容）。
+		var modelRef string
+		if model != "" && m.writer != nil {
+			if ref, err := m.writer.ResolveOpencodeModelID(context.Background(), model); err == nil && ref != "" {
+				modelRef = ref
+			} else if err != nil {
+				log.Printf("[codews] 解析 opencode 模型 ref 失败(会话沿用默认模型): model=%s err=%v", model, err)
+			}
+		}
 		// 复用 opencode 已有会话(按 repo 目录匹配,取最近);无则预创建一个带项目上下文的会话。
 		// opencode 会话持久化在磁盘,进程/后端重启后据此恢复开发者上次的编码上下文,不再每次新建。失败非致命。
 		// opencode 上报的 location.directory 是它自己的 cwd（worktree），
 		// 会话匹配 / 深链接 slug 都须用 workDir，否则永 mismtach → 每次新建会话、深链接打不开。
-		s.SessionID = ensureSession(port, workDir, forceNew)
+		s.SessionID = ensureSession(port, workDir, forceNew, modelRef)
 		if s.SessionID != "" {
 			s.DeepURL = sessionDeepURL(s.URL, workDir, s.SessionID)
 		}
@@ -378,10 +394,10 @@ func computeForceNew(old *Session, reqID string, reqForceNew bool, last *Session
 // forceNew=true(换需求)时跳过复用直接新建——避免按 workDir 把上一个需求的会话捞回,真正按需求隔离。
 // opencode 会话持久化在磁盘(/root/.local/share/opencode),进程或后端重启后仍可据此
 // 恢复开发者上次的编码上下文,而非每次打开都新建空会话。
-func ensureSession(port int, repoDir string, forceNew bool) string {
+func ensureSession(port int, repoDir string, forceNew bool, modelRef string) string {
 	if forceNew {
 		log.Printf("[codews] forceNew 新建 opencode 会话 (repo=%s)", repoDir)
-		return initSession(port)
+		return initSession(port, modelRef)
 	}
 	// opencode serve 刚 listen 时 HTTP handler 可能尚未就绪（请求挂起直至起来），
 	// 用短超时 + 重试等就绪；就绪后 /api/session 仅几毫秒。
@@ -421,18 +437,33 @@ func ensureSession(port int, repoDir string, forceNew bool) string {
 			return bestID // 复用最近会话
 		}
 		log.Printf("[codews] 新建 opencode 会话 (repo=%s, 现有 %d 个均不匹配 directory)", repoDir, len(r.Data))
-		return initSession(port) // 查到了但无匹配 → 新建
+		return initSession(port, modelRef) // 查到了但无匹配 → 新建
 	}
 	log.Printf("[codews] 查询 opencode 会话重试6次仍失败将新建")
-	return initSession(port)
+	return initSession(port, modelRef)
 }
 
 // initSession 在新启动的工作台上预创建一个会话(POST http://127.0.0.1:port/session)。
 // serve 刚 listen 时 API 可能短暂未就绪, 故重试几次; 持续失败返回空串(非致命)。
-func initSession(port int) string {
+//
+// modelRef 形如 "providerID/modelID"（ResolveOpencodeModelID 产出）：非空时建会话带
+// {"model":{"providerID","id"}}，让 opencode 用授权模型；空则 body={}，opencode 退回内置
+// 默认（免费）模型——向后兼容未授权/解析失败场景。
+func initSession(port int, modelRef string) string {
 	url := fmt.Sprintf("http://127.0.0.1:%d/session", port)
+	body := "{}"
+	if modelRef != "" {
+		// opencode 建会话的 model 需 Model.Ref 对象 {"providerID","id"}（非字符串 "p/m"）。
+		parts := strings.SplitN(modelRef, "/", 2)
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			b, _ := json.Marshal(map[string]any{
+				"model": map[string]string{"providerID": parts[0], "id": parts[1]},
+			})
+			body = string(b)
+		}
+	}
 	for i := 0; i < 4; i++ {
-		resp, err := wsHTTPClient.Post(url, "application/json", bytes.NewBufferString("{}"))
+		resp, err := wsHTTPClient.Post(url, "application/json", bytes.NewBufferString(body))
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
 			continue
@@ -482,20 +513,40 @@ func (m *Manager) SessionMessages(appID, userID string) (string, error) {
 // opencode AI 在工作台实时响应(流式),开发者可看编码过程并随时介入。
 // 不自动轮转/截断——为保能力，token 控制交给"按需求隔离"（换需求自动新开会话）
 // + 任务完成时前端提醒用户认领下一需求新开会话，避免硬切清零上下文。
+//
+// 端点必须用 opencode web SPA 同款的 POST /session/<id>/prompt_async + parts 结构。
+// 旧实现用 /api/session/<id>/prompt {prompt:{text}}——该端点虽返回 admitted，但实测
+// 不落任何消息（headless 探针 probe9：ANP 精确流程建会+发送后全程 0 条消息），会话
+// 深链接打开即一片空白。改用 prompt_async 后消息真正写入、AI 流式回复、深链渲染可见
+// （probe8/9/10 验证：最小 body {messageID, parts:[{type:"text",text}]} 即生效，模型
+// 由会话建会时继承，发送无需重传 agent/model）。
 func (m *Manager) SendPrompt(appID, userID, text string) error {
 	s := m.Get(appID, userID)
 	if s == nil || s.SessionID == "" {
 		return fmt.Errorf("无活跃编码会话(请先打开工作台)")
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"prompt": map[string]string{"text": text},
+		"messageID": opencodeClientID("msg_"),
+		"parts": []map[string]interface{}{
+			{"id": opencodeClientID("prt_"), "type": "text", "text": text},
+		},
 	})
-	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/api/session/%s/prompt", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
+	resp, err := wsHTTPClient.Post(fmt.Sprintf("http://127.0.0.1:%d/session/%s/prompt_async", s.Port, s.SessionID), "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+// opencodeClientID 生成 opencode web SPA 同款 client 侧 ID（prefix + 16 hex，如 msg_/prt_）。
+// prompt_async 的 messageID / parts[].id 由 client 自生成；仅需唯一，格式无强约束（探针实测）。
+func opencodeClientID(prefix string) string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand: " + err.Error())
+	}
+	return prefix + hex.EncodeToString(b)
 }
 
 // ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。

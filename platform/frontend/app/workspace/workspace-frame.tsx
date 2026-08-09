@@ -15,6 +15,18 @@ import type { WorkspaceDetail, ReqState, ReqActions } from "./types";
 //
 // 注意:effect 内不同步 setState(react-hooks/set-state-in-effect)——
 //   抽屉开关用 lazy initializer 读 localStorage;setState 都在 fetch/事件/轮询回调里。
+// 构建注入 opencode 的需求 prompt（纯函数：boot 即时注入 与 dispatchReq 手动注入 共用，避免模板漂移）。
+// next=undefined → 注入完整需求规格（新会话/手动编码）；next 非空 → 只注入单步子任务（拆解后逐项）。
+function buildReqPrompt(
+  req: { title: string; user_story?: string; acceptance_criteria?: string; description?: string },
+  next?: { text: string }
+): string {
+  if (next) {
+    return `当前在实现需求「${req.title}」。\n【严格·只做这一步】\n  👉 ${next.text}\n做完这一步就停,等我确认再做下一个。\n【禁止】不要做其他子任务、不要扩展范围、不要重构无关代码,只完成上面这一步。\n【方式】基于现有代码增量(先读 server.js/index.html/package.json 等再改),不重写已有功能。\n需求背景:${req.description || req.user_story || ""}`;
+  }
+  return `请按以下需求规格实现/修改代码。\n【重要·必须遵守】本应用已有代码,你不能从零重写:\n1. 第一步先用读文件工具读现有代码:README.md、docs/ 下文档、主要代码文件(server.js / index.html / package.json / Dockerfile 等),完整理解当前实现;\n2. 在现有代码基础上**增量修改/扩展**——只新增或修改实现本需求所需的部分,绝不删除或重写已有功能;\n3. 保持现有文件结构与技术栈,不另起炉灶。\n\n需求规格:\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
+}
+
 export default function WorkspaceFrame() {
   const sp = useSearchParams();
   const appID = sp.get("app") || "";
@@ -43,16 +55,13 @@ export default function WorkspaceFrame() {
     modelRef.current = model;
   }, [model]);
 
-  // dispatchRef：把 dispatchReq 用 ref 暴露给 boot effect——新会话(force_new)boot 成功后
-  // 自动注入当前需求（让需求内容直接出现在编码界面）。仿 modelRef 用独立 effect 写 ref，
-  // 满足 react-hooks/refs；不把 dispatchReq 加进 boot effect deps（其函数身份每渲染都变，
-  // 加进去会致 effect 每渲染重跑→双 boot）。
-  const dispatchRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    dispatchRef.current = () => dispatchReq();
-  });
-
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
+  // 需求列表用 ref 暂存（仿 modelRef）：boot effect 读 reqsRef.current 拼 bootPrompt，
+  // 不把 detail?.requirements 加进 boot deps——否则 detail 刷新(状态轮询)会触发重 boot。
+  const reqsRef = useRef(detail?.requirements);
+  useEffect(() => {
+    reqsRef.current = detail?.requirements;
+  }, [detail?.requirements]);
   const [detailErr, setDetailErr] = useState("");
 
   // 抽屉开关:lazy initializer 读 localStorage,避免 effect 内同步 setState
@@ -164,6 +173,15 @@ export default function WorkspaceFrame() {
     const timer = setTimeout(() => {
       const wantForceNew = forceNewRef.current;
       forceNewRef.current = false;
+      // 新会话(force_new)：把需求规格拼成 prompt 随 boot 一起发——后端 Ensure 建会话后立即注入，
+      // 会话成为活动会话且已含需求，再返回 deep_url；iframe 加载时"活动会话==deep_url会话==已含需求"，
+      // 消除旧"先 setUrl 后异步注入"导致的会话错位/空窗（opencode SPA 加载瞬间读到旧活动会话）。
+      // 复用会话(继续)不发 prompt、不重复注入；手动「🤖AI编码」仍走 dispatchReq→/inject-requirement。
+      let bootPrompt: string | undefined;
+      if (wantForceNew) {
+        const req = reqsRef.current?.find((q) => q.id === selectedReq);
+        if (req) bootPrompt = buildReqPrompt(req);
+      }
       fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/workspace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,6 +190,7 @@ export default function WorkspaceFrame() {
           requirement_id: selectedReq,
           model: modelRef.current || undefined,
           force_new: wantForceNew || undefined,
+          prompt: bootPrompt,
         }),
       })
         .then((r) => r.json())
@@ -181,9 +200,12 @@ export default function WorkspaceFrame() {
             setUrl(r.data.deep_url || r.data.url);
             setErr("");
             if (wantForceNew) {
-              // 新会话：空会话就绪后自动把当前需求注入，需求内容直接出现在编码界面
-              // （用户无需手动点「🤖 AI 编码」；左侧详情仍展示完整规格供核对）。
-              dispatchRef.current();
+              // 需求已由后端在 boot 时注入（会话即活动会话），右侧工作台直接可见 AI 实时编码。
+              setTaskMsg(
+                bootPrompt
+                  ? "✅ 需求已发给 opencode → 在右侧工作台看 AI 实时编码,可随时介入/纠偏"
+                  : "新会话已就绪（未取到需求规格，可点「🤖 AI 编码」手动注入）"
+              );
             }
           } else {
             setErr(r.message || "启动编码工作台失败");
@@ -318,9 +340,7 @@ export default function WorkspaceFrame() {
     }
     // 按子任务逐个:指定 taskIdx 或下一个未完成;没拆解则整个需求
     const next = taskIdx !== undefined ? subtasks[taskIdx] : subtasks.find((t) => !t.done);
-    const prompt = next
-      ? `当前在实现需求「${req.title}」。\n【严格·只做这一步】\n  👉 ${next.text}\n做完这一步就停,等我确认再做下一个。\n【禁止】不要做其他子任务、不要扩展范围、不要重构无关代码,只完成上面这一步。\n【方式】基于现有代码增量(先读 server.js/index.html/package.json 等再改),不重写已有功能。\n需求背景:${req.description || req.user_story || ""}`
-      : `请按以下需求规格实现/修改代码。\n【重要·必须遵守】本应用已有代码,你不能从零重写:\n1. 第一步先用读文件工具读现有代码:README.md、docs/ 下文档、主要代码文件(server.js / index.html / package.json / Dockerfile 等),完整理解当前实现;\n2. 在现有代码基础上**增量修改/扩展**——只新增或修改实现本需求所需的部分,绝不删除或重写已有功能;\n3. 保持现有文件结构与技术栈,不另起炉灶。\n\n需求规格:\n标题:${req.title}\n用户故事:${req.user_story || "(无)"}\n验收标准:${req.acceptance_criteria || "(无)"}\n描述:${req.description || ""}`;
+    const prompt = buildReqPrompt(req, next);
     setDispatching(true);
     setTaskMsg(next ? `发送子任务给 opencode:${next.text}` : "把需求发给 opencode…");
     try {
