@@ -392,7 +392,7 @@ export default function RequirementsPage() {
                   <button
                     onClick={() => claim(r.id)}
                     className="rounded bg-accent px-2 py-1 text-xs text-white"
-                    title="认领此需求（人），去编码工作台开发"
+                    title="认领此需求（指定负责人）"
                   >
                     👤 认领
                   </button>

@@ -4,7 +4,7 @@ import { ModelSelect } from "@/app/_components/model-select";
 
 export type DeployState = "idle" | "building" | "running" | "failed";
 
-// 编码工作台顶部工具条:应用名/工具 + 抽屉开关 + 构建部署(test)+ 部署状态 + opencode 新窗口/重连。
+// 编码工作台顶部工具条：应用名/工具 + 模型选择 + 构建部署(test)+ 部署状态 + opencode 新会话/新窗口/重连。
 // 纯展示+回调,状态由 WorkspaceFrame 注入。
 export function WorkspaceToolbar({
   appID,
@@ -16,12 +16,9 @@ export function WorkspaceToolbar({
   testUrl,
   deployErr,
   onDeploy,
-  onRegister,
-  registering,
+  onNewSession,
   onOpenWindow,
   onReconnect,
-  drawerOpen,
-  onToggleDrawer,
 }: {
   appID: string;
   appName?: string;
@@ -32,22 +29,14 @@ export function WorkspaceToolbar({
   testUrl: string;
   deployErr: string;
   onDeploy: () => void;
-  onRegister: () => void;
-  registering: boolean;
+  onNewSession: () => void;
   onOpenWindow: () => void;
   onReconnect: () => void;
-  drawerOpen: boolean;
-  onToggleDrawer: () => void;
 }) {
   return (
     <div className="border-b border-border bg-surface-2">
       <div className="flex items-center justify-between gap-2 px-3 py-1 text-xs">
         <span className="flex min-w-0 items-center gap-2">
-          {!drawerOpen && (
-            <button onClick={onToggleDrawer} className="text-text-muted" title="展开项目上下文">
-              ☰
-            </button>
-          )}
           <span className="truncate text-text-muted">
             🧑‍💻 编码工作台 ·{" "}
             <span className="font-semibold text-text">{appName || appID || "?"}</span> · {tool}
@@ -68,18 +57,13 @@ export function WorkspaceToolbar({
           >
             {deployState === "building" ? "构建中…" : "⚙ 构建部署(test)"}
           </button>
-          <button
-            onClick={onRegister}
-            disabled={registering}
-            className="rounded bg-warn/20 px-2 py-0.5 text-warn"
-            title="把 opencode 编码的产出登记为待审批变更;审批通过才能上线 prod"
-          >
-            {registering ? "登记中…" : "📝 登记变更"}
+          <button onClick={onNewSession} className="text-accent" title="开新会话（丢弃当前上下文）">
+            🆕
           </button>
           <button onClick={onOpenWindow} className="text-accent" title="opencode 开新窗口">
             ↗
           </button>
-          <button onClick={onReconnect} className="text-text-muted" title="重连工作台">
+          <button onClick={onReconnect} className="text-text-muted" title="重连工作台（复用会话）">
             重连
           </button>
           <a href="/applications" className="text-accent" title="返回应用部署">

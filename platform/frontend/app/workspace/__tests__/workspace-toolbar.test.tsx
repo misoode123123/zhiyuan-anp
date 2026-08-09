@@ -16,12 +16,9 @@ const baseProps = {
   testUrl: "",
   deployErr: "",
   onDeploy: () => {},
-  onRegister: () => {},
-  registering: false,
+  onNewSession: () => {},
   onOpenWindow: () => {},
   onReconnect: () => {},
-  drawerOpen: true,
-  onToggleDrawer: () => {},
 };
 
 describe("WorkspaceToolbar", () => {

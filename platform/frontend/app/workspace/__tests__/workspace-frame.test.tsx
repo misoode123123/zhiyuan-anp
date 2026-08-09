@@ -1,24 +1,14 @@
-// WorkspaceFrame 编码工作台 boot 测试：
+// WorkspaceFrame 编码工作台 boot 测试（无需求化）：
 // - 工具栏内 ModelSelect 渲染；
-// - 认领需求后触发 /workspace POST，其 body.model 取自 ModelSelect seed 的授权模型。
+// - 点「🚀 开始编码」自主发起 → /workspace POST，body.model = 授权模型、force_new=true、无 requirement_id。
 //
 // 用真实定时器（boot 有 400ms 防抖 < waitFor 默认 1000ms，无需 fake timers，更稳）。
-// Sidebar 整体 mock 成一个按钮，点击即触发 onStartReq → 认领 → setSelectedReq → boot。
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { installFetchMock, ok } from "@/lib/test-utils";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("app=a1&ps=p1&tool=opencode"),
-}));
-
-vi.mock("../sidebar", () => ({
-  Sidebar: ({ onStartReq }: { onStartReq: (id: string, fresh?: boolean) => void }) => (
-    <div>
-      <button onClick={() => onStartReq("req1")}>start-req</button>
-      <button onClick={() => onStartReq("req1", true)}>start-req-fresh</button>
-    </div>
-  ),
 }));
 
 import WorkspaceFrame from "../workspace-frame";
@@ -34,14 +24,12 @@ describe("WorkspaceFrame 编码工作台", () => {
     );
   });
 
-  it("认领需求后 /workspace POST body.model = 授权模型（cmd_xxx）", async () => {
+  it("点「开始编码」自主发起 → /workspace POST：model=授权模型、force_new=true、无 requirement_id", async () => {
     const fetchMock = installFetchMock();
     fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       const method = init?.method ?? "GET";
-      if (u.endsWith("/detail"))
-        return ok({ application: {}, requirements: [], changes: [], releases: [] });
-      if (u.includes("/assign") && method === "POST") return ok({});
+      if (u.endsWith("/detail")) return ok({ application: {} });
       if (u.endsWith("/users/me/models"))
         return ok([{ id: "cmd_glm51", provider_id: "p", name: "glm-5.1" }]);
       if (u.endsWith("/workspace") && method === "POST") return ok({ url: "http://ws/x" });
@@ -55,8 +43,8 @@ describe("WorkspaceFrame 编码工作台", () => {
       expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("cmd_glm51")
     );
 
-    // 认领需求 → 触发 boot（400ms 防抖后 POST /workspace）
-    fireEvent.click(await screen.findByText("start-req"));
+    // 点「开始编码」→ 自主发起 boot（400ms 防抖后 POST /workspace）
+    fireEvent.click(await screen.findByText("🚀 开始编码"));
 
     await waitFor(() => {
       const ws = fetchMock.mock.calls.find(
@@ -70,39 +58,10 @@ describe("WorkspaceFrame 编码工作台", () => {
     );
     const body = JSON.parse(String((wsCall![1] as RequestInit).body));
     expect(body.tool).toBe("opencode");
-    expect(body.requirement_id).toBe("req1");
     expect(body.model).toBe("cmd_glm51");
-  });
-
-  it("需求列表「新会话」→ /workspace POST body.force_new = true", async () => {
-    const fetchMock = installFetchMock();
-    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
-      const u = String(url);
-      const method = init?.method ?? "GET";
-      if (u.endsWith("/detail"))
-        return ok({ application: {}, requirements: [], changes: [], releases: [] });
-      if (u.includes("/assign") && method === "POST") return ok({});
-      if (u.endsWith("/users/me/models")) return ok([]);
-      if (u.endsWith("/workspace") && method === "POST") return ok({ url: "http://ws/x" });
-      return ok({});
-    });
-
-    render(<WorkspaceFrame />);
-
-    // 点 mock 的「fresh」入口 → onStartReq("req1", true) → force_new 透传到 boot body
-    fireEvent.click(await screen.findByText("start-req-fresh"));
-
-    await waitFor(() => {
-      const ws = fetchMock.mock.calls.find(
-        (c) => String(c[0]).endsWith("/workspace") && (c[1] as RequestInit)?.method === "POST"
-      );
-      expect(ws).toBeDefined();
-    });
-
-    const wsCall = fetchMock.mock.calls.find(
-      (c) => String(c[0]).endsWith("/workspace") && (c[1] as RequestInit)?.method === "POST"
-    );
-    const body = JSON.parse(String((wsCall![1] as RequestInit).body));
     expect(body.force_new).toBe(true);
+    // 无需求化：不应再带 requirement_id / prompt
+    expect(body.requirement_id).toBeUndefined();
+    expect(body.prompt).toBeUndefined();
   });
 });
