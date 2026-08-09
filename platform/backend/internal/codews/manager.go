@@ -255,7 +255,13 @@ func (m *Manager) Ensure(psID, appID, repoDir, userID, toolName, reqID, model st
 	}
 
 	// 开发者隔离:在独立 worktree(分支 dev-<user>)编码,多人不互改
-	workDir := ensureWorktree(repoDir, userID)
+	workDir, err := ensureWorktree(repoDir, userID)
+	if err != nil {
+		m.mu.Lock()
+		delete(m.ports, port) // worktree 建不起来：归还预留端口（与 Start 失败同处理）
+		m.mu.Unlock()
+		return nil, err
+	}
 	// 模型注入：opencode → 写 per-user XDG config（仅授权模型）并注入 XDG_CONFIG_HOME；
 	// claude → ANTHROPIC_MODEL 取授权模型名。model 空 / writer 未注入 → 兜底全局 config（不阻断）。
 	env := m.buildEnv(context.Background(), toolName, model, appID, userID)
@@ -551,11 +557,13 @@ func opencodeClientID(prefix string) string {
 
 // ensureWorktree 为开发者创建/复用独立 git worktree(分支 dev-<user>),opencode 在此隔离编码,多人不互改。
 // 健壮处理：merge 后 worktree 目录被删但 git 仍注册为 prunable、且 dev-<user> 分支保留 →
-// 直接 `worktree add -b` 会失败。先 prune 清残留，分支已存在时 checkout 已有分支，仍失败则回退主仓。
-func ensureWorktree(repoDir, userID string) string {
+// 直接 `worktree add -b` 会失败。先 prune 清残留，分支已存在时 checkout 已有分支。
+// 两步都建不成（主仓非 git 仓库/异常）→ 返回 error：不再静默回退主仓（旧实现 return repoDir 会让
+// opencode 把改动直接 commit 进主线、污染他人分支），改由 Ensure 向上抛，启动失败可见可修。
+func ensureWorktree(repoDir, userID string) (string, error) {
 	wt := filepath.Join(repoDir, ".worktrees", sanitizeID(userID))
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
-		return wt // worktree 已存在且有效
+		return wt, nil // worktree 已存在且有效
 	}
 	// wt 目录存在但无 .git（merge 后残留空目录）→ 删掉，让 worktree add 干净建
 	if _, err := os.Stat(wt); err == nil {
@@ -570,13 +578,12 @@ func ensureWorktree(repoDir, userID string) string {
 		_ = exec.Command("git", "-C", repoDir, "worktree", "add", wt, branch).Run()
 	}
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
-		// 兜底：两步都没建成（主仓异常等）→ 回退主仓，避免 opencode chdir 到无效目录整个起不来
-		log.Printf("[codews] ensureWorktree 建立失败，回退主仓: %s", repoDir)
-		return repoDir
+		log.Printf("[codews] ensureWorktree 建立失败(不回退主仓): repoDir=%s user=%s", repoDir, userID)
+		return "", fmt.Errorf("建立开发者 worktree 失败(user=%s)：请确认应用仓库 %s 已初始化为有效 git 仓库", userID, repoDir)
 	}
 	_ = exec.Command("git", "-C", wt, "config", "user.email", "anp@platform").Run()
 	_ = exec.Command("git", "-C", wt, "config", "user.name", "ANP "+userID).Run()
-	return wt
+	return wt, nil
 }
 
 // sanitizeID 把 userID 转为 git 友好的分支/目录名(小写字母数字,-分隔)。

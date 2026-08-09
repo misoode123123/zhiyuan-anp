@@ -95,11 +95,34 @@ type createUserBody struct {
 	Password string `json:"password"` // 可选;空=不设密码(用户登不了,需后续重置)
 }
 
+// validUsername 校验登录用户名格式：仅小写字母/数字/连字符，首尾需为字母数字，长度 2-64。
+// 用户名同时是 codews 隔离键（worktree/分支/XDG 目录经 sanitizeID 清洗）——约束到 slug 形式让
+// sanitizeID 成为恒等映射，从源头杜绝 "a.b" 与 "a_b" 清洗后撞串导致跨用户改同一份代码。
+func validUsername(name string) bool {
+	n := len(name)
+	if n < 2 || n > 64 {
+		return false
+	}
+	for i, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+		if r == '-' && (i == 0 || i == n-1) { // 首尾不允许连字符
+			return false
+		}
+	}
+	return true
+}
+
 // CreateUser 新建用户。
 func (h *Handler) CreateUser(c *gin.Context) {
 	var in createUserBody
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Err(c, 400, 40001, "invalid body: "+err.Error())
+		return
+	}
+	if !validUsername(in.Name) {
+		httpx.Err(c, 400, 40012, "用户名格式无效：仅允许小写字母/数字/连字符，首尾需为字母数字，长度2-64（用户名同时作为代码隔离键，约束格式以避免多人代码串改）")
 		return
 	}
 	u := &User{Name: in.Name, Email: in.Email}
