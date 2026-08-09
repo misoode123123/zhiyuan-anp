@@ -290,3 +290,29 @@ func TestCheckRequirement_NoApiKeyRejected(t *testing.T) {
 		t.Fatal("无 apiKey 应返回 err(供 Submit 转 503)")
 	}
 }
+
+// TestValidateRepoDir #31：编码工作台前 repo 闸门——空/不存在/非 git 仓库都返明确错误，
+// 有效 git 仓库（.git 存在）返 nil。防 opencode 起在无效 cwd → 空白 iframe。
+func TestValidateRepoDir(t *testing.T) {
+	// 空 repoDir（外部应用，RepoDir=""）
+	if err := validateRepoDir(""); err == nil {
+		t.Fatal("空 repoDir 应报错（外部应用不支持编码）")
+	}
+	// 不存在的路径
+	if err := validateRepoDir(filepath.Join(t.TempDir(), "nope")); err == nil {
+		t.Fatal("不存在的 repoDir 应报错")
+	}
+	// 存在但非 git 仓库（缺 .git）
+	nogit := t.TempDir()
+	if err := validateRepoDir(nogit); err == nil {
+		t.Fatal("非 git 仓库应报错（缺 .git）")
+	}
+	// 有效 git 仓库（.git 存在）
+	gitdir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(gitdir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRepoDir(gitdir); err != nil {
+		t.Fatalf("有效 git 仓库应通过，got: %v", err)
+	}
+}
