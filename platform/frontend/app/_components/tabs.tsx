@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 export type Tab = { path: string; label: string; icon: string; search?: string };
 
@@ -15,9 +15,49 @@ type Ctx = {
 
 const TabCtx = createContext<Ctx | null>(null);
 
+// 首页 tab（常驻、不可关闭）；localStorage 缺失/损坏时回退用。
+const DEFAULT_TAB: Tab = { path: "/", label: "概览", icon: "📊" };
+const TABS_STORAGE_KEY = "anp.tabs";
+
+// loadTabs 从 localStorage 还原上次打开的 tab 列表（仅浏览器端调）。
+// 容错：解析失败/非数组/字段缺失→回退默认；确保首页 tab 常驻首位。
+function loadTabs(): Tab[] {
+  if (typeof window === "undefined") return [DEFAULT_TAB];
+  try {
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (!raw) return [DEFAULT_TAB];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [DEFAULT_TAB];
+    const valid = parsed.filter(
+      (t): t is Tab =>
+        !!t &&
+        typeof t.path === "string" &&
+        typeof t.label === "string" &&
+        typeof t.icon === "string"
+    );
+    return valid.some((t) => t.path === "/") ? valid : [DEFAULT_TAB, ...valid];
+  } catch {
+    return [DEFAULT_TAB];
+  }
+}
+
 export function TabProvider({ children }: { children: React.ReactNode }) {
-  const [tabs, setTabs] = useState<Tab[]>([{ path: "/", label: "概览", icon: "📊" }]);
+  // 初始默认 tab（SSR 与客户端首渲染一致，避免 hydration mismatch）；
+  // mount 后从 localStorage rehydrate 还原上次会话，再随 tabs 变化统一落盘。
+  const [tabs, setTabs] = useState<Tab[]>([DEFAULT_TAB]);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // mount 后还原持久化的 tab 列表（解决刷新后已打开 tab 全丢）。
+  useEffect(() => {
+    setTabs(loadTabs());
+  }, []);
+
+  // tabs 变化统一落盘（addTab/updateSearch/close 任一变更都覆盖写）。
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs));
+    } catch {}
+  }, [tabs]);
 
   const addTab = useCallback((t: Tab) => {
     setTabs((prev) => (prev.find((x) => x.path === t.path) ? prev : [...prev, t]));
