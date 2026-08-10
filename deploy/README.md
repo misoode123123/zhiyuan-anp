@@ -76,7 +76,11 @@ ssh -C -D 1080 -N -i ~/.ssh/miscode root@10.10.0.28
 
 ```bash
 SSH="ssh -i $HOME/.ssh/miscode root@10.10.0.28"
-SCP="scp -i $HOME/.ssh/miscode root@10.10.0.28"
+SCP="scp -i $HOME/.ssh/miscode"
+# ⚠️ SCP 变量里**只放选项、不放 host**：host:path 作为命令的目标参数给出。
+# 若把 host 写进 SCP 变量（= "scp -i key root@10.10.0.28"），再 $SCP file host:path
+# 会展开成 "scp -i key root@10.10.0.28 file host:path" —— scp 把首个 host 当**本地源文件**，
+# 报 "stat local root@10.10.0.28: No such file" 且静默不传（重建跑的还是旧代码）。
 
 # 1) 逐文件同步（目标路径与仓库结构一致，根为 /opt/anp）
 $SCP platform/backend/internal/xxx.go root@10.10.0.28:/opt/anp/platform/backend/internal/xxx.go
