@@ -173,29 +173,9 @@ export default function RequirementsPage() {
     }
   }
 
-  // 认领需求（人）：POST /assign 空 body=自助认领（互斥，被他人认领会 409）。
-  // 认领后去「编码工作台」为此需求开发（工作台会绑定 requirement_id）。
-  async function claim(rid: string) {
-    if (!psID) return;
-    try {
-      const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${rid}/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      }).then((rr) => rr.json());
-      if (r.code !== 0) {
-        setMsg(`✗ ${r.message ?? "认领失败"}`);
-        return;
-      }
-      setMsg("✅ 已认领，去「编码工作台」为此需求编码");
-      loadList(psID);
-    } catch (e) {
-      setMsg(`✗ ${e}`);
-    }
-  }
-
-  // 绑需求开发（A 方案）：跳编码台带 requirement_id，新会话注入需求规格；
-  // 未进开发态(specified)先自助认领→developing（409 已被他人认领等忽略，不阻断跳转）。
+  // 认领并编码（合并原「认领」+「绑需求开发」为唯一入口）：跳编码台带
+  // requirement_id，新会话注入需求规格；未进开发态(specified)先自助认领→developing
+  // （409 已被他人认领等忽略，不阻断跳转）。已交付(delivered)由按钮 disabled 拦截。
   async function bindAndCode(r: Requirement) {
     if (!r.application_id) return;
     if (r.status === "specified" && psID) {
@@ -412,13 +392,6 @@ export default function RequirementsPage() {
                 </div>
                 <div className="flex gap-1">
                   <button
-                    onClick={() => claim(r.id)}
-                    className="rounded bg-accent px-2 py-1 text-xs text-white"
-                    title="认领此需求（指定负责人）"
-                  >
-                    👤 认领
-                  </button>
-                  <button
                     onClick={() => dispatch(r.id)}
                     disabled={!!dispatching}
                     className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
@@ -427,15 +400,17 @@ export default function RequirementsPage() {
                   </button>
                   <button
                     onClick={() => bindAndCode(r)}
-                    disabled={!r.application_id}
+                    disabled={!r.application_id || r.status === "delivered"}
                     className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
                     title={
-                      r.application_id
-                        ? "绑定此需求，去编码工作台交互开发"
-                        : "需求尚未关联应用，请先派发编码"
+                      !r.application_id
+                        ? "需求尚未关联应用，请先派发编码"
+                        : r.status === "delivered"
+                          ? "需求已交付，无需再开发"
+                          : "认领此需求并进入编码工作台（specified 自动认领）"
                     }
                   >
-                    🚀 绑需求开发
+                    🚀 认领并编码
                   </button>
                 </div>
               </div>

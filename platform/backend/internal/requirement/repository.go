@@ -24,19 +24,28 @@ func (r *Repository) UpdateTasks(ctx context.Context, id, tasks string) error {
 	return err
 }
 
-// Assign 认领需求(互斥):已被他人认赖则返回错误(含当前认领人)。
+// Assign 认领需求(互斥):已被他人认领或已交付则返回错误。
+// 护栏:WHERE 含 status<>'delivered'，挡住 merge(清 assignee+delivered)/release(delivered 未清
+// assignee) 两条路径产生的已交付需求被静默复活退回 developing。
 func (r *Repository) Assign(ctx context.Context, id, user string) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE requirement SET assignee = $1, assigned_at = CURRENT_TIMESTAMP, status = 'developing', updated_at = CURRENT_TIMESTAMP
-		 WHERE id = $2 AND (assignee IS NULL OR assignee = '' OR assignee = $3)`,
+		 WHERE id = $2 AND (assignee IS NULL OR assignee = '' OR assignee = $3) AND status <> 'delivered'`,
 		user, id, user)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		var cur string
-		_ = r.db.GetContext(ctx, &cur, `SELECT COALESCE(assignee,'') FROM requirement WHERE id = $1`, id)
-		return fmt.Errorf("需求已被 %s 认领", cur)
+		// 区分 0 行原因:已交付(护栏) vs 已被他人认领 vs 不存在。
+		var row struct {
+			Assignee string `db:"assignee"`
+			Status   string `db:"status"`
+		}
+		_ = r.db.GetContext(ctx, &row, `SELECT COALESCE(assignee,'') AS assignee, status FROM requirement WHERE id = $1`, id)
+		if row.Status == "delivered" {
+			return fmt.Errorf("需求已交付，不可重复认领（如需返工请新建需求或联系负责人释放）")
+		}
+		return fmt.Errorf("需求已被 %s 认领", row.Assignee)
 	}
 	return nil
 }

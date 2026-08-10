@@ -145,7 +145,10 @@ export default function Home() {
       c.app_name ||
       `变更 ${c.id.slice(0, 12)}`
     ).slice(0, 50);
-  const ws = (q: Req) => `/workspace?app=${q.application_id || ""}&ps=${psID}`;
+  // 去「编码工作台」：带上 req + rtitle，使首页"去编码"也绑需求规格（与需求页
+  // 「认领并编码」一致），消除断点。req 由后端按 force_new 决定是否注入。
+  const ws = (q: Req) =>
+    `/workspace?app=${q.application_id || ""}&ps=${psID}&req=${q.id}&rtitle=${encodeURIComponent(q.title)}`;
 
   return (
     <div>

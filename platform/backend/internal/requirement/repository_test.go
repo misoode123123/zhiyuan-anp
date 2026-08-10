@@ -338,6 +338,30 @@ func TestRepository_Assign_NotFound(t *testing.T) {
 	}
 }
 
+// TestRepository_Assign_Delivered 已交付需求(merge/release 闭环后)不可再认领:
+// 护栏(WHERE status<>'delivered')挡住静默复活退回 developing。
+func TestRepository_Assign_Delivered(t *testing.T) {
+	r := newTestRepo(t)
+	mustCreateRepo(t, r, mkReq("req_dlv", "ps_1"))
+	// 模拟 release/merge 闭环后已交付。
+	if n, err := r.UpdateStatus(context.Background(), "req_dlv", "delivered"); err != nil || n == 0 {
+		t.Fatalf("UpdateStatus delivered: n=%d err=%v", n, err)
+	}
+	// 已交付 → Assign 应被护栏挡住。
+	err := r.Assign(context.Background(), "req_dlv", "alice")
+	if err == nil {
+		t.Fatal("已交付需求 Assign 应返回 error（护栏）")
+	}
+	if !strings.Contains(err.Error(), "已交付") {
+		t.Fatalf("错误信息应提示已交付，得到: %v", err)
+	}
+	// status 未被退回 developing。
+	got, _ := r.Get(context.Background(), "req_dlv")
+	if got.Status != "delivered" {
+		t.Fatalf("护栏应阻止 delivered 退回，得到 status=%s", got.Status)
+	}
+}
+
 // TestRepository_HasUnDeliveredApprovedByApp promote 闸门(AC7):app 有 approved 变更且其来源需求
 // 未 delivered → true(堵跳过 release 直接上线)。grandfather(source_id 解析不到需求)/跨 app 隔离覆盖。
 // 反查链 change_request.source_id→requirement.status(双路径 appSourceCond,对称 release 回写)。

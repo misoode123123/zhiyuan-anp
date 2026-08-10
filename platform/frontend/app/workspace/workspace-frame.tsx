@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
 import { WorkspaceToolbar, type DeployState } from "./workspace-toolbar";
 import type { WorkspaceDetail } from "./types";
@@ -225,7 +226,8 @@ export default function WorkspaceFrame() {
     setErr("");
   };
 
-  const showErr = missingParams ? "缺少 app/ps 参数（请从应用卡片点「编码」进入）" : err;
+  // missingParams 时由下方引导卡片接管（不再显示这句裸文案）。
+  const showErr = missingParams ? "" : err;
 
   return (
     <div className="-m-4 flex h-[calc(100vh-2.25rem)] flex-col md:-m-6">
@@ -262,6 +264,28 @@ export default function WorkspaceFrame() {
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
+        {missingParams && !url && (
+          <div className="flex flex-col items-start gap-3 p-6 text-sm">
+            <div className="text-base font-medium text-text">请选择应用或需求后进入编码</div>
+            <div className="text-xs text-text-muted">
+              编码工作台需要应用上下文。从「需求工作台」认领需求并编码，或从「应用部署」选应用后进入。
+            </div>
+            <div className="flex gap-2">
+              <Link
+                href="/requirements"
+                className="rounded bg-accent px-3 py-1.5 text-xs text-white"
+              >
+                💬 需求工作台
+              </Link>
+              <Link
+                href="/applications"
+                className="rounded border border-border bg-surface px-3 py-1.5 text-xs text-text"
+              >
+                📦 应用部署
+              </Link>
+            </div>
+          </div>
+        )}
         {!missingParams && !selfInitiated && !url && (
           <div className="flex flex-col gap-2 p-4 text-sm text-neutral-500">
             <div className="flex gap-2">
