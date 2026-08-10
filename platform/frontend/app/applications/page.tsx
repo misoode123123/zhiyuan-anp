@@ -2062,23 +2062,27 @@ export default function ApplicationsPage() {
                           <span className="text-accent">●</span> {r.version} · {r.status}
                         </div>
                       ))}
-                      {detail.deploy_needs && (
-                        <div className="mt-1 rounded border border-warn/30 bg-warn/5 p-1">
-                          <div className="font-medium text-warn">★ 部署需求 needs</div>
-                          {detail.deploy_needs.ports.length > 0 && (
-                            <div>ports: {detail.deploy_needs.ports.join(",")}</div>
-                          )}
-                          {detail.deploy_needs.command && (
-                            <div className="truncate">cmd: {detail.deploy_needs.command}</div>
-                          )}
-                          {detail.deploy_needs.mounts.length > 0 && (
-                            <div>mounts: {detail.deploy_needs.mounts.length}条</div>
-                          )}
-                          {detail.deploy_needs.env_keys.length > 0 && (
-                            <div>env_keys: {detail.deploy_needs.env_keys.join(",")}</div>
-                          )}
-                        </div>
-                      )}
+                      {detail.deploy_needs &&
+                        (detail.deploy_needs.ports.length ||
+                          detail.deploy_needs.mounts.length ||
+                          detail.deploy_needs.env_keys.length ||
+                          detail.deploy_needs.command) && (
+                          <div className="mt-1 rounded border border-warn/30 bg-warn/5 p-1">
+                            <div className="font-medium text-warn">★ 部署需求 needs</div>
+                            {detail.deploy_needs.ports.length > 0 && (
+                              <div>ports: {detail.deploy_needs.ports.join(",")}</div>
+                            )}
+                            {detail.deploy_needs.command && (
+                              <div className="truncate">cmd: {detail.deploy_needs.command}</div>
+                            )}
+                            {detail.deploy_needs.mounts.length > 0 && (
+                              <div>mounts: {detail.deploy_needs.mounts.length}条</div>
+                            )}
+                            {detail.deploy_needs.env_keys.length > 0 && (
+                              <div>env_keys: {detail.deploy_needs.env_keys.join(",")}</div>
+                            )}
+                          </div>
+                        )}
                     </div>
 
                     {/* 运行：资源当前 + 健康徽标（复用已 30s 轮询的 appStats；健康词表为 up/down） */}

@@ -30,10 +30,10 @@ type DeployManifest struct {
 
 // NeedsSpec 部署需求（开发侧声明，引擎只读消费）。
 type NeedsSpec struct {
-	Mounts  []MountSpec `yaml:"mounts,omitempty" json:"mounts,omitempty"`     // 额外挂载：仓库相对源 → 容器目标（密钥/配置文件，不进镜像层）
-	EnvKeys []string    `yaml:"env_keys,omitempty" json:"env_keys,omitempty"` // 需注入的 env key（值由 ANP 填/校验，如 CONFIG_PATH/REDIS_ADDR）
-	Ports   []int       `yaml:"ports,omitempty" json:"ports,omitempty"`       // 应用监听端口（与 Application.InternalPort 对照）
-	Command string      `yaml:"command,omitempty" json:"command,omitempty"`   // 覆盖启动命令（空=用镜像默认 ENTRYPOINT/CMD）
+	Mounts  []MountSpec `yaml:"mounts,omitempty" json:"mounts"`             // 额外挂载：仓库相对源 → 容器目标（密钥/配置文件，不进镜像层）
+	EnvKeys []string    `yaml:"env_keys,omitempty" json:"env_keys"`         // 需注入的 env key（值由 ANP 填/校验，如 CONFIG_PATH/REDIS_ADDR）
+	Ports   []int       `yaml:"ports,omitempty" json:"ports"`               // 应用监听端口（与 Application.InternalPort 对照）
+	Command string      `yaml:"command,omitempty" json:"command,omitempty"` // 覆盖启动命令（空=用镜像默认 ENTRYPOINT/CMD）
 }
 
 // MountSpec 一条挂载声明。Src 相对仓库根（如 config.yaml、secrets/db.crt）；
@@ -74,6 +74,23 @@ func LoadDeployManifest(repoDir string) (*DeployManifest, error) {
 		return nil, fmt.Errorf("解析 .anp/deploy.yaml: %w", err)
 	}
 	return &mf, nil
+}
+
+// normalizeNeeds 归一化 NeedsSpec 的切片为非 nil 空数组，供 JSON 序列化出 [] 而非 null/省略。
+// .anp/deploy.yaml 的 needs:{} 反序列化得 nil 切片——前端 detail.deploy_needs.ports.length
+// 命中 undefined（null 或省略）会崩整个详情组件（yxt-eino-v2 回归根因）。配合 NeedsSpec 的
+// json tag（Mounts/EnvKeys/Ports 无 omitempty）双重保障：归一保证非 nil，去 omitempty 保证出现。
+func normalizeNeeds(n NeedsSpec) NeedsSpec {
+	if n.Mounts == nil {
+		n.Mounts = []MountSpec{}
+	}
+	if n.EnvKeys == nil {
+		n.EnvKeys = []string{}
+	}
+	if n.Ports == nil {
+		n.Ports = []int{}
+	}
+	return n
 }
 
 // WriteDeployManifest 把 manifest 写回仓库 .anp/deploy.yaml（Needs+Actual 整体写）。

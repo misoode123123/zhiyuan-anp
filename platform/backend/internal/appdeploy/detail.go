@@ -137,9 +137,12 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppFullView, e
 	d.Routes, _ = s.ListRoutesByApp(ctx, appID)
 	// P1-c：异步编码任务（code_task 经 change_request→app 派生）
 	d.Tasks, _ = s.ListTasksByApp(ctx, appID)
-	// P1-c：部署需求 needs（.anp/deploy.yaml 权威输入，只读；best-effort，无 manifest=nil）
+	// P1-c：部署需求 needs（.anp/deploy.yaml 权威输入，只读；best-effort，无 manifest=nil）。
+	// normalizeNeeds 归一 nil 切片→空数组（needs:{} 反序列化得 nil），配无 omitempty 的 json tag
+	// 序列化出 []（非 null/省略），防前端 deploy_needs.ports.length 命中 undefined 崩（yxt-eino-v2 回归）。
 	if mf, _ := LoadDeployManifest(a.RepoDir); mf != nil {
-		d.DeployNeeds = &mf.Needs
+		n := normalizeNeeds(mf.Needs)
+		d.DeployNeeds = &n
 	}
 	// nil→空切片归一化（Go nil 切片序列化 JSON null，前端 detail.*.length 崩；统一空数组）。
 	d.Requirements = norm(d.Requirements)

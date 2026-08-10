@@ -1,8 +1,10 @@
 package appdeploy
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -268,5 +270,30 @@ func TestMissingEnvKeys_PresentInEnvPairs(t *testing.T) {
 func TestMissingEnvKeys_NilManifest(t *testing.T) {
 	if got := missingEnvKeys(nil, nil, false); got != nil {
 		t.Fatalf("nil manifest 应 nil got=%v", got)
+	}
+}
+
+// === NeedsSpec JSON 序列化（回归：yxt-eino-v2 needs:{} 崩前端详情）===
+
+// TestNeedsSpec_JSONEmptyArrays 零值 NeedsSpec（= .anp/deploy.yaml 的 needs:{} 反序列化得 nil 切片）
+// 经 normalizeNeeds 归一后序列化时 mounts/env_keys/ports 必须显式为 [] 而非 null/省略——前端
+// detail.deploy_needs.ports.length 命中 undefined 会崩整个详情组件（yxt-eino-v2 回归根因）。
+// 本测试锁死 normalizeNeeds + 无 omitempty json tag 双重契约，防日后任一环节回归。
+func TestNeedsSpec_JSONEmptyArrays(t *testing.T) {
+	// 未归一的零值（模拟 yaml needs:{} 反序列化）：nil 切片序列化为 null（前端 .length 仍崩）。
+	raw, _ := json.Marshal(NeedsSpec{})
+	if !strings.Contains(string(raw), `"ports":null`) {
+		t.Fatalf("前置断言失败：零值 NeedsSpec 应含 ports:null got=%s", raw)
+	}
+	// 归一后（Detail 实际走的路径）：三个切片字段必须显式 []，command 空值省略无妨。
+	b, err := json.Marshal(normalizeNeeds(NeedsSpec{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, key := range []string{`"mounts":[]`, `"env_keys":[]`, `"ports":[]`} {
+		if !strings.Contains(got, key) {
+			t.Fatalf("归一后 NeedsSpec 应序列化 %s（防前端 .length 命中 undefined 崩）got=%s", key, got)
+		}
 	}
 }
