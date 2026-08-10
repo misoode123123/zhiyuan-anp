@@ -81,14 +81,25 @@ func (h *Handler) MemberDetail(c *gin.Context) {
 	httpx.OK(c, p)
 }
 
-// SessionMessages 某次互动的完整聊天记录（admin）：
-// opencode 走 live SessionMessages(appID,user)（会话存活时）；claude/codex 走 ReaderFor 读磁盘 transcript。
+// SessionMessages 某次互动的完整聊天记录（admin），表优先三级降级：
+// ① 先查 codews_message（opencode 后台快照落库）→ 命中非空返 messages（opencode/claude/codex 统一），
+//   进程死后亦可读（解决"点开历史会话是空的"）。
+// ② 表空 + opencode 会话存活（live）→ h.ws.SessionMessages 返 transcript 字符串
+//   （兼容新会话尚未到首个快照周期）。
+// ③ 表空 + claude/codex → ReaderFor 读磁盘 .jsonl（现状不变）。
 func (h *Handler) SessionMessages(c *gin.Context) {
 	rec, err := h.store.SessionByID(c.Request.Context(), c.Param("sessionID"))
 	if err != nil {
 		httpx.Err(c, 404, 40401, "会话不存在")
 		return
 	}
+	// ① 表优先：后台快照落库的对话原文
+	msgs, err := h.store.Messages(c.Request.Context(), rec.ID)
+	if err == nil && len(msgs) > 0 {
+		httpx.OK(c, gin.H{"tool": rec.Tool, "messages": msgs})
+		return
+	}
+	// ② 表空 + opencode 存活 → live 兜底（新会话未到首快照周期）
 	if rec.Tool == "opencode" && h.ws != nil {
 		txt, err := h.ws.SessionMessages(rec.AppID, rec.UserID)
 		if err != nil {
@@ -98,6 +109,7 @@ func (h *Handler) SessionMessages(c *gin.Context) {
 		httpx.OK(c, gin.H{"tool": "opencode", "transcript": txt})
 		return
 	}
+	// ③ claude/codex → ReaderFor 读磁盘
 	if r := codews.ReaderFor(rec.Tool); r != nil {
 		msgs, err := r.Messages(rec.RepoDir, rec.SessionID)
 		if err != nil {

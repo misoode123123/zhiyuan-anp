@@ -3,6 +3,8 @@ package codews
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +36,11 @@ type SessionStore interface {
 	StartSession(ctx context.Context, s *SessionRecord) error                                      // Ensure 启动后调
 	FinishSession(ctx context.Context, id string, counts SessionCounts) error                      // 进程退出时调
 	LastSession(ctx context.Context, projectSpaceID, appID, userID string) (*SessionRecord, error) // 最近一行；无历史返 (nil,nil)
+	// SaveMessages 幂等落库某会话的对话消息（后台快照 ticker 调）：全量 upsert，
+	// (session_id,seq) 冲突跳过；content 超 100KB 截断。sessionID=codews_session.id。
+	SaveMessages(ctx context.Context, sessionID string, msgs []TranscriptMsg) error
+	// Messages 按 seq 升序读某会话全部消息（绩效历史对话；进程死后亦可读）。
+	Messages(ctx context.Context, sessionID string) ([]TranscriptMsg, error)
 }
 
 type pgSessionStore struct{ db *sqlx.DB }
@@ -87,4 +94,53 @@ func (p *pgSessionStore) LastSession(ctx context.Context, projectSpaceID, appID,
 		return nil, err
 	}
 	return &r, nil
+}
+
+// maxMessageContent 单条消息内容截断阈值（100KB），防超大代码块撑爆库。
+const maxMessageContent = 100 * 1024
+
+// SaveMessages 全量幂等 upsert 某会话对话消息（后台快照 ticker 调）。
+// seq=msgs 下标（LiveTranscript 返回顺序即消息时序，追加式稳定）；(session_id,seq) 唯一，
+// ON CONFLICT DO NOTHING 使重复快照只追加新增消息。content 超 maxMessageContent 截断。
+func (p *pgSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []TranscriptMsg) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	var (
+		sb   strings.Builder
+		args []interface{}
+	)
+	sb.WriteString("INSERT INTO codews_message (id, session_id, role, content, seq) VALUES ")
+	for i, mm := range msgs {
+		content := mm.Content
+		if len(content) > maxMessageContent {
+			content = content[:maxMessageContent] + "\n…(已截断)"
+		}
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		base := i * 5
+		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d)", base+1, base+2, base+3, base+4, base+5)
+		args = append(args, "cwm_"+uuid.NewString()[:20], sessionID, mm.Role, content, i)
+	}
+	sb.WriteString(" ON CONFLICT (session_id, seq) DO NOTHING")
+	_, err := p.db.ExecContext(ctx, sb.String(), args...)
+	return err
+}
+
+// Messages 按 seq 升序读某会话全部消息（绩效历史对话下钻）。
+func (p *pgSessionStore) Messages(ctx context.Context, sessionID string) ([]TranscriptMsg, error) {
+	var rows []struct {
+		Role    string `db:"role"`
+		Content string `db:"content"`
+	}
+	if err := p.db.SelectContext(ctx, &rows,
+		`SELECT role, content FROM codews_message WHERE session_id=$1 ORDER BY seq`, sessionID); err != nil {
+		return nil, err
+	}
+	out := make([]TranscriptMsg, len(rows))
+	for i, r := range rows {
+		out[i] = TranscriptMsg{Role: r.Role, Content: r.Content}
+	}
+	return out, nil
 }

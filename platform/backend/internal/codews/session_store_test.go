@@ -2,6 +2,7 @@ package codews
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,5 +96,85 @@ func TestPGSessionStore_LastSession(t *testing.T) {
 	got2, err := store.LastSession(ctx, ps, app, "nobody")
 	if err != nil || got2 != nil {
 		t.Fatalf("无历史应返回 (nil,nil)，got=%v err=%v", got2, err)
+	}
+}
+
+// TestPGSessionStore_SaveMessages 对话快照落库：seed→按 seq 读回→重复 upsert 幂等不翻倍→
+// 追加新 seq 只增量→超长 content 截断。模拟后台 ticker 周期性全量重拉 LiveTranscript 的场景。
+func TestPGSessionStore_SaveMessages(t *testing.T) {
+	db := testutil.TestDB(t)
+	testutil.Truncate(t, db, "codews_session")
+	testutil.Truncate(t, db, "codews_message")
+	store := NewPGSessionStore(db)
+	ctx := context.Background()
+
+	rec := &SessionRecord{ProjectSpaceID: "ps_m", AppID: "app_m", UserID: "usr_m", Tool: "opencode", RepoDir: "/r"}
+	if err := store.StartSession(ctx, rec); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+
+	// 首轮快照：两条消息（seq=0,1）→ 按 seq 升序读回内容/角色一致
+	msgs := []TranscriptMsg{
+		{Role: "user", Content: "帮我加登录页"},
+		{Role: "assistant", Content: "已加 login.tsx"},
+	}
+	if err := store.SaveMessages(ctx, rec.ID, msgs); err != nil {
+		t.Fatalf("SaveMessages: %v", err)
+	}
+	got, err := store.Messages(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(got) != 2 || got[0].Role != "user" || got[0].Content != "帮我加登录页" || got[1].Role != "assistant" {
+		t.Fatalf("读回不符: %+v", got)
+	}
+
+	// 幂等：重复存同两条（全量重拉）→ ON CONFLICT (session_id,seq) DO NOTHING，不应翻倍
+	if err := store.SaveMessages(ctx, rec.ID, msgs); err != nil {
+		t.Fatalf("SaveMessages 重存: %v", err)
+	}
+	if got2, _ := store.Messages(ctx, rec.ID); len(got2) != 2 {
+		t.Fatalf("幂等失败: 重复存后应仍 2 条，得 %d", len(got2))
+	}
+
+	// 追加：次轮快照多一条（seq=2）→ 前两条冲突跳过、仅新增 1 条，共 3 条且顺序正确
+	msgs3 := append(msgs, TranscriptMsg{Role: "user", Content: "再加注册页"})
+	if err := store.SaveMessages(ctx, rec.ID, msgs3); err != nil {
+		t.Fatalf("SaveMessages 追加: %v", err)
+	}
+	if got3, _ := store.Messages(ctx, rec.ID); len(got3) != 3 || got3[2].Content != "再加注册页" {
+		t.Fatalf("追加不符: %+v", got3)
+	}
+
+	// 截断：超 maxMessageContent 的 content 被裁为 maxMessageContent + 截断标记。
+	// 用独立 session（seq=0 不与上面冲突）验证。
+	recBig := &SessionRecord{ProjectSpaceID: "ps_m", AppID: "app_big", UserID: "usr_m", Tool: "opencode", RepoDir: "/rb"}
+	if err := store.StartSession(ctx, recBig); err != nil {
+		t.Fatalf("StartSession big: %v", err)
+	}
+	big := strings.Repeat("x", maxMessageContent+500)
+	if err := store.SaveMessages(ctx, recBig.ID, []TranscriptMsg{{Role: "user", Content: big}}); err != nil {
+		t.Fatalf("SaveMessages 截断: %v", err)
+	}
+	var stored string
+	if err := db.GetContext(ctx, &stored,
+		`SELECT content FROM codews_message WHERE session_id=$1 ORDER BY seq LIMIT 1`, recBig.ID); err != nil {
+		t.Fatalf("query big: %v", err)
+	}
+	if len(stored) >= len(big) {
+		t.Fatalf("应被截断: stored=%d >= big=%d", len(stored), len(big))
+	}
+	if !strings.HasSuffix(stored, "已截断)") {
+		t.Fatalf("应以截断标记结尾: 末尾=%q", stored[len(stored)-16:])
+	}
+
+	// 无消息会话 → Messages 返空切片（非错误），handler 据此降级 live/磁盘兜底
+	empty, err := store.Messages(ctx, "cws_nope")
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("无消息应返空切片, got=%v err=%v", empty, err)
+	}
+	// 空 msgs 入参 → SaveMessages 直接 nil 返回（不报错、不落行）
+	if err := store.SaveMessages(ctx, rec.ID, nil); err != nil {
+		t.Fatalf("空入参 SaveMessages 应 nil: %v", err)
 	}
 }

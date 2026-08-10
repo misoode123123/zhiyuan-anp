@@ -686,9 +686,51 @@ func (m *Manager) reapIdle(now time.Time) int {
 	return len(victims)
 }
 
-// Start 启动后台空闲会话驱逐（reaper）。生产装配调一次（appdeploy.Register 构造 Manager 后）；
-// 测试不调，避免 goroutine 泄漏。每 10 分钟扫一次，kill 超 idleTimeout 未活动的会话以回收端口。
+// snapshotInterval 返回对话快照周期（CODEWS_SNAPSHOT_INTERVAL env 可调，如 "5m"/"30s"；默认 5m，≤0 禁用）。
+// 后台 ticker 据此周期拉活跃 opencode 会话对话落库（codews_message），使进程死后绩效仍可查历史对话。
+func snapshotInterval() time.Duration {
+	d := 5 * time.Minute
+	if v := os.Getenv("CODEWS_SNAPSHOT_INTERVAL"); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil {
+			d = parsed
+		}
+	}
+	return d
+}
+
+// snapshotMessages 遍历活跃 opencode 会话，拉 LiveTranscript 全量对话幂等落库（绩效历史对话）。
+// 仅 opencode（精确按 port+sessionID 取单会话）；claude/codex 走 ReaderFor 不在此处理。
+// 持锁拷贝会话快照后逐个处理，避免长锁；SaveMessages 各会话独立 SQL。失败仅 log，不阻塞 ticker。
+func (m *Manager) snapshotMessages() {
+	m.mu.Lock()
+	sessions := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		sessions = append(sessions, s)
+	}
+	m.mu.Unlock()
+	for _, s := range sessions {
+		if s.Tool != "opencode" || s.SessionID == "" || s.logID == "" || m.sessionLog == nil {
+			continue
+		}
+		msgs, err := LiveTranscript(s.Port, s.SessionID)
+		if err != nil {
+			log.Printf("[codews] 快照拉取对话失败(非致命): app=%s user=%s err=%v", s.AppID, s.UserID, err)
+			continue
+		}
+		if len(msgs) == 0 {
+			continue
+		}
+		if err := m.sessionLog.SaveMessages(context.Background(), s.logID, msgs); err != nil {
+			log.Printf("[codews] 快照落库对话失败(非致命): app=%s user=%s err=%v", s.AppID, s.UserID, err)
+		}
+	}
+}
+
+// Start 启动后台任务：① 空闲会话驱逐 reaper（每 10min，kill 超 idleTimeout 的会话回收端口）；
+// ② 对话快照（每 snapshotInterval，拉 opencode 对话落库供绩效历史查询）。
+// 生产装配调一次（appdeploy.Register 构造 Manager 后）；测试不调，避免 goroutine 泄漏。
 func (m *Manager) Start() {
+	// reaper：回收空闲工作台端口
 	go func() {
 		t := time.NewTicker(10 * time.Minute)
 		defer t.Stop()
@@ -696,6 +738,18 @@ func (m *Manager) Start() {
 			if n := m.reapIdle(time.Now()); n > 0 {
 				log.Printf("[codews] reaper 本轮驱逐 %d 个空闲工作台", n)
 			}
+		}
+	}()
+	// 对话快照：定期落库活跃会话对话，进程死后绩效仍可查历史
+	go func() {
+		interval := snapshotInterval()
+		if interval <= 0 {
+			return // CODEWS_SNAPSHOT_INTERVAL≤0 禁用
+		}
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for range t.C {
+			m.snapshotMessages()
 		}
 	}()
 }

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"zhiyuan-anp/platform/backend/internal/codews"
 )
 
 // Store 绩效聚合数据访问（只读，按需聚合）。
@@ -170,4 +172,23 @@ func (s *Store) SessionByID(ctx context.Context, id string) (SessionRow, error) 
 		`SELECT id, app_id, COALESCE(user_id,'') AS user_id, tool, repo_dir, COALESCE(session_id,'') AS session_id
 		 FROM codews_session WHERE id=$1`, id)
 	return r, err
+}
+
+// Messages 查某 codews_session 的落库对话消息（codews_message 表，按 seq 升序）。
+// SessionMessages 表优先读取：opencode 后台快照落库的对话原文，进程死后亦可读。
+// 无消息返空切片（非错误）→ handler 据此降级 live/磁盘兜底。
+func (s *Store) Messages(ctx context.Context, sessionID string) ([]codews.TranscriptMsg, error) {
+	var rows []struct {
+		Role    string `db:"role"`
+		Content string `db:"content"`
+	}
+	if err := s.db.SelectContext(ctx, &rows,
+		`SELECT role, content FROM codews_message WHERE session_id=$1 ORDER BY seq`, sessionID); err != nil {
+		return nil, err
+	}
+	out := make([]codews.TranscriptMsg, len(rows))
+	for i, r := range rows {
+		out[i] = codews.TranscriptMsg{Role: r.Role, Content: r.Content}
+	}
+	return out, nil
 }

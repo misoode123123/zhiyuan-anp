@@ -38,7 +38,7 @@ type Profile = {
 
 type SessionMsgs =
   | { tool: string; transcript: string }
-  | { tool: string; messages: { role: string; content: string; created_at: string }[] };
+  | { tool: string; messages: { role: string; content: string; created_at?: string }[] };
 
 function fmtSecs(s: number): string {
   if (s < 60) return `${s}s`;
