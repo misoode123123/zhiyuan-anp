@@ -197,3 +197,39 @@ func TestRecordActuals_UpsertUpdatesExisting(t *testing.T) {
 		t.Fatalf("同 src 应 upsert 非 append got 记录数=%d %+v", len(mf2.Actual.MountsSrc), mf2.Actual.MountsSrc)
 	}
 }
+
+// === ResolveExtraMounts（P1-b）===
+
+// TestResolveExtraMounts_SkipsConfigResolvesOthers 跳过 config 挂载，解析其余挂载到宿主源。
+func TestResolveExtraMounts_SkipsConfigResolvesOthers(t *testing.T) {
+	repoDir := t.TempDir()
+	os.MkdirAll(filepath.Join(repoDir, "secrets"), 0o755)
+	os.WriteFile(filepath.Join(repoDir, "secrets", "tls.crt"), []byte("cert"), 0o644)
+	mf := &DeployManifest{Needs: NeedsSpec{Mounts: []MountSpec{
+		{Src: "config.yaml", Dst: "/app/config.yaml", ReadOnly: true},     // config 跳过
+		{Src: "secrets/tls.crt", Dst: "/etc/tls/tls.crt", ReadOnly: true}, // 解析
+	}}}
+	got := ResolveExtraMounts(repoDir, mf)
+	if len(got) != 1 {
+		t.Fatalf("应只返回 1 条非 config 挂载，得 %d 条 %+v", len(got), got)
+	}
+	want := toHostRepoDir(filepath.Join(repoDir, "secrets", "tls.crt"))
+	if got[0].HostSrc != want || got[0].Dst != "/etc/tls/tls.crt" || !got[0].ReadOnly {
+		t.Fatalf("解析错误 got=%+v want HostSrc=%q", got[0], want)
+	}
+}
+
+func TestResolveExtraMounts_NilManifest(t *testing.T) {
+	if got := ResolveExtraMounts(t.TempDir(), nil); got != nil {
+		t.Fatalf("nil manifest 应返回 nil，得 %+v", got)
+	}
+}
+
+func TestResolveExtraMounts_AllConfig(t *testing.T) {
+	mf := &DeployManifest{Needs: NeedsSpec{Mounts: []MountSpec{
+		{Src: "config.yaml", Dst: "/app/config.yaml"},
+	}}}
+	if got := ResolveExtraMounts(t.TempDir(), mf); len(got) != 0 {
+		t.Fatalf("全 config 挂载应返回空，得 %+v", got)
+	}
+}

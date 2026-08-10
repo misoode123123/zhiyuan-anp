@@ -171,3 +171,34 @@ func RecordActuals(repoDir string, mf *DeployManifest, image string, hostPort in
 	}
 	return WriteDeployManifest(repoDir, mf)
 }
+
+// ResolvedMount 一条已解析到宿主源的挂载（Deployer.Deploy 据此拼 docker -v）。
+type ResolvedMount struct {
+	HostSrc  string // 宿主绝对路径（resolveMountHostSrc 解析：actual 记录优先 → toHostRepoDir 重算）
+	Dst      string // 容器内目标路径
+	ReadOnly bool   // 只读挂载（密钥/配置类默认 true）
+}
+
+// ResolveExtraMounts 解析 needs.mounts 中**非 config** 的挂载（dst != /app/config.yaml）为宿主源。
+// config 挂载由 ResolveConfigMount 专门处理（含 legacy 探测 + 确定性 actual 重放），此处跳过避免重复/冲突。
+// mf 为 nil（legacy 无 manifest）返回 nil。每条按 resolved-priority 解析。
+//
+// 注：extra 挂载的 actual 记录 v1 不回填（RecordActuals 仍只记 config），故恒走重算路径——
+// 结果正确，只是不享受确定性缓存；extra 挂载的确定性重放为 follow-up。
+func ResolveExtraMounts(repoDir string, mf *DeployManifest) []ResolvedMount {
+	if mf == nil {
+		return nil
+	}
+	var out []ResolvedMount
+	for _, m := range mf.Needs.Mounts {
+		if m.Dst == "/app/config.yaml" || m.Src == "" {
+			continue
+		}
+		out = append(out, ResolvedMount{
+			HostSrc:  resolveMountHostSrc(repoDir, m.Src, mf.findActualMount(m.Src)),
+			Dst:      m.Dst,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+	return out
+}
