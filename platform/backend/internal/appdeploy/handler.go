@@ -1811,6 +1811,15 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 	httpx.OK(c, gin.H{"id": aid, "sha": in.SHA, "env": env, "status": "building", "note": "版本化部署/回滚到 " + env})
 }
 
+// validateEnvKeys 软校验 needs.env_keys：声明但无值来源的 key 记 WARN，不阻断部署。
+// best-effort（避免 opencode 误填 / 中间件未绑定卡死部署）；缺失提示排查中间件绑定或密钥配置。
+func validateEnvKeys(a *Application, mf *DeployManifest, envPairs []string, hasConfig bool) {
+	for _, k := range missingEnvKeys(mf, envPairs, hasConfig) {
+		zap.L().Warn("[appdeploy] needs.env_keys 声明但无值来源（不阻断，检查中间件绑定/密钥配置）",
+			zap.String("app", a.Name), zap.String("env_key", k))
+	}
+}
+
 // buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本；env 指定环境。
 // buildDir 非空则从该目录构建（test 环境编码工作台传 dev-<user> worktree），空则用主仓 a.RepoDir。
 func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
@@ -1940,7 +1949,20 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	if hasConfig {
 		envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
 	}
-	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, DeployOpts{ConfigPath: configHostPath})
+	// P1-b：needs 全字段消费。ports→容器监听端口(优先 needs.ports[0])；command→覆盖镜像 CMD；
+	// mounts→额外挂载(非 config，config 由 ConfigPath 单独处理)；env_keys→校验有值来源(缺失仅 WARN)。
+	deployOpts := DeployOpts{
+		ConfigPath: configHostPath,
+		Mounts:     ResolveExtraMounts(a.RepoDir, mf),
+	}
+	if mf != nil {
+		if len(mf.Needs.Ports) > 0 {
+			deployOpts.Port = mf.Needs.Ports[0]
+		}
+		deployOpts.Command = mf.Needs.Command
+	}
+	validateEnvKeys(a, mf, envPairs, hasConfig)
+	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, deployOpts)
 	deployCancel()
 	if dErr != nil {
 		ins.Status = "failed"

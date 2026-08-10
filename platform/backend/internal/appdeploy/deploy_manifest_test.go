@@ -233,3 +233,40 @@ func TestResolveExtraMounts_AllConfig(t *testing.T) {
 		t.Fatalf("全 config 挂载应返回空，得 %+v", got)
 	}
 }
+
+// === missingEnvKeys（P1-b 软校验）===
+
+func TestMissingEnvKeys_DeclaredWithoutValue(t *testing.T) {
+	mf := &DeployManifest{Needs: NeedsSpec{EnvKeys: []string{"REDIS_ADDR", "FOO"}}}
+	// envPairs 无 REDIS_ADDR 无 FOO → 两者都缺
+	got := missingEnvKeys(mf, []string{"BAR=1"}, false)
+	if len(got) != 2 {
+		t.Fatalf("应缺 2 个 got=%v", got)
+	}
+}
+
+func TestMissingEnvKeys_AutoInjectedCounted(t *testing.T) {
+	// PORT 恒注入；CONFIG_PATH 在 hasConfig 时注入 → 均不算缺
+	mf := &DeployManifest{Needs: NeedsSpec{EnvKeys: []string{"PORT", "CONFIG_PATH"}}}
+	if got := missingEnvKeys(mf, nil, true); len(got) != 0 {
+		t.Fatalf("PORT/CONFIG_PATH 自动注入不应缺 got=%v", got)
+	}
+	// hasConfig=false 时 CONFIG_PATH 缺
+	mf2 := &DeployManifest{Needs: NeedsSpec{EnvKeys: []string{"CONFIG_PATH"}}}
+	if got := missingEnvKeys(mf2, nil, false); len(got) != 1 || got[0] != "CONFIG_PATH" {
+		t.Fatalf("无 config 时 CONFIG_PATH 应缺 got=%v", got)
+	}
+}
+
+func TestMissingEnvKeys_PresentInEnvPairs(t *testing.T) {
+	mf := &DeployManifest{Needs: NeedsSpec{EnvKeys: []string{"FOO"}}}
+	if got := missingEnvKeys(mf, []string{"FOO=bar"}, false); len(got) != 0 {
+		t.Fatalf("envPairs 含 FOO 不应缺 got=%v", got)
+	}
+}
+
+func TestMissingEnvKeys_NilManifest(t *testing.T) {
+	if got := missingEnvKeys(nil, nil, false); got != nil {
+		t.Fatalf("nil manifest 应 nil got=%v", got)
+	}
+}

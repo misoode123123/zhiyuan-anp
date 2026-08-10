@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -201,4 +202,32 @@ func ResolveExtraMounts(repoDir string, mf *DeployManifest) []ResolvedMount {
 		})
 	}
 	return out
+}
+
+// missingEnvKeys 返回 needs.env_keys 中无值来源的 key：
+//   - envPairs 含 KEY=…（应用运行时变量，含密钥）
+//   - 自动注入的 PORT（ensurePortEnv 恒注入）；hasConfig 时 CONFIG_PATH 也注入
+//
+// 其余声明但无值来源的 key 视为「缺值」（中间件未绑定 / 密钥未配）。
+// 纯函数，供 validateEnvKeys 软校验单测。mf 为 nil 返回 nil。
+func missingEnvKeys(mf *DeployManifest, envPairs []string, hasConfig bool) []string {
+	if mf == nil || len(mf.Needs.EnvKeys) == 0 {
+		return nil
+	}
+	present := map[string]bool{"PORT": true} // ensurePortEnv 恒注入 PORT
+	if hasConfig {
+		present["CONFIG_PATH"] = true
+	}
+	for _, kv := range envPairs {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			present[kv[:i]] = true
+		}
+	}
+	var missing []string
+	for _, k := range mf.Needs.EnvKeys {
+		if !present[k] {
+			missing = append(missing, k)
+		}
+	}
+	return missing
 }
