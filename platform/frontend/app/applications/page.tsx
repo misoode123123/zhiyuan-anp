@@ -7,6 +7,7 @@ import type { Artifact } from "@/lib/api-types-manual";
 import { devStep } from "@/lib/devstep";
 import { logger } from "@/lib/logger";
 import { toast } from "@/lib/toast";
+import { ChangeOutput } from "@/app/_components/change-output";
 
 type Envelope<T> = { code: number; data: T; message?: string };
 type PS = { id: string; name: string; slug: string };
@@ -77,7 +78,14 @@ type Req = { id: string; title: string; status: string; application_id: string }
 type Detail = {
   application: App;
   requirements: Req[];
-  changes: { id: string; status: string; kind: string; source_id: string; created_at: string }[];
+  changes: {
+    id: string;
+    status: string;
+    kind: string;
+    source_id: string;
+    created_at: string;
+    output?: string;
+  }[];
   releases: {
     id: string;
     version: string;
@@ -499,6 +507,11 @@ export default function ApplicationsPage() {
   const [appReqs, setAppReqs] = useState<Req[]>([]);
   const [detailFor, setDetailFor] = useState<string>("");
   const [detail, setDetail] = useState<Detail | null>(null);
+  // 登记变更面板（自由编码产出 → 变更，可选关联需求）
+  const [regFor, setRegFor] = useState<string>("");
+  const [regReq, setRegReq] = useState<string>("");
+  const [regNote, setRegNote] = useState<string>("");
+  const [regBusy, setRegBusy] = useState(false);
   const [envFor, setEnvFor] = useState<string>("");
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
   const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
@@ -942,6 +955,84 @@ export default function ApplicationsPage() {
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/detail`);
     const r = await res.json();
     setDetail(r.data ?? null);
+  }
+  // 闭环操作后刷新：loadChanges 更新待上线徽标，详情已展开则重拉三栏。
+  async function refreshClosedLoop(appID: string) {
+    loadChanges(appID);
+    if (detailFor === appID) {
+      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
+      const r = await res.json();
+      if (r.code === 0) setDetail(r.data ?? null);
+    }
+  }
+  async function approveChange(appID: string, chgID: string) {
+    const r = await fetch(`${API_BASE_URL}/changes/${chgID}/approve`, { method: "POST" }).then(
+      (rr) => rr.json()
+    );
+    if (r.code !== 0) alert(r.message);
+    refreshClosedLoop(appID);
+  }
+  async function rejectChange(appID: string, chgID: string) {
+    const r = await fetch(`${API_BASE_URL}/changes/${chgID}/reject`, { method: "POST" }).then(
+      (rr) => rr.json()
+    );
+    if (r.code !== 0) alert(r.message);
+    refreshClosedLoop(appID);
+  }
+  async function releaseChange(appID: string, chgID: string) {
+    const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/releases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ change_id: chgID }),
+    }).then((rr) => rr.json());
+    if (r.code !== 0) {
+      alert(r.message);
+      return;
+    }
+    toast.success(`已发布上线 v${r.data?.version ?? ""}`);
+    refreshClosedLoop(appID);
+    load(psID);
+  }
+  async function mergeChange(appID: string, chgID: string, reqID?: string) {
+    const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ req_id: reqID || undefined }),
+    }).then((rr) => rr.json());
+    if (r.code !== 0) {
+      alert(r.message);
+      return;
+    }
+    toast.success("已合并到 main（关联需求标 delivered）");
+    refreshClosedLoop(appID);
+  }
+  // 登记变更：把交互编码产出（opencode 对话 + git diff）登记为待审批变更；
+  // 可选关联需求（req_id）→ change.source_id 收敛到需求，release 回写 delivered 非 0 行。
+  async function registerChange(appID: string) {
+    setRegBusy(true);
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ req_id: regReq || undefined, note: regNote || undefined }),
+        }
+      ).then((rr) => rr.json());
+      if (r.code !== 0) {
+        alert(r.message);
+        return;
+      }
+      toast.success("已登记变更（AI 已总结编码产出）");
+      setRegFor("");
+      setRegReq("");
+      setRegNote("");
+      refreshClosedLoop(appID);
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setRegBusy(false);
+    }
   }
   async function deployCommit(appID: string, sha: string) {
     const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy-commit`, {
@@ -1817,11 +1908,58 @@ export default function ApplicationsPage() {
                         变更（{detail.changes.length}）
                       </div>
                       {detail.changes.map((c) => (
-                        <div key={c.id}>
-                          <span className={c.status === "approved" ? "text-success" : "text-warn"}>
-                            ●
-                          </span>{" "}
-                          {c.kind} · {c.status}
+                        <div key={c.id} className="mb-1.5 rounded border border-border p-1.5">
+                          <div>
+                            <span
+                              className={
+                                c.status === "approved"
+                                  ? "text-success"
+                                  : c.status === "released"
+                                    ? "text-accent"
+                                    : "text-warn"
+                              }
+                            >
+                              ●
+                            </span>{" "}
+                            {c.kind} · {c.status}
+                          </div>
+                          {c.output && <ChangeOutput output={c.output} />}
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {c.status === "pending" && (
+                              <>
+                                <button
+                                  onClick={() => approveChange(a.id, c.id)}
+                                  className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
+                                >
+                                  审批通过
+                                </button>
+                                <button
+                                  onClick={() => rejectChange(a.id, c.id)}
+                                  className="rounded bg-warn/10 px-1.5 py-0.5 text-warn hover:bg-warn/20"
+                                >
+                                  拒绝
+                                </button>
+                              </>
+                            )}
+                            {c.status === "approved" && (
+                              <>
+                                <button
+                                  onClick={() => releaseChange(a.id, c.id)}
+                                  className="rounded bg-accent/10 px-1.5 py-0.5 text-accent hover:bg-accent/20"
+                                  title="建发布版本 + 标关联需求 delivered + 触发部署"
+                                >
+                                  发布上线
+                                </button>
+                                <button
+                                  onClick={() => mergeChange(a.id, c.id, c.source_id)}
+                                  className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
+                                  title="合并 dev→main + 标 delivered + 释放认领"
+                                >
+                                  合并main
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       ))}
                       {detail.changes.length === 0 && <div className="text-text-muted">无</div>}
@@ -1837,6 +1975,58 @@ export default function ApplicationsPage() {
                       ))}
                       {detail.releases.length === 0 && <div className="text-text-muted">无</div>}
                     </div>
+                  </div>
+                  <div className="mt-2">
+                    <button
+                      onClick={() => {
+                        setRegFor(regFor === a.id ? "" : a.id);
+                        setRegReq("");
+                        setRegNote("");
+                      }}
+                      className="rounded bg-bg px-2 py-1 text-xs text-text hover:bg-surface-2"
+                    >
+                      📝 登记变更（自由编码产出 / 关联需求）
+                    </button>
+                    {regFor === a.id && (
+                      <div className="mt-1 space-y-1 rounded border border-border p-2 text-xs">
+                        <div className="flex items-center gap-1">
+                          <span>关联需求：</span>
+                          <select
+                            value={regReq}
+                            onChange={(e) => setRegReq(e.target.value)}
+                            className="flex-1 rounded border border-border bg-bg px-1 py-0.5"
+                          >
+                            <option value="">（无，纯自由变更）</option>
+                            {detail.requirements.map((q) => (
+                              <option key={q.id} value={q.id}>
+                                {q.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <input
+                          value={regNote}
+                          onChange={(e) => setRegNote(e.target.value)}
+                          placeholder="补充说明（可选）"
+                          className="w-full rounded border border-border bg-bg px-1.5 py-0.5"
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => registerChange(a.id)}
+                            disabled={regBusy}
+                            className="rounded bg-accent px-2 py-0.5 text-white disabled:opacity-50"
+                          >
+                            {regBusy ? "登记中（AI 总结）…" : "提交登记"}
+                          </button>
+                          <button
+                            onClick={() => setRegFor("")}
+                            className="rounded border border-border px-2 py-0.5"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {detail.commits.length > 0 && (
                     <div className="mt-2 border-t border-border pt-2">

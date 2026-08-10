@@ -301,7 +301,18 @@ func (h *Handler) Workspace(c *gin.Context) {
 	//      依赖中间件/部署态。公司开发规范不在此处注入（已由 RefreshAgentsMD 写进 worktree AGENTS.md）。
 	// best-effort：失败不阻断 boot。
 	prompt := in.Prompt
-	if prompt == "" && in.RequirementID == "" && in.ForceNew {
+	if prompt == "" && in.RequirementID != "" && in.ForceNew {
+		// 需求驱动新会话（「绑需求开发」）：按 requirement_id 拼需求规格注入，单一真源
+		// requirement.BuildCodePrompt，避免前端 TS 重复拼装造成漂移。gate 在 ForceNew：
+		// 复用（继续编码）不重注入，精确匹配双按钮语义。best-effort：加载失败仅 log。
+		if h.reqRepo != nil {
+			if req, err := h.reqRepo.Get(c.Request.Context(), in.RequirementID); err == nil && req != nil {
+				prompt = requirement.BuildCodePrompt(req)
+			} else if err != nil {
+				log.Printf("[appdeploy] 加载需求规格失败(会话已就绪): req=%s err=%v", in.RequirementID, err)
+			}
+		}
+	} else if prompt == "" && in.RequirementID == "" && in.ForceNew {
 		prompt = AppContextPrompt(a)
 	}
 	if prompt != "" && s.Tool == "opencode" {

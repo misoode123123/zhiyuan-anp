@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { ModelSelect } from "@/app/_components/model-select";
 
@@ -22,6 +23,7 @@ type Requirement = {
 const STEPS = ["需求", "编码", "审批", "发布"];
 
 export default function RequirementsPage() {
+  const router = useRouter();
   const [spaces, setSpaces] = useState<ProjectSpace[]>([]);
   const [psID, setPsID] = useState("");
   const [apps, setApps] = useState<App[]>([]);
@@ -190,6 +192,26 @@ export default function RequirementsPage() {
     } catch (e) {
       setMsg(`✗ ${e}`);
     }
+  }
+
+  // 绑需求开发（A 方案）：跳编码台带 requirement_id，新会话注入需求规格；
+  // 未进开发态(specified)先自助认领→developing（409 已被他人认领等忽略，不阻断跳转）。
+  async function bindAndCode(r: Requirement) {
+    if (!r.application_id) return;
+    if (r.status === "specified" && psID) {
+      try {
+        await fetch(`${API_BASE_URL}/project-spaces/${psID}/requirements/${r.id}/assign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).then((rr) => rr.json());
+      } catch {
+        /* 忽略：认领失败不阻断编码跳转 */
+      }
+    }
+    router.push(
+      `/workspace?app=${r.application_id}&ps=${psID}&req=${r.id}&rtitle=${encodeURIComponent(r.title)}`
+    );
   }
 
   let ac: string[] = [];
@@ -402,6 +424,18 @@ export default function RequirementsPage() {
                     className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
                   >
                     {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
+                  </button>
+                  <button
+                    onClick={() => bindAndCode(r)}
+                    disabled={!r.application_id}
+                    className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                    title={
+                      r.application_id
+                        ? "绑定此需求，去编码工作台交互开发"
+                        : "需求尚未关联应用，请先派发编码"
+                    }
+                  >
+                    🚀 绑需求开发
                   </button>
                 </div>
               </div>

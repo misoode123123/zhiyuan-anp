@@ -80,7 +80,7 @@ func TestBuildCodePrompt(t *testing.T) {
 		AcceptanceCriteria: `["SSO 跳转","回调登录"]`,
 		Description:        "附加说明",
 	}
-	got := buildCodePrompt(r)
+	got := BuildCodePrompt(r)
 	for _, want := range []string{"登录页", "作为访客", "SSO 跳转", "回调登录", "附加说明", "Web 服务"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("buildCodePrompt 缺少 %q\n完整: %s", want, got)
@@ -95,7 +95,7 @@ func TestBuildCodePrompt_EmptyAcceptanceCriteria(t *testing.T) {
 		UserStory:          "故事",
 		AcceptanceCriteria: "", // 空 / 非法 JSON
 	}
-	got := buildCodePrompt(r) // 不应 panic
+	got := BuildCodePrompt(r) // 不应 panic
 	if !strings.Contains(got, "标题") {
 		t.Errorf("空 AC 时 prompt 应仍含标题，得到 %s", got)
 	}

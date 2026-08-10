@@ -194,7 +194,7 @@ func (s *Service) Dispatch(ctx context.Context, projectSpaceID, userID, reqID, r
 		return nil, fmt.Errorf("无法确定代码位置：需求未归属应用且自动创建托管应用失败")
 	}
 	_, _ = s.repo.UpdateStatus(ctx, reqID, "developing") // 需求进入开发(specified→developing→delivered)
-	return s.coder.Submit(ctx, projectSpaceID, userID, "dispatch", reqID, repoDir, buildCodePrompt(req), model)
+	return s.coder.Submit(ctx, projectSpaceID, userID, "dispatch", reqID, repoDir, BuildCodePrompt(req), model)
 }
 
 // deriveAppName 为未归属应用的需求派生一个友好的托管应用名。
@@ -250,9 +250,10 @@ func shortSuffix(reqID string) string {
 	return s
 }
 
-// buildCodePrompt 把需求规格拼装为编码 prompt（单行）。
+// BuildCodePrompt 把需求规格拼装为编码 prompt（单行）。
 // 要求产出"完整可独立运行的 Web 服务"，使其可被平台应用部署引擎构建部署。
-func buildCodePrompt(r *Requirement) string {
+// 导出供 appdeploy.Workspace「绑需求开发」新会话按 requirement_id 拼规格注入（单一真源，避免前端 TS 重复）。
+func BuildCodePrompt(r *Requirement) string {
 	var ac []string
 	_ = json.Unmarshal([]byte(r.AcceptanceCriteria), &ac)
 	var b strings.Builder

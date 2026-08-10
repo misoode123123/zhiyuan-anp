@@ -20,6 +20,10 @@ export default function WorkspaceFrame() {
   const appID = sp.get("app") || "";
   const psID = sp.get("ps") || "";
   const tool = sp.get("tool") || "opencode";
+  // 绑需求开发（A 方案）：从需求页跳来带 req（requirement_id）+ rtitle（标题，仅展示）。
+  // requirement_id 透传给后端 boot，新会话(force_new)时后端按此拼需求规格注入（单一真源）。
+  const reqID = sp.get("req") || "";
+  const reqTitle = sp.get("rtitle") || "";
   const missingParams = !appID || !psID;
 
   const [url, setUrl] = useState("");
@@ -116,6 +120,9 @@ export default function WorkspaceFrame() {
           tool,
           model: modelRef.current || undefined,
           force_new: wantForceNew || undefined,
+          // 绑需求：透传 requirement_id 供会话绑定 + codews requirement-switch 检测；
+          // 注入与否由后端按 ForceNew 决定（新会话注入需求规格，继续=复用不注入）。
+          requirement_id: reqID || undefined,
         }),
       })
         .then((r) => r.json())
@@ -143,7 +150,7 @@ export default function WorkspaceFrame() {
       aborted = true;
       clearTimeout(timer);
     };
-  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selfInitiated]);
+  }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selfInitiated, reqID]);
 
   // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
   async function deploy() {
@@ -249,6 +256,11 @@ export default function WorkspaceFrame() {
           setNewSessionKey((k) => k + 1); // 即使 selfInitiated 已 true 也强制 boot 重跑
         }}
       />
+      {reqID && (
+        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs text-emerald-700">
+          🔗 已绑定需求「{reqTitle || reqID}」——新会话注入需求规格，继续编码复用上次会话
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col">
         {!missingParams && !selfInitiated && !url && (
           <div className="flex flex-col gap-2 p-4 text-sm text-neutral-500">
@@ -269,7 +281,9 @@ export default function WorkspaceFrame() {
               </button>
             </div>
             <div className="text-xs text-text-muted">
-              继续编码 = 接着上次的进度（不重发上下文）；新会话 = 丢弃上下文从头开始。
+              {reqID
+                ? "继续编码 = 接着上次进度（不重发）；新会话 = 从头按需求规格编码。"
+                : "继续编码 = 接着上次的进度（不重发上下文）；新会话 = 丢弃上下文从头开始。"}
             </div>
           </div>
         )}
