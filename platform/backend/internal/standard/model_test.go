@@ -39,7 +39,7 @@ func TestBuildAgentsMarkdown_DeploySpecSection(t *testing.T) {
 // TestBuildAgentsMarkdown_DeployFacts 断言「ANP 部署适配规范」固定段含与引擎实现一致的事实：
 //   - 自动注入 PORT / CONFIG_PATH=/app/config.yaml
 //   - 端口段（从 PortTestMin/Max · PortProdMin/Max 常量渲染，改常量→文本随之变→此处即漂移告警）
-//   - needs 消费现状真相（仅 mounts 生效）
+//   - needs 消费现状真相（P1-b 起四字段全消费）
 //
 // 防规则源（AGENTS.md）与引擎实现脱节。
 func TestBuildAgentsMarkdown_DeployFacts(t *testing.T) {
@@ -49,7 +49,7 @@ func TestBuildAgentsMarkdown_DeployFacts(t *testing.T) {
 		"`CONFIG_PATH=/app/config.yaml`", // 自动注入 CONFIG_PATH
 		fmt.Sprintf("%d-%d", PortTestMin, PortTestMax), // test 端口段（常量渲染）
 		fmt.Sprintf("%d-%d", PortProdMin, PortProdMax), // prod 端口段（常量渲染）
-		"仅消费", // needs 消费现状真相
+		"消费 `needs` 四字段",                               // needs 消费现状真相（P1-b 全消费）
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("BuildAgentsMarkdown 固定段应含 %q\n输出:\n%s", want, got)
