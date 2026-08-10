@@ -30,18 +30,18 @@ type DeployManifest struct {
 
 // NeedsSpec 部署需求（开发侧声明，引擎只读消费）。
 type NeedsSpec struct {
-	Mounts  []MountSpec `yaml:"mounts,omitempty"`   // 额外挂载：仓库相对源 → 容器目标（密钥/配置文件，不进镜像层）
-	EnvKeys []string    `yaml:"env_keys,omitempty"` // 需注入的 env key（值由 ANP 填/校验，如 CONFIG_PATH/REDIS_ADDR）
-	Ports   []int       `yaml:"ports,omitempty"`    // 应用监听端口（与 Application.InternalPort 对照）
-	Command string      `yaml:"command,omitempty"`  // 覆盖启动命令（空=用镜像默认 ENTRYPOINT/CMD）
+	Mounts  []MountSpec `yaml:"mounts,omitempty" json:"mounts,omitempty"`     // 额外挂载：仓库相对源 → 容器目标（密钥/配置文件，不进镜像层）
+	EnvKeys []string    `yaml:"env_keys,omitempty" json:"env_keys,omitempty"` // 需注入的 env key（值由 ANP 填/校验，如 CONFIG_PATH/REDIS_ADDR）
+	Ports   []int       `yaml:"ports,omitempty" json:"ports,omitempty"`       // 应用监听端口（与 Application.InternalPort 对照）
+	Command string      `yaml:"command,omitempty" json:"command,omitempty"`   // 覆盖启动命令（空=用镜像默认 ENTRYPOINT/CMD）
 }
 
 // MountSpec 一条挂载声明。Src 相对仓库根（如 config.yaml、secrets/db.crt）；
 // Dst 容器内绝对路径（如 /app/config.yaml）。ReadOnly 默认按 true 处理（密钥类只读挂载）。
 type MountSpec struct {
-	Src      string `yaml:"src"`
-	Dst      string `yaml:"dst"`
-	ReadOnly bool   `yaml:"readonly,omitempty"`
+	Src      string `yaml:"src" json:"src"`
+	Dst      string `yaml:"dst" json:"dst"`
+	ReadOnly bool   `yaml:"readonly,omitempty" json:"readonly,omitempty"`
 }
 
 // ActualSpec 上次成功部署的实际值（引擎回填，开发只读）。
