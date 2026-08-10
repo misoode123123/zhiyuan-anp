@@ -1940,7 +1940,7 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 	if hasConfig {
 		envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
 	}
-	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, configHostPath)
+	dErr := h.deployer.Deploy(deployCtx, a, ins, envPairs, dockerHost, DeployOpts{ConfigPath: configHostPath})
 	deployCancel()
 	if dErr != nil {
 		ins.Status = "failed"

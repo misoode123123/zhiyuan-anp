@@ -25,6 +25,53 @@ const (
 	portProdMax = standard.PortProdMax
 )
 
+// DeployOpts 聚合 .anp/deploy.yaml needs 驱动的部署选项（P1-b：needs 全字段生效）。
+// 零值 = 无任何覆盖（等同旧行为：仅可选 ConfigPath、用 a.InternalPort、镜像默认 CMD）。
+type DeployOpts struct {
+	ConfigPath string          // config.yaml 宿主源（dst=/app/config.yaml:ro）；空=无 config 挂载
+	Mounts     []ResolvedMount // 额外挂载（非 config 的 needs.mounts）；Deploy 逐条 -v
+	Command    string          // 覆盖镜像 CMD/ENTRYPOINT；空=用镜像默认
+	Port       int             // 容器监听端口（ensurePortEnv 的 PORT + -p 容器侧）；0=a.InternalPort
+}
+
+// dockerVolArg 拼 docker -v 参数：HostSrc:Dst[:ro]。
+func (m ResolvedMount) dockerVolArg() string {
+	s := m.HostSrc + ":" + m.Dst
+	if m.ReadOnly {
+		s += ":ro"
+	}
+	return s
+}
+
+// splitCommand 把启动命令字符串拆成 docker run 的 argv 片段（覆盖镜像 CMD）。
+// 支持单/双引号包裹含空格的单个参数（如 sh -c "node server.js"）。
+// 不做 shell 元变量/$ 展开（部署命令是声明式，非交互 shell）。
+func splitCommand(s string) []string {
+	var out []string
+	var b strings.Builder
+	inSingle, inDouble := false, false
+	flush := func() {
+		if b.Len() > 0 {
+			out = append(out, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range s {
+		switch {
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+		case (r == ' ' || r == '\t') && !inSingle && !inDouble:
+			flush()
+		default:
+			b.WriteRune(r)
+		}
+	}
+	flush()
+	return out
+}
+
 // Deployer 通过宿主 docker socket 构建运行应用容器。
 type Deployer struct {
 	host string // 公布 URL 的主机（10.10.0.28 / localhost）
@@ -143,21 +190,28 @@ func (d *Deployer) Build(ctx context.Context, a *Application, ins *AppInstance, 
 	return out, e
 }
 
-// Deploy 运行容器。headless:无端口/无 URL；web/service:bridge 分配宿主端口 + -p，host 直接绑宿主 internalPort（无 -p）。
+// Deploy 运行容器。headless:无端口/无 URL；web/service:bridge 分配宿主端口 + -p，host 直接绑宿主 listen（无 -p）。
 // network_mode 与 app_kind 正交：host flag 对所有 app_kind 生效（headless+host 也共享宿主网络）。
+// opts 携带 .anp/deploy.yaml needs 驱动的覆盖（extra mounts / command / needs 端口优先）；零值=旧行为。
 // dockerHost 非空时远程部署（host = 该远程节点的 host 网络）。
-func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost, configPath string) error {
+func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance, env []string, dockerHost string, opts DeployOpts) error {
 	name := fmt.Sprintf("appdeploy-%s-%s-v%d", dockerSlug(a.Name), ins.Env, ins.Version)
 	args := []string{"run", "-d", "--name", name, "--restart", "unless-stopped"}
 	isHost := a.NetworkMode == "host"
 	if isHost {
 		args = append(args, "--network", "host")
 	}
-	// config.yaml 挂载(spec ①):configPath 非空则 ro 挂到 /app/config.yaml,兑现 adapt secret 挂载假设。
-	// 调用方保证 configPath=<RepoDir>/config.yaml(buildAndDeploy 检测),防 -v 逃逸挂载宿主敏感文件。
-	if configPath != "" {
-		args = append(args, "-v", configPath+":/app/config.yaml:ro")
+	// config.yaml 挂载(特例 dst=/app/config.yaml:ro)：opts.ConfigPath 由 buildAndDeploy 经
+	// ResolveConfigMount 解析（manifest 声明优先 + legacy 探测，含确定性 actual 重放）。
+	if opts.ConfigPath != "" {
+		args = append(args, "-v", opts.ConfigPath+":/app/config.yaml:ro")
 	}
+	// P1-b：needs.mounts 其余挂载（非 config）逐条 -v（密钥/证书等，不进镜像层）。
+	for _, m := range opts.Mounts {
+		args = append(args, "-v", m.dockerVolArg())
+	}
+	// 启动命令覆盖：needs.command 非空 → 拆词后追加在镜像之后覆盖镜像 CMD/ENTRYPOINT。
+	cmdArgs := splitCommand(opts.Command)
 
 	if a.AppKind == AppKindHeadless {
 		// headless(bot/worker)：无端口、无 URL。不分配宿主端口、不注入 PORT、不 -p（host flag 已在 args 顶部）。
@@ -165,6 +219,7 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 			args = append(args, "-e", e)
 		}
 		args = append(args, ins.Image)
+		args = append(args, cmdArgs...)
 		out, err := dockerRun(ctx, dockerHost, args...)
 		if err != nil {
 			return fmt.Errorf("docker run 失败: %w: %s", err, out)
@@ -173,10 +228,15 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 		return nil // ins.HostPort/URL 保持零值
 	}
 
-	// web/service：host 模式无 -p（绑宿主 internalPort）；bridge 模式分配宿主端口 + -p。
+	// web/service：needs.ports[0](opts.Port) 优先于 a.InternalPort 作容器监听端口。
+	listen := a.InternalPort
+	if opts.Port > 0 {
+		listen = opts.Port
+	}
+	// host 模式无 -p（绑宿主 listen）；bridge 模式分配宿主端口 + -p。
 	var port int
 	if isHost {
-		port = a.InternalPort
+		port = listen
 	} else {
 		min, max := d.envPortRange(ins.Env)
 		used := d.usedPortsOn(ctx, dockerHost)
@@ -188,20 +248,21 @@ func (d *Deployer) Deploy(ctx context.Context, a *Application, ins *AppInstance,
 			return fmt.Errorf("无可用宿主端口（%s 环境 %d-%d 已满）", ins.Env, min, max)
 		}
 	}
-	env = ensurePortEnv(env, a.InternalPort)
+	env = ensurePortEnv(env, listen)
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
 	if !isHost {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", port, a.InternalPort))
+		args = append(args, "-p", fmt.Sprintf("%d:%d", port, listen))
 	}
 	args = append(args, ins.Image)
+	args = append(args, cmdArgs...)
 	out, err := dockerRun(ctx, dockerHost, args...)
 	if err != nil {
 		return fmt.Errorf("docker run 失败: %w: %s", err, out)
 	}
 	ins.ContainerName = name
-	ins.HostPort = port // host 模式 = internalPort（host 命名空间可达端口）→ appgw UpsertRoute 零改动
+	ins.HostPort = port // host 模式 = listen（host 命名空间可达端口）→ appgw UpsertRoute 零改动
 	urlHost := d.host
 	if dockerHost != "" {
 		parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(dockerHost, "tcp://"), "http://"), ":")

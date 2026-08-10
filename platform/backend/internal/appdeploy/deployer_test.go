@@ -242,7 +242,7 @@ func TestDeploy_Headless_NoPortNoURL(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "bot", AppKind: AppKindHeadless, InternalPort: 0}
-	if err := d.Deploy(context.Background(), a, ins, []string{"FOO=bar"}, "", ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, []string{"FOO=bar"}, "", DeployOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, arg := range got {
@@ -277,7 +277,7 @@ func TestDeploy_Web_StillMapsPort(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "webapp", AppKind: AppKindWeb, InternalPort: 3000}
-	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	hasP := false
@@ -310,7 +310,7 @@ func TestDeploy_Host_NoPortMap_NetworkHost(t *testing.T) {
 	d := NewDeployer("10.10.0.28")
 	ins := &AppInstance{Env: EnvTest, Version: 1}
 	a := &Application{Name: "hostapp", AppKind: AppKindWeb, InternalPort: 18080, NetworkMode: "host"}
-	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	hasNet, hasP, hasPort := false, false, false
@@ -352,7 +352,7 @@ func TestDeploy_mountsConfigYaml(t *testing.T) {
 	a := &Application{Name: "demo", AppKind: AppKindWeb, InternalPort: 8080}
 	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9100}
 	cfg := "/data/repos/demo/config.yaml"
-	if err := d.Deploy(context.Background(), a, ins, nil, "", cfg); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{ConfigPath: cfg}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(strings.Join(got, " "), "-v "+cfg+":/app/config.yaml:ro") {
@@ -369,12 +369,92 @@ func TestDeploy_noConfigNoMount(t *testing.T) {
 	d := NewDeployer("h")
 	a := &Application{Name: "demo2", AppKind: AppKindWeb, InternalPort: 8080}
 	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9101}
-	if err := d.Deploy(context.Background(), a, ins, nil, "", ""); err != nil {
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, arg := range got {
 		if arg == "-v" || strings.HasPrefix(arg, "-v=") {
 			t.Fatalf("空 configPath 不应挂载,得 %v", got)
 		}
+	}
+}
+
+// TestSplitCommand 启动命令字符串 → docker run argv 片段（支持引号包裹含空格参数）。
+func TestSplitCommand(t *testing.T) {
+	cases := map[string][]string{
+		"":                           {},
+		"./app":                      {"./app"},
+		"python main.py --port 8000": {"python", "main.py", "--port", "8000"},
+		`sh -c "node server.js"`:     {"sh", "-c", "node server.js"},
+		`echo 'hello world'`:         {"echo", "hello world"},
+	}
+	for in, want := range cases {
+		got := splitCommand(in)
+		if len(got) != len(want) {
+			t.Fatalf("splitCommand(%q)=%v want %v", in, got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("splitCommand(%q)[%d]=%q want %q", in, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// TestDeploy_ExtraMounts opts.Mounts 逐条 -v（含 :ro）。
+func TestDeploy_ExtraMounts(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) { got = args; return "cid", nil }
+	defer func() { dockerRun = orig }()
+	d := NewDeployer("h")
+	a := &Application{Name: "demo", AppKind: AppKindWeb, InternalPort: 8080}
+	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9100}
+	opts := DeployOpts{Mounts: []ResolvedMount{{HostSrc: "/data/secrets/tls.crt", Dst: "/etc/tls/tls.crt", ReadOnly: true}}}
+	if err := d.Deploy(context.Background(), a, ins, nil, "", opts); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(got, " "), "-v /data/secrets/tls.crt:/etc/tls/tls.crt:ro") {
+		t.Fatalf("应挂载 extra mount，得 %v", got)
+	}
+}
+
+// TestDeploy_CommandOverride opts.Command 拆词后追加在镜像之后，覆盖 CMD。
+func TestDeploy_CommandOverride(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) { got = args; return "cid", nil }
+	defer func() { dockerRun = orig }()
+	d := NewDeployer("h")
+	a := &Application{Name: "demo", AppKind: AppKindWeb, InternalPort: 8080}
+	ins := &AppInstance{Env: EnvTest, Version: 1, HostPort: 9100}
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{Command: "python main.py --port 8000"}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got, " ")
+	img := ins.Image
+	if !strings.Contains(joined, img+" python main.py --port 8000") {
+		t.Fatalf("镜像后应追加命令词，得 %v", got)
+	}
+}
+
+// TestDeploy_NeedsPortOverrides opts.Port 覆盖 a.InternalPort：-p 用 opts.Port + PORT=opts.Port。
+func TestDeploy_NeedsPortOverrides(t *testing.T) {
+	var got []string
+	orig := dockerRun
+	dockerRun = func(_ context.Context, _ string, args ...string) (string, error) { got = args; return "cid", nil }
+	defer func() { dockerRun = orig }()
+	d := NewDeployer("10.10.0.28")
+	a := &Application{Name: "webapp", AppKind: AppKindWeb, InternalPort: 3000}
+	ins := &AppInstance{Env: EnvTest, Version: 1}
+	if err := d.Deploy(context.Background(), a, ins, nil, "", DeployOpts{Port: 5000}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "-p 9100:5000") {
+		t.Fatalf("-p 应映射到 needs 端口 5000，得 %v", got)
+	}
+	if !strings.Contains(joined, "PORT=5000") {
+		t.Fatalf("PORT 应注入 needs 端口 5000，得 %v", got)
 	}
 }
