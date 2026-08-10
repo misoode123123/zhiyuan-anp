@@ -11,14 +11,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"zhiyuan-anp/platform/backend/internal/standard"
 )
 
 // 各环境宿主端口分配区间（互不冲突；避开 .28 上 lowcode/帆软/ANP 已用端口）。
+// 单一源在 standard 包（PortTestMin 等）；此处编译期别名引用——改 standard 一处，
+// AGENTS.md 渲染与本引擎端口分配同步，防规则源与实现脱节。
 const (
-	portTestMin = 9100
-	portTestMax = 9199
-	portProdMin = 9200
-	portProdMax = 9300
+	portTestMin = standard.PortTestMin
+	portTestMax = standard.PortTestMax
+	portProdMin = standard.PortProdMin
+	portProdMax = standard.PortProdMax
 )
 
 // Deployer 通过宿主 docker socket 构建运行应用容器。
