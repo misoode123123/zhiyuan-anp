@@ -50,11 +50,15 @@ func TestFileReader_CodexMessages(t *testing.T) {
 	}
 }
 
-func TestReaderFor_UnknownNil(t *testing.T) {
-	if ReaderFor("opencode") != nil {
-		t.Fatal("opencode 走 live HTTP 不走磁盘 reader, 应 nil")
+func TestReaderFor_AllToolsAndUnknown(t *testing.T) {
+	// 三工具均走文件读取：opencode 直读 opencode.db，claude/codex 读磁盘 .jsonl
+	if ReaderFor("opencode") == nil {
+		t.Fatal("opencode 应返回 reader（直读 opencode.db）")
 	}
 	if ReaderFor("claude") == nil || ReaderFor("codex") == nil {
 		t.Fatal("claude/codex 应返回 reader")
+	}
+	if ReaderFor("unknown-tool") != nil {
+		t.Fatal("未知工具应 nil")
 	}
 }

@@ -26,15 +26,17 @@ type TranscriptMsg struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// TranscriptReader 读取某 repo 的工具原生 transcript（claude/codex 读磁盘；opencode 走 live HTTP，不实现此接口）。
+// TranscriptReader 读取工具原生 transcript：opencode 直读本地 SQLite(opencode.db)、claude/codex 读磁盘 .jsonl。
 type TranscriptReader interface {
 	Sessions(repoDir string) ([]TranscriptMeta, error)           // 该 repo 的会话列表（最近在前）
 	Messages(repoDir, sessionID string) ([]TranscriptMsg, error) // 单会话归一化消息
 }
 
-// ReaderFor 按工具名返回 transcript reader。claude/codex 读磁盘；其他(nil)。
+// ReaderFor 按工具名返回 transcript reader。三工具均走文件读取（实时、进程死后仍在）；其他 nil。
 func ReaderFor(tool string) TranscriptReader {
 	switch tool {
+	case "opencode":
+		return opencodeDBReader{}
 	case "claude":
 		return fileReader{root: claudeHome(), tool: "claude"}
 	case "codex":
