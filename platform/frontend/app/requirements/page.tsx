@@ -159,11 +159,11 @@ export default function RequirementsPage() {
       if (r.data?.task_id) {
         setMsg(
           appBound
-            ? `⚡ 已派发编码到所属应用仓库（任务 ${r.data.task_id}）。AI 后台实现并提交 → 去「🚪 变更审批」审批`
-            : `⚡ 已派发编码并自动创建托管应用（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`
+            ? `🤖 AI 自动编码已开始（任务 ${r.data.task_id}）。AI 后台实现并提交 → 去「🚪 变更审批」审批`
+            : `🤖 AI 自动编码已开始，并自动创建托管应用（任务 ${r.data.task_id}）。完成后去「🚪 变更审批」审批`
         );
       } else {
-        setMsg(`✗ ${r.message ?? "派发失败"}`);
+        setMsg(`✗ ${r.message ?? "提交失败"}`);
       }
     } catch (e) {
       setMsg(`✗ ${e}`);
@@ -205,7 +205,7 @@ export default function RequirementsPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold">需求工作台</h1>
       <p className="mb-3 text-sm text-text-muted">
-        业务描述 + 截图（可选）→ AI 生成规格 → 派发编码 → 审批 → 发布
+        业务描述 + 截图（可选）→ AI 生成规格 → 编码 → 审批 → 发布
       </p>
 
       <div className="mb-4">
@@ -338,7 +338,7 @@ export default function RequirementsPage() {
             </ul>
           </div>
           <div className="mt-3 border-t border-accent pt-3">
-            <div className="mb-1 text-xs text-text-muted">下一步：派发给 AI 编码</div>
+            <div className="mb-1 text-xs text-text-muted">下一步：交给 AI 自动编码，或我来编码</div>
             {last.application_id ? (
               <div className="mb-2 text-xs text-success">
                 📦 将编码到所属应用仓库「
@@ -347,8 +347,9 @@ export default function RequirementsPage() {
               </div>
             ) : (
               <div className="mb-2 text-xs text-accent">
-                📦 未归属应用：派发时自动创建一个托管应用（代码归属即确立，可在「应用部署」查看 /
-                构建 / 版本回滚）
+                📦 未归属应用：AI
+                自动编码时会自动创建一个托管应用（代码归属即确立，可在「应用部署」查看 / 构建 /
+                版本回滚）
               </div>
             )}
             <button
@@ -356,14 +357,16 @@ export default function RequirementsPage() {
               disabled={!!dispatching}
               className="rounded-md bg-success px-3 py-1.5 text-sm text-white disabled:opacity-50"
             >
-              {dispatching === last.id ? "派发中…" : "⚡ ② 派发编码"}
+              {dispatching === last.id ? "提交中…" : "🤖 ② AI 自动编码"}
             </button>
           </div>
         </div>
       )}
 
       <div className="mt-6">
-        <div className="mb-2 text-sm font-semibold">需求列表（{list.length}）— 每项可派发编码</div>
+        <div className="mb-2 text-sm font-semibold">
+          需求列表（{list.length}）— 每项可选 AI 自动编码 / 我来编码
+        </div>
         <div className="space-y-2">
           {list.map((r) => (
             <div key={r.id} className="rounded-md border border-border bg-surface p-3 text-sm">
@@ -396,7 +399,7 @@ export default function RequirementsPage() {
                     disabled={!!dispatching}
                     className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
                   >
-                    {dispatching === r.id ? "编码中…" : "⚡ 派发编码"}
+                    {dispatching === r.id ? "AI 编码中…" : "🤖 AI 自动编码"}
                   </button>
                   <button
                     onClick={() => bindAndCode(r)}
@@ -404,13 +407,13 @@ export default function RequirementsPage() {
                     className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-50"
                     title={
                       !r.application_id
-                        ? "需求尚未关联应用，请先派发编码"
+                        ? "需求尚未关联应用，请先 AI 自动编码"
                         : r.status === "delivered"
                           ? "需求已交付，无需再开发"
-                          : "认领此需求并进入编码工作台（specified 自动认领）"
+                          : "我认领此需求并进入编码工作台（人机协同编码）"
                     }
                   >
-                    🚀 认领并编码
+                    🚀 我来编码
                   </button>
                 </div>
               </div>

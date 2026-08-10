@@ -51,7 +51,7 @@ export const NAV_MAP: Record<string, Tab> = {
   "/requirements": { path: "/requirements", label: "需求工作台", icon: "💬" },
   "/team": { path: "/team", label: "团队看板", icon: "📋" },
   "/performance": { path: "/performance", label: "绩效记录", icon: "📈" },
-  "/dev": { path: "/dev", label: "研发工作台", icon: "💻" },
+  "/dev": { path: "/dev", label: "异步编码任务", icon: "💻" },
   "/testing": { path: "/testing", label: "测试中心", icon: "🧪" },
   "/release": { path: "/release", label: "发布中心", icon: "🚀" },
   "/ops": { path: "/ops", label: "运维中心", icon: "🛠️" },

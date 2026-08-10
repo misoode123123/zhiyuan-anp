@@ -79,7 +79,7 @@ export default function DevPage() {
       });
       const r = await res.json();
       if (r.data?.task_id) {
-        setMsg(`✅ 已派发编码任务 ${r.data.task_id}，后台执行中，完成后自动登记变更待🚪G3 审批`);
+        setMsg(`✅ 已提交编码任务 ${r.data.task_id}，后台执行中，完成后自动登记变更待🚪G3 审批`);
         setPrompt("");
         loadList(psID); // 立即刷新，轮询接管 running 进度
       } else {
@@ -96,10 +96,11 @@ export default function DevPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-bold">研发工作台</h1>
+      <h1 className="mb-1 text-xl font-bold">异步编码任务</h1>
       <FlowStepper current={1} />
       <p className="mb-4 text-sm text-text-muted">
-        异步编码引擎：opencode + 授权模型。需求工作台点「⚡ 派发编码」的任务会自动出现在下方看板，
+        异步编码引擎：opencode + 授权模型。需求工作台点「🤖 AI
+        自动编码」的任务会自动出现在下方看板，
         <b>无需在此重复录入</b>
         ；下方输入框用于无需求规格的独立编码。
       </p>
@@ -122,7 +123,7 @@ export default function DevPage() {
 
       {/* 手动派发（独立编码入口） */}
       <div className="mb-4 rounded-lg border border-border bg-surface p-4">
-        <div className="mb-2 text-sm font-semibold">✏️ 手动派发编码任务</div>
+        <div className="mb-2 text-sm font-semibold">✏️ 手动提交编码任务</div>
         <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="text-xs text-text-muted">目标仓库路径</label>
@@ -149,7 +150,7 @@ export default function DevPage() {
           disabled={loading || !psID}
           className="mt-2 rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
         >
-          {loading ? "提交中…" : "派发编码任务"}
+          {loading ? "提交中…" : "提交编码任务"}
         </button>
         {msg && <div className="mt-2 rounded-md bg-accent/10 p-2 text-sm text-accent">{msg}</div>}
       </div>
@@ -170,7 +171,7 @@ export default function DevPage() {
                 <span
                   className={`rounded px-1.5 py-0.5 text-xs ${fromReq ? "bg-success/10 text-success" : "bg-accent/10 text-accent"}`}
                 >
-                  {fromReq ? "⚡ 需求派发" : "✏️ 手动派发"}
+                  {fromReq ? "🤖 需求AI编码" : "✏️ 手动提交"}
                 </span>
                 <span
                   className={`rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[t.status] ?? "bg-surface-2 text-text-muted"}`}
@@ -227,7 +228,7 @@ export default function DevPage() {
         })}
         {list.length === 0 && (
           <div className="text-sm text-text-muted">
-            暂无编码任务。去需求工作台「⚡ 派发编码」，或在此手动派发。
+            暂无编码任务。去需求工作台「🤖 AI 自动编码」，或在此手动提交。
           </div>
         )}
       </div>

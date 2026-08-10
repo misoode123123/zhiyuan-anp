@@ -1,4 +1,4 @@
-// DevPage（手动派发编码）组件测试：
+// DevPage（手动提交编码）组件测试：
 // - ModelSelect 已替换原 free-text input，渲染模型下拉；
 // - POST /code 的 body：model 有值时带 cmd_xxx；未选（空）时 model 为 undefined（被 stringify 丢弃）。
 import { describe, it, expect } from "vitest";
@@ -9,10 +9,10 @@ import { installFetchMock, ok } from "@/lib/test-utils";
 async function dispatch(prompt: string) {
   // 等项目空间加载（psID 置位后派发按钮才启用）
   await waitFor(() => {
-    expect((screen.getByText("派发编码任务") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByText("提交编码任务") as HTMLButtonElement).disabled).toBe(false);
   });
   fireEvent.change(screen.getByPlaceholderText(/创建 hello\.py/), { target: { value: prompt } });
-  fireEvent.click(screen.getByText("派发编码任务"));
+  fireEvent.click(screen.getByText("提交编码任务"));
 }
 
 function findCodeBody(fetchMock: ReturnType<typeof installFetchMock>) {
@@ -23,7 +23,7 @@ function findCodeBody(fetchMock: ReturnType<typeof installFetchMock>) {
   return JSON.parse(String((call[1] as RequestInit).body));
 }
 
-describe("DevPage 手动派发编码", () => {
+describe("DevPage 手动提交编码", () => {
   it("渲染 ModelSelect（模型下拉取代 free-text input）", async () => {
     const fetchMock = installFetchMock();
     fetchMock.mockResolvedValue(ok([{ id: "cmd_glm51", provider_id: "p", name: "glm-5.1" }]));

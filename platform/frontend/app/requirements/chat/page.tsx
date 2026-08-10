@@ -227,7 +227,7 @@ export default function ChatPage() {
       });
       const r = await res.json();
       if (r.data?.requirement) {
-        setMsg(`✓ 已生成需求 ${r.data.requirement.id}，可去需求工作台派发编码`);
+        setMsg(`✓ 已生成需求 ${r.data.requirement.id}，可去需求工作台进行 AI 自动编码`);
         setSpec(null);
       } else setMsg(`✗ ${r.message ?? "提交失败"}`);
     } catch (e) {
