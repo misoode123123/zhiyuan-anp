@@ -1687,6 +1687,16 @@ func (h *Handler) Deploy(c *gin.Context) {
 			buildDir = wt
 		}
 	}
+	// 部署前刷新 AGENTS.md：让 opencode（P2 部署前备料）/ 导入适配读到与引擎实现一致的最新 ANP 规则。
+	// best-effort：失败不阻断部署（与 workspace/导入 三处调用点一致）。
+	// 工作台部署优先刷 worktree(buildDir)，普通部署刷主仓 a.RepoDir。
+	repoDir := buildDir
+	if repoDir == "" {
+		repoDir = a.RepoDir
+	}
+	if h.standards != nil && repoDir != "" {
+		_ = h.standards.RefreshAgentsMD(c.Request.Context(), repoDir, psID, "")
+	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
 	go h.buildAndDeploy(psID, aid, "", env, in.NodeID, buildDir)
 	noteSuffix := ""
