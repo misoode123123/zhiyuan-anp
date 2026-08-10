@@ -225,10 +225,20 @@ func (h *Handler) List(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /project-spaces/{id}/apps/{aid}/detail [get]
 func (h *Handler) Detail(c *gin.Context) {
-	d, err := h.store.Detail(c.Request.Context(), c.Param("id"), c.Param("aid"))
+	ctx := c.Request.Context()
+	d, err := h.store.Detail(ctx, c.Param("id"), c.Param("aid"))
 	if err != nil || d == nil {
 		httpx.Err(c, 404, 40420, "应用不存在")
 		return
+	}
+	// P1-c：Deps 经 MWReconciler 接口填（appdeploy 不直依 mwsupply）。best-effort，失败仅留空。
+	if h.mwReconciler != nil {
+		if deps, derr := h.mwReconciler.ListDeps(ctx, c.Param("aid")); derr == nil {
+			d.Deps = deps
+			if d.Deps == nil {
+				d.Deps = []DepDeclaration{}
+			}
+		}
 	}
 	httpx.OK(c, d)
 }
