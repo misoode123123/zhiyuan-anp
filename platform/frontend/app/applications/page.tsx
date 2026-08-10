@@ -94,6 +94,38 @@ type Detail = {
     created_at: string;
   }[];
   commits: { sha: string; message: string; date: string }[];
+  // P1-c 全景维度（后端 AppFullView）
+  instances: Instance[];
+  sessions: {
+    id: string;
+    tool: string;
+    started_at: string;
+    ended_at?: string;
+    prompt_count: number;
+  }[];
+  tasks: {
+    id: string;
+    kind: string;
+    status: string;
+    req_title?: string;
+    change_id?: string;
+    created_at: string;
+  }[];
+  routes: {
+    env: string;
+    app_code: string;
+    upstream_host: string;
+    upstream_port: number;
+    status: string;
+    external_url?: string;
+  }[];
+  deps: Dep[];
+  deploy_needs?: {
+    mounts: { src: string; dst: string; readonly?: boolean }[];
+    env_keys: string[];
+    ports: number[];
+    command: string;
+  };
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -1882,7 +1914,8 @@ export default function ApplicationsPage() {
               )}
               {detailFor === a.id && detail && (
                 <>
-                  <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-bg p-2 text-xs md:grid-cols-3">
+                  <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-bg p-2 text-xs md:grid-cols-5">
+                    {/* 需求 */}
                     <div>
                       <div className="mb-1 font-medium text-text-muted">
                         需求（{detail.requirements.length}）
@@ -1903,10 +1936,34 @@ export default function ApplicationsPage() {
                         <div className="text-text-muted">无</div>
                       )}
                     </div>
+
+                    {/* 研发：编码会话 + 异步任务 + 变更（含闭环按钮）+ git */}
                     <div>
-                      <div className="mb-1 font-medium text-text-muted">
-                        变更（{detail.changes.length}）
-                      </div>
+                      <div className="mb-1 font-medium text-text-muted">研发</div>
+                      <div className="text-text-muted">编码会话（{detail.sessions.length}）</div>
+                      {detail.sessions.map((s) => (
+                        <div key={s.id} className="truncate">
+                          <span className="text-accent">●</span> {s.tool} · {s.prompt_count}轮
+                        </div>
+                      ))}
+                      <div className="mt-1 text-text-muted">异步任务（{detail.tasks.length}）</div>
+                      {detail.tasks.map((tk) => (
+                        <div key={tk.id} className="truncate">
+                          <span
+                            className={
+                              tk.status === "completed"
+                                ? "text-success"
+                                : tk.status === "failed"
+                                  ? "text-danger"
+                                  : "text-warn"
+                            }
+                          >
+                            ●
+                          </span>{" "}
+                          {tk.kind} · {tk.status}
+                        </div>
+                      ))}
+                      <div className="mt-1 text-text-muted">变更（{detail.changes.length}）</div>
                       {detail.changes.map((c) => (
                         <div key={c.id} className="mb-1.5 rounded border border-border p-1.5">
                           <div>
@@ -1963,17 +2020,128 @@ export default function ApplicationsPage() {
                         </div>
                       ))}
                       {detail.changes.length === 0 && <div className="text-text-muted">无</div>}
+                      <div className="mt-1 text-text-muted">git（{detail.commits.length}）</div>
+                      {detail.commits.slice(0, 3).map((c) => (
+                        <div key={c.sha} className="truncate">
+                          <span className="text-text-muted">●</span> {c.message}
+                        </div>
+                      ))}
                     </div>
+
+                    {/* 部署：实例 test/prod + URL + 发布版本 + 部署需求 needs★ */}
                     <div>
-                      <div className="mb-1 font-medium text-text-muted">
-                        发布（{detail.releases.length}）
-                      </div>
-                      {detail.releases.map((r) => (
+                      <div className="mb-1 font-medium text-text-muted">部署</div>
+                      {(detail.instances ?? []).map((ins) => (
+                        <div key={ins.env} className="truncate">
+                          <span
+                            className={
+                              ins.status === "running" ? "text-success" : "text-text-muted"
+                            }
+                          >
+                            ●
+                          </span>{" "}
+                          {ins.env} · v{ins.version}
+                          {ins.url && (
+                            <a
+                              href={ins.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="ml-1 text-accent"
+                            >
+                              ↗
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                      {(detail.instances ?? []).length === 0 && (
+                        <div className="text-text-muted">无实例</div>
+                      )}
+                      <div className="mt-1 text-text-muted">发布（{detail.releases.length}）</div>
+                      {detail.releases.slice(0, 3).map((r) => (
                         <div key={r.id}>
                           <span className="text-accent">●</span> {r.version} · {r.status}
                         </div>
                       ))}
-                      {detail.releases.length === 0 && <div className="text-text-muted">无</div>}
+                      {detail.deploy_needs && (
+                        <div className="mt-1 rounded border border-warn/30 bg-warn/5 p-1">
+                          <div className="font-medium text-warn">★ 部署需求 needs</div>
+                          {detail.deploy_needs.ports.length > 0 && (
+                            <div>ports: {detail.deploy_needs.ports.join(",")}</div>
+                          )}
+                          {detail.deploy_needs.command && (
+                            <div className="truncate">cmd: {detail.deploy_needs.command}</div>
+                          )}
+                          {detail.deploy_needs.mounts.length > 0 && (
+                            <div>mounts: {detail.deploy_needs.mounts.length}条</div>
+                          )}
+                          {detail.deploy_needs.env_keys.length > 0 && (
+                            <div>env_keys: {detail.deploy_needs.env_keys.join(",")}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 运行：资源当前 + 健康徽标（复用已 30s 轮询的 appStats；健康词表为 up/down） */}
+                    <div>
+                      <div className="mb-1 font-medium text-text-muted">运行</div>
+                      {(() => {
+                        const st = appStats[a.id];
+                        if (!st) return <div className="text-text-muted">无数据</div>;
+                        return (
+                          <>
+                            <div>
+                              <span
+                                className={
+                                  st.health === "up"
+                                    ? "text-success"
+                                    : st.health
+                                      ? "text-danger"
+                                      : "text-text-muted"
+                                }
+                              >
+                                ●
+                              </span>{" "}
+                              {st.health || "未采集"}
+                            </div>
+                            {st.cpu && <div className="text-text-muted">CPU {st.cpu}</div>}
+                            {st.mem && <div className="text-text-muted">内存 {st.mem}</div>}
+                            {st.url && (
+                              <a
+                                href={st.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-accent"
+                              >
+                                访问 ↗
+                              </a>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 依赖：中间件绑定（mwReconciler.ListDeps 经 handler 填） */}
+                    <div>
+                      <div className="mb-1 font-medium text-text-muted">
+                        依赖（{detail.deps.length}）
+                      </div>
+                      {detail.deps.map((d, i) => (
+                        <div key={i} className="truncate">
+                          <span
+                            className={
+                              d.status === "bound"
+                                ? "text-success"
+                                : d.status === "failed"
+                                  ? "text-danger"
+                                  : "text-warn"
+                            }
+                          >
+                            ●
+                          </span>{" "}
+                          {d.kind} · {d.strategy}
+                        </div>
+                      ))}
+                      {detail.deps.length === 0 && <div className="text-text-muted">无</div>}
                     </div>
                   </div>
                   <div className="mt-2">
