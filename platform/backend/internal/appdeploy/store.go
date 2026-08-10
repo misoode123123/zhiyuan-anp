@@ -175,6 +175,42 @@ func (s *Store) ListHeadlessActiveInstances(ctx context.Context) ([]headlessInst
 	return list, err
 }
 
+// driftInstance DriftReconciler 巡检目标行（appdeploy_instance JOIN appdeploy_application，所有 app_kind）。
+// 比 headlessInstance 多 image/version/repo_dir——守卫三方比对需要（DB 记录 ↔ 容器 ↔ deploy.yaml actual）。
+type driftInstance struct {
+	AppID          string `db:"app_id"`
+	Env            string `db:"env"`
+	Image          string `db:"image"`
+	Version        int    `db:"version"`
+	ContainerName  string `db:"container_name"`
+	RepoDir        string `db:"repo_dir"`
+	ProjectSpaceID string `db:"project_space_id"`
+	Name           string `db:"name"`
+}
+
+// ListActiveInstancesForDrift 列出所有 app_kind（含 web 类如 eino）且 status∈{running,degraded,failed}
+// 的实例。供 DriftReconciler 三方比对；stopped/registered/building/built 无运行容器，不纳入。
+func (s *Store) ListActiveInstancesForDrift(ctx context.Context) ([]driftInstance, error) {
+	var list []driftInstance
+	err := s.db.SelectContext(ctx, &list,
+		`SELECT i.app_id, i.env, COALESCE(i.image,'') AS image, i.version,
+		        COALESCE(i.container_name,'') AS container_name, COALESCE(a.repo_dir,'') AS repo_dir,
+		        a.project_space_id, a.name
+		 FROM appdeploy_instance i
+		 JOIN appdeploy_application a ON a.id = i.app_id
+		 WHERE i.status IN ('running','degraded','failed')`)
+	return list, err
+}
+
+// UpdateInstanceVersionImage 更新实例 version + image（DriftReconciler high-water-mark 自愈用：
+// 把 DB 计数器/镜像记录对齐到运行容器真相，只升不降）。
+func (s *Store) UpdateInstanceVersionImage(ctx context.Context, appID, env string, version int, image string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE appdeploy_instance SET version=$1, image=$2, updated_at=CURRENT_TIMESTAMP
+		 WHERE app_id=$3 AND env=$4`, version, image, appID, env)
+	return err
+}
+
 // UpdateInstanceHealth 更新实例 status + last_error + restart_count(reconcile 翻转时用)。
 func (s *Store) UpdateInstanceHealth(ctx context.Context, appID, env, status, lastErr string, restartCount int) error {
 	_, err := s.db.ExecContext(ctx,

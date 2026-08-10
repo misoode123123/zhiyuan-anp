@@ -392,6 +392,16 @@ func parseInspectHealth(out string) (ContainerHealth, error) {
 	}, nil
 }
 
+// InspectImage 经 docker inspect 取容器实际运行的镜像引用（.Config.Image = appdeploy/<slug>-<env>:v<N>）。
+// 走本地 docker socket（同 InspectHealth，.28 已验证可用），部署态守卫用它回读容器真相做三方比对。
+func (d *Deployer) InspectImage(ctx context.Context, container string) (string, error) {
+	out, err := runDocker(ctx, "inspect", "--format", "{{.Config.Image}}", container)
+	if err != nil {
+		return "", fmt.Errorf("docker inspect image %s: %w: %s", container, err, out)
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // dockerRun 可替换的 docker 执行函数（测试注入 fake）。默认走 runDockerOn。
 // 新代码（builders 等）调 dockerRun(...) 而非 runDockerOn，便于单测注入不执行真实 docker 的桩。
 var dockerRun = runDockerOn

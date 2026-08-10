@@ -1993,6 +1993,14 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		zap.L().Warn("回填 .anp/deploy.yaml actual 失败（不阻塞部署）",
 			zap.String("app", a.Name), zap.Error(rErr))
 	}
+	// 守卫：部署后回读容器实际镜像，校验与意图 ins.Image 一致（部署时真相源=意图）。
+	// 不一致=部署异常（RemoveByPrefix 未清干净 / 端口冲突留旧容器），只 WARN 不阻断、不自愈
+	// （部署时不向陈旧容器对齐——与定时守卫「容器为真相」相反）。交 DriftReconciler / 人工。
+	if actualImg, dErr := h.deployer.InspectImage(ctx, ins.ContainerName); dErr == nil && actualImg != "" && actualImg != ins.Image {
+		zap.L().Warn("部署后镜像回读不一致（部署异常）",
+			zap.String("app", a.Name), zap.String("env", ins.Env),
+			zap.String("intended", ins.Image), zap.String("actual", actualImg))
+	}
 	// 写 appgw 路由表:部署成功即时把 /apps/<app_id>/ 映射到本环境容器。
 	// headless 无端口/无 URL,不写 HTTP 路由。失败不阻塞部署;routeWriter nil = 未启用 appgw。
 	if h.routeWriter != nil && a.AppKind != AppKindHeadless {
@@ -2316,9 +2324,21 @@ func (h *Handler) Stats(c *gin.Context) {
 		return
 	}
 	stats, _ := h.deployer.Stats(c.Request.Context(), ins.ContainerName)
+	// 守卫：按需三方比对 DB image ↔ 容器 ↔ deploy.yaml actual（per-instance，无多 env 歧义）。
+	// drift.ok=true 一致；InspectImage 失败（容器查不到）时 drift=nil，前端不展示。
+	var drift *DriftResult
+	mf, _ := LoadDeployManifest(a.RepoDir)
+	manifestImg := ""
+	if mf != nil {
+		manifestImg = mf.Actual.ImageDigest
+	}
+	if containerImg, dErr := h.deployer.InspectImage(c.Request.Context(), ins.ContainerName); dErr == nil {
+		r := checkDrift(ins.Image, containerImg, manifestImg)
+		drift = &r
+	}
 	httpx.OK(c, gin.H{
 		"env": env, "url": ins.URL, "deployed": true,
-		"stats": stats, "health": appDeployHealth(a, ins),
+		"stats": stats, "health": appDeployHealth(a, ins), "drift": drift,
 	})
 }
 

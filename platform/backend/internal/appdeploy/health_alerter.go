@@ -34,3 +34,26 @@ func (a *OpsHealthAlerter) OnUnhealthy(ctx context.Context, psID, appID, appName
 func (a *OpsHealthAlerter) OnRecovered(ctx context.Context, psID, appID, appName, env string) error {
 	return a.store.ResolveByFingerprint(ctx, ops.Fingerprint("apphealth", alertTitle(appName, env)))
 }
+
+// driftAlertTitle 统一漂移告警标题（OnDrift/OnDriftResolved 必须同口径，fingerprint 才一致）。
+func driftAlertTitle(appName, env string) string {
+	return "应用 " + appName + " " + env + " 部署态漂移"
+}
+
+// OnDrift 建部署态漂移告警（同指纹已有 firing 时去重跳过）。fingerprint 源 appdrift，与 apphealth 区分。
+func (a *OpsHealthAlerter) OnDrift(ctx context.Context, psID, appID, appName, env, reason string) error {
+	title := driftAlertTitle(appName, env)
+	fp := ops.Fingerprint("appdrift", title)
+	if firing, _ := a.store.HasFiringFingerprint(ctx, fp); firing {
+		return nil // 已有 firing 漂移告警，去重
+	}
+	return a.store.CreateAlert(ctx, &ops.Alert{
+		ProjectSpaceID: psID, Source: "appdrift", Severity: "warning", Status: "firing",
+		Title: title, Description: reason,
+	})
+}
+
+// OnDriftResolved 按 fingerprint resolve 漂移告警（无命中 no-op）。
+func (a *OpsHealthAlerter) OnDriftResolved(ctx context.Context, psID, appID, appName, env string) error {
+	return a.store.ResolveByFingerprint(ctx, ops.Fingerprint("appdrift", driftAlertTitle(appName, env)))
+}

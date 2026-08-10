@@ -344,6 +344,13 @@ func main() {
 	healthRec := appdeploy.NewHealthReconciler(appDeployStore, healthInspector, healthAlerter)
 	healthRec.Start(backupCtx)
 
+	// ---- 部署态一致性守卫:DriftReconciler 周期三方比对 DB image/version ↔ 运行容器 ↔ deploy.yaml actual。
+	// 漂移即安全自愈（actual.image_digest ← 容器；DB 计数器 high-water-mark 只升不降）+ appdrift 告警。
+	// 复用上面的 healthInspector/healthAlerter/appDeployStore（三者已满足 ImageInspector/DriftAlerter/DriftStore）。
+	driftRec := appdeploy.NewDriftReconciler(appDeployStore, healthInspector, healthAlerter)
+	driftRec.Start(backupCtx)
+	logger.Info("drift reconciler started")
+
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv,
