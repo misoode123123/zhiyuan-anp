@@ -1597,7 +1597,7 @@ export default function ApplicationsPage() {
                                 : "从主仓(master)代码构建部署到 test 环境——不含编码工作台 dev 分支未合并的改动；要部署 AI 最新代码请到编码工作台点「构建部署」"
                             }
                           >
-                            构建部署(test)
+                            构建部署(test·master)
                           </button>
                           <button
                             onClick={() => promoteWithNode(a.id, selectedNode)}
