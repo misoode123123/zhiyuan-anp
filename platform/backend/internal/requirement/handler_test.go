@@ -149,6 +149,67 @@ func TestHandler_MyTasks_NoChangeStore(t *testing.T) {
 	}
 }
 
+// TestHandler_MyTasks_StageDerivation myDev 的 stage 字段由最新变更状态推导:
+// 无变更→coding / pending→approving / approved→releasing / released→stale /
+// 最新被拒→coding(回编码改)。修概览四卡复制同一份 myDev 假装四阶段的脱节。
+func TestHandler_MyTasks_StageDerivation(t *testing.T) {
+	repo, chg := newReqRepoWithChanges(t)
+	ctx := context.Background()
+
+	// 四条 developing 需求(全 alice)，各自走不同的变更状态
+	for _, id := range []string{"req_s_none", "req_s_pending", "req_s_approved", "req_s_released"} {
+		dev := mkReq(id, "ps_1")
+		dev.Status = "developing"
+		mustCreateRepo(t, repo, dev)
+		mustAssign(t, repo, id, "alice")
+	}
+	// req_s_none 不建变更 → coding
+
+	p := &change.ChangeRequest{ProjectSpaceID: "ps_1", Kind: "code", SourceID: "req_s_pending", Output: "d1"}
+	_ = chg.Create(ctx, p) // pending
+
+	a := &change.ChangeRequest{ProjectSpaceID: "ps_1", Kind: "code", SourceID: "req_s_approved", Output: "d2"}
+	_ = chg.Create(ctx, a)
+	_ = chg.Decide(ctx, a.ID, "approved", "admin") // approved
+
+	rl := &change.ChangeRequest{ProjectSpaceID: "ps_1", Kind: "code", SourceID: "req_s_released", Output: "d3"}
+	_ = chg.Create(ctx, rl)
+	_ = chg.Decide(ctx, rl.ID, "approved", "admin")
+	_ = chg.MarkReleased(ctx, "req_s_released") // released（需求却未回写 delivered→stale）
+
+	// 最新一条被拒 → 回到 coding（历史 rejected 不影响阶段）
+	rj := &change.ChangeRequest{ProjectSpaceID: "ps_1", Kind: "code", SourceID: "req_s_none", Output: "d4"}
+	_ = chg.Create(ctx, rj)
+	_ = chg.Decide(ctx, rj.ID, "rejected", "admin")
+
+	r := newHandlerWith(t, repo, chg)
+	code, body := doJSON(t, r, http.MethodGet, "/api/v1/project-spaces/ps_1/my-tasks", "alice")
+	if code != 200 {
+		t.Fatalf("状态码 %d, body=%v", code, body)
+	}
+	myDev, _ := dataOf(t, body)["myDev"].([]interface{})
+	want := map[string]string{
+		"req_s_none":     "coding",    // 最新被拒 + 无其他变更
+		"req_s_pending":  "approving", // 最新 pending
+		"req_s_approved": "releasing", // 最新 approved
+		"req_s_released": "stale",     // 最新 released 但需求仍 developing
+	}
+	got := map[string]string{}
+	for _, it := range myDev {
+		m := it.(map[string]interface{})
+		s, _ := m["stage"].(string)
+		got[m["id"].(string)] = s
+	}
+	if len(got) != len(want) {
+		t.Fatalf("myDev 应含 %d 条，得到 %v", len(want), got)
+	}
+	for id, st := range want {
+		if got[id] != st {
+			t.Fatalf("%s stage 应为 %s，得到 %q", id, st, got[id])
+		}
+	}
+}
+
 // TestHandler_MyTasks_DefaultUserAnonymous 未带 X-User 头 → 默认 "anonymous"。
 func TestHandler_MyTasks_DefaultUserAnonymous(t *testing.T) {
 	repo, _ := newReqRepoWithChanges(t)

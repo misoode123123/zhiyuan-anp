@@ -1,6 +1,7 @@
 package requirement
 
 import (
+	"context"
 	"errors"
 
 	"github.com/gin-gonic/gin"
@@ -72,6 +73,7 @@ func (h *Handler) MyTasks(c *gin.Context) {
 			myDev = append(myDev, q)
 		}
 	}
+	deriveStage(ctx, h.chgStore, myDev)
 	toApprove, toRelease := []change.ChangeRequest{}, []change.ChangeRequest{}
 	if h.chgStore != nil {
 		chgs, _ := h.chgStore.List(ctx, "")
@@ -94,6 +96,44 @@ func (h *Handler) MyTasks(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, gin.H{"roles": roles, "toClaim": toClaim, "myDev": myDev, "toApprove": toApprove, "toRelease": toRelease})
+}
+
+// deriveStage 给 developing 需求填 Stage(真实开发阶段,由最新变更审批状态推导)。
+// 需求自身状态机只有 specified→developing→delivered,「developing」内部其实横跨
+// 编码/待审批/待上线多个阶段——概览页四张卡曾把同一份 myDev 复制 4 份假装是
+// 四个阶段,统计与真实进度脱节。真实进度只能从下游事件(change_request)推导:
+//
+//	无变更/最新被拒 → coding(编码中)
+//	最新 pending     → approving(变更已登记待审)
+//	最新 approved    → releasing(变更已批待上线)
+//	最新 released    → stale(已上线但需求未回写 delivered,提示人工回写)
+//
+// chgStore=nil 或查询失败时全部 coding(降级为旧行为,不阻断概览)。
+func deriveStage(ctx context.Context, chgStore *change.Store, reqs []Requirement) {
+	for i := range reqs {
+		reqs[i].Stage = "coding"
+	}
+	if chgStore == nil || len(reqs) == 0 {
+		return
+	}
+	ids := make([]string, len(reqs))
+	for i, q := range reqs {
+		ids[i] = q.ID
+	}
+	statuses, err := chgStore.StatusesByRequirement(ctx, ids)
+	if err != nil {
+		return // 查询失败降级:全部 coding
+	}
+	for i := range reqs {
+		switch statuses[reqs[i].ID] {
+		case "pending":
+			reqs[i].Stage = "approving"
+		case "approved":
+			reqs[i].Stage = "releasing"
+		case "released":
+			reqs[i].Stage = "stale"
+		}
+	}
 }
 
 // TeamTasks 全队任务看板聚合(不限 user):待认领/全队开发中/待审批/待上线/已交付。
@@ -132,6 +172,7 @@ func (h *Handler) TeamTasks(c *gin.Context) {
 			}
 		}
 	}
+	deriveStage(ctx, h.chgStore, inDev) // 全队看板同样推导真实阶段(前端分列展示)
 	httpx.OK(c, gin.H{"toClaim": toClaim, "inDev": inDev, "toApprove": toApprove, "toRelease": toRelease, "delivered": delivered})
 }
 

@@ -77,6 +77,34 @@ func (s *Store) HasAny(ctx context.Context, sourceID string) (bool, error) {
 	return c > 0, err
 }
 
+// StatusesByRequirement 批量取需求→最新变更状态（概览页阶段推导用）。
+// 每个 requirement_id 取 created_at 最新一条变更的 status：阶段推导只关心「当前走到
+// 哪一步」，历史 rejected 不影响（最新一条是 rejected 说明当前轮被拒、回到编码）。
+func (s *Store) StatusesByRequirement(ctx context.Context, reqIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(reqIDs) == 0 {
+		return out, nil
+	}
+	// IN 列表参数化（reqIDs 来自内部查询结果，非用户输入；仍参数化防注入）
+	q, args, err := sqlx.In(
+		`SELECT DISTINCT ON (source_id) source_id, status
+		 FROM change_request WHERE source_id IN (?) ORDER BY source_id, created_at DESC`, reqIDs)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		SourceID string `db:"source_id"`
+		Status   string `db:"status"`
+	}
+	if err := s.db.SelectContext(ctx, &rows, s.db.Rebind(q), args...); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.SourceID] = r.Status
+	}
+	return out, nil
+}
+
 // HasApproved 该 source 是否有已批准变更（promote 闸门放行条件）。
 func (s *Store) HasApproved(ctx context.Context, sourceID string) (bool, error) {
 	var c int

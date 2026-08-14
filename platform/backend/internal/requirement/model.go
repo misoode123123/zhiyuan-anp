@@ -20,4 +20,9 @@ type Requirement struct {
 	AssignedAt         *time.Time `json:"assigned_at" db:"assigned_at"`     // 认领时间(可空)
 	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
+
+	// Stage 真实开发阶段(非库字段,MyTasks/TeamTasks 由变更审批状态推导):
+	// coding=编码中(无变更或最新被拒) / approving=待审批 / releasing=待上线 /
+	// stale=已上线但需求未回写交付(异常,提示回写)。空=未推导。
+	Stage string `json:"stage,omitempty" db:"-"`
 }

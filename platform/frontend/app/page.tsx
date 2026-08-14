@@ -18,6 +18,7 @@ type Req = {
   id: string;
   title: string;
   status: string;
+  stage?: string; // 后端推导的真实阶段: coding/approving/releasing/stale
   priority?: string;
   application_id?: string;
   assignee?: string;
@@ -115,13 +116,20 @@ export default function Home() {
     if (roles.includes("gatekeeper") && i >= 6) return true;
     return false;
   };
+  // myDev 按后端推导的 stage 分桶(真实进度,来自最新变更审批状态——
+  // 修复:原来四张卡复制同一份 myDev 假装是编码/测试/核对/登记四阶段,统计失真)
+  const byStage = (s: string) => myDev.filter((q) => (q.stage || "coding") === s);
+  const coding = byStage("coding");
+  const approving = byStage("approving");
+  const releasing = byStage("releasing");
+  const stale = byStage("stale");
   const allBadges = [
     toClaim.length,
     toClaim.length,
-    myDev.length,
-    myDev.length,
-    myDev.length,
-    myDev.length,
+    coding.length,
+    approving.length + toApprove.length,
+    releasing.length + toRelease.length,
+    stale.length,
     toApprove.length,
     toRelease.length,
   ];
@@ -210,7 +218,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 我的任务(8步对应卡片) */}
+      {/* 我的任务(8步对应卡片;开发阶段按变更状态推导,不再是同一份 myDev 复制四份) */}
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {showClaim && (
           <TaskGroup
@@ -228,7 +236,7 @@ export default function Home() {
         {showDev && (
           <TaskGroup
             title="🧑‍💻 编码中"
-            items={myDev.map((q) => ({
+            items={coding.map((q) => ({
               id: q.id,
               label: q.title,
               sub: `应用: ${appName(q.application_id || "")} · 认领: ${q.assignee || "?"}`,
@@ -240,40 +248,40 @@ export default function Home() {
         )}
         {showDev && (
           <TaskGroup
-            title="🧪 待测试"
-            items={myDev.map((q) => ({
-              id: `t-${q.id}`,
+            title="📝 待登记变更"
+            items={approving.map((q) => ({
+              id: q.id,
               label: q.title,
-              sub: `应用: ${appName(q.application_id || "")}`,
-              tag: "测试",
-              action: "去测试",
-              path: ws(q),
+              sub: `应用: ${appName(q.application_id || "")} · 认领: ${q.assignee || "?"}`,
+              tag: "待审批",
+              action: "去查看",
+              path: "/approvals",
             }))}
           />
         )}
         {showDev && (
           <TaskGroup
-            title="🔒 待核对"
-            items={myDev.map((q) => ({
-              id: `c-${q.id}`,
+            title="🚀 待上线"
+            items={releasing.map((q) => ({
+              id: q.id,
               label: q.title,
-              sub: `应用: ${appName(q.application_id || "")}`,
-              tag: "核对",
-              action: "去核对",
-              path: ws(q),
+              sub: `应用: ${appName(q.application_id || "")} · 认领: ${q.assignee || "?"}`,
+              tag: "已批待上线",
+              action: "去上线",
+              path: "/applications",
             }))}
           />
         )}
-        {showDev && (
+        {showDev && stale.length > 0 && (
           <TaskGroup
-            title="📝 待登记"
-            items={myDev.map((q) => ({
-              id: `r-${q.id}`,
+            title="⚠️ 已上线未回写"
+            items={stale.map((q) => ({
+              id: q.id,
               label: q.title,
-              sub: `应用: ${appName(q.application_id || "")}`,
-              tag: "登记",
-              action: "去登记",
-              path: ws(q),
+              sub: `应用: ${appName(q.application_id || "")} · 变更已上线但需求仍 developing,请回写交付`,
+              tag: "异常",
+              action: "去处理",
+              path: "/requirements",
             }))}
           />
         )}
