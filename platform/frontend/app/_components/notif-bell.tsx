@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL, getAuthToken } from "@/lib/api";
 
@@ -19,6 +20,8 @@ export function NotifBell() {
   const [items, setItems] = useState<NotifItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   // 初始加载
   const load = () => {
@@ -76,10 +79,25 @@ export function NotifBell() {
     setUnread(0);
   }
 
+  // 开面板时按按钮实际位置定位（portal 到 body，不受侧边栏裁切/transform 劫持影响）
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      // 面板 w-80=320px，右对齐按钮右缘，但不越出视口左侧
+      setPos({ top: r.bottom + 6, left: Math.max(8, r.right - 320) });
+    }
+    setOpen(true);
+  }
+
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={toggle}
         className="relative rounded-lg p-1.5 text-text-muted hover:bg-surface-2"
         aria-label="通知"
       >
@@ -91,6 +109,8 @@ export function NotifBell() {
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -102,48 +122,54 @@ export function NotifBell() {
         )}
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-border bg-surface shadow-xl">
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-sm font-semibold">通知</span>
-              {unread > 0 && (
-                <button onClick={markAllRead} className="text-xs text-accent">
-                  全部已读
-                </button>
-              )}
-            </div>
-            <div className="max-h-80 overflow-y-auto">
-              {items.length === 0 && (
-                <div className="px-3 py-6 text-center text-sm text-text-muted">暂无通知</div>
-              )}
-              {items.map((n) => (
-                <div
-                  key={n.id}
-                  className={`cursor-pointer border-b px-3 py-2 hover:bg-bg ${n.read ? "opacity-50" : ""}`}
-                  onClick={() => {
-                    markRead(n.id);
-                    if (n.link) router.push(n.link);
-                    setOpen(false);
-                  }}
-                >
-                  <div className="flex items-start gap-2">
-                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">{n.title}</div>
-                      {n.message && <div className="text-xs text-text-muted">{n.message}</div>}
-                      <div className="text-[10px] text-text-muted">
-                        {new Date(n.created_at).toLocaleString("zh-CN", { hour12: false })}
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div
+              className="fixed z-50 w-80 rounded-lg border border-border bg-surface shadow-xl"
+              style={{ top: pos?.top ?? 0, left: pos?.left ?? 0 }}
+            >
+              <div className="flex items-center justify-between border-b px-3 py-2">
+                <span className="text-sm font-semibold">通知</span>
+                {unread > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-accent">
+                    全部已读
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {items.length === 0 && (
+                  <div className="px-3 py-6 text-center text-sm text-text-muted">暂无通知</div>
+                )}
+                {items.map((n) => (
+                  <div
+                    key={n.id}
+                    className={`cursor-pointer border-b px-3 py-2 hover:bg-bg ${n.read ? "opacity-50" : ""}`}
+                    onClick={() => {
+                      markRead(n.id);
+                      if (n.link) router.push(n.link);
+                      setOpen(false);
+                    }}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">{n.title}</div>
+                        {n.message && <div className="text-xs text-text-muted">{n.message}</div>}
+                        <div className="text-[10px] text-text-muted">
+                          {new Date(n.created_at).toLocaleString("zh-CN", { hour12: false })}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </>,
+          document.body
+        )}
     </div>
   );
 }
