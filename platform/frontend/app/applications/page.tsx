@@ -1591,7 +1591,11 @@ export default function ApplicationsPage() {
                             onClick={() => act(a.id, "deploy", "test", selectedNode)}
                             className="rounded bg-accent/10 px-2 py-0.5 text-xs text-accent disabled:cursor-not-allowed disabled:opacity-40"
                             disabled={isImporting}
-                            title={isImporting ? "导入完成前不可部署" : "构建并部署到 test 环境"}
+                            title={
+                              isImporting
+                                ? "导入完成前不可部署"
+                                : "从主仓(master)代码构建部署到 test 环境——不含编码工作台 dev 分支未合并的改动；要部署 AI 最新代码请到编码工作台点「构建部署」"
+                            }
                           >
                             构建部署(test)
                           </button>

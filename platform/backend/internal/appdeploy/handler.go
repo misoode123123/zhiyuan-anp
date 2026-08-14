@@ -1679,23 +1679,30 @@ func (h *Handler) Deploy(c *gin.Context) {
 			user = "anonymous"
 		}
 		wt := filepath.Join(a.RepoDir, ".worktrees", sanitizeID(user))
-		if _, err := os.Stat(wt); err == nil {
-			if n, _ := CountUncommitted(c.Request.Context(), wt); n > 0 {
-				if !in.AutoCommit {
-					httpx.OK(c, gin.H{"id": aid, "env": env, "status": "need_commit", "uncommitted": n, "note": fmt.Sprintf("dev-%s 分支有 %d 个文件未提交，是否提交并部署？", sanitizeID(user), n)})
-					return
-				}
-				apiKey := ""
-				if h.cfg != nil {
-					apiKey = h.cfg.Get("zhipuai_api_key", "")
-				}
-				if _, err := Commit(c.Request.Context(), wt, commitMessageFor(c.Request.Context(), wt, apiKey)); err != nil {
-					httpx.Err(c, 500, 50022, "自动提交失败: "+err.Error())
-					return
-				}
-			}
-			buildDir = wt
+		if _, err := os.Stat(wt); err != nil {
+			// 显式报错，不静默回退主仓：工作台入口语义=部署开发者 worktree 最新代码，
+			// worktree 缺失（空闲驱逐/仓库重建）时回退主仓会部署 master 旧代码，
+			// 开发者误以为新改动已生效——版本不一致极难排查。
+			httpx.Err(c, 409, 40970, fmt.Sprintf(
+				"开发者 worktree 不存在：%s（可能被空闲会话回收或仓库重建）。请回到编码工作台重新打开（自动重建 worktree）后再构建部署；或从应用全景页部署主仓 master 代码",
+				wt))
+			return
 		}
+		if n, _ := CountUncommitted(c.Request.Context(), wt); n > 0 {
+			if !in.AutoCommit {
+				httpx.OK(c, gin.H{"id": aid, "env": env, "status": "need_commit", "uncommitted": n, "note": fmt.Sprintf("dev-%s 分支有 %d 个文件未提交，是否提交并部署？", sanitizeID(user), n)})
+				return
+			}
+			apiKey := ""
+			if h.cfg != nil {
+				apiKey = h.cfg.Get("zhipuai_api_key", "")
+			}
+			if _, err := Commit(c.Request.Context(), wt, commitMessageFor(c.Request.Context(), wt, apiKey)); err != nil {
+				httpx.Err(c, 500, 50022, "自动提交失败: "+err.Error())
+				return
+			}
+		}
+		buildDir = wt
 	}
 	// 部署前刷新 AGENTS.md：让 opencode（P2 部署前备料）/ 导入适配读到与引擎实现一致的最新 ANP 规则。
 	// best-effort：失败不阻断部署（与 workspace/导入 三处调用点一致）。

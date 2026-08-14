@@ -1837,3 +1837,30 @@ func TestHandler_SetGrantChecker(t *testing.T) {
 		t.Fatal("SetGrantChecker 未注入")
 	}
 }
+
+// --- Task: 工作台部署 worktree 缺失显式报错（防静默回退主仓部署旧代码） ---
+
+// TestHandler_Deploy_FromWorkspace_WorktreeMissing 工作台发起（from_workspace）但
+// .worktrees/<user> 不存在 → 409/40970 显式报错（提示重建），不得静默回退主仓部署。
+// 回归背景：worktree 可能被空闲驱逐/仓库重建清掉，静默回退会让开发者以为部署的是
+// AI 最新改动、实际跑的是主仓 master 旧代码——版本不一致排查极其困难。
+func TestHandler_Deploy_FromWorkspace_WorktreeMissing(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	// repo_dir 指向存在的空目录（worktree 子目录 .worktrees/admin 不存在）
+	dir := t.TempDir()
+	a := seedApp(t, h, "ps_wt", "wapp", dir)
+
+	code, resp := doReq(t, r, http.MethodPost,
+		"/api/v1/project-spaces/ps_wt/apps/"+a.ID+"/deploy",
+		map[string]interface{}{"env": "test", "from_workspace": true})
+	if code != 409 {
+		t.Fatalf("worktree 缺失应 409 显式报错，得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40970 {
+		t.Fatalf("biz code 应 40970，得到 %v", resp["code"])
+	}
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "worktrees") || !strings.Contains(msg, "anonymous") {
+		t.Fatalf("错误信息应含 worktree 路径引导，得到 %q", msg)
+	}
+}
