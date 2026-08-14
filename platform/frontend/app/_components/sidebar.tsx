@@ -13,7 +13,8 @@ const NAV = [
   { href: "/security", label: "安全合规", icon: "🛡️" },
   { href: "/docs", label: "方案文档", icon: "📄" },
   { href: "/compute", label: "算力资源", icon: "⚡" },
-  { href: "/capabilities", label: "AI能力市场", icon: "🧩" },
+  // AI能力市场(/capabilities) 2026-08-14 隐藏：零真实调用(usage 0 条)，不在需求→编码→部署
+  // 主链路上。页面/后端/路由全保留，直访 URL 仍可用；真有对外 AI 开放需求再恢复入口。
   { href: "/applications", label: "应用部署", icon: "📦" },
   { href: "/workspace", label: "编码工作台", icon: "🧑‍💻" },
   { href: "/servers", label: "服务器管理", icon: "🖥" },
