@@ -139,7 +139,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 // 节点过滤辅助（Task 11）：按应用类型 + 部署环境过滤可选节点。
 // - node_local 始终可选（.28 本地，env=test/os_type=linux，双环境通用）。
-// - web/service/headless(docker 形态) 排除 os_type=windows 节点——Windows 节点无 Docker 守护进程，不可容器部署。
+// - Windows 节点分流：ssh/winrm 连接的走原生部署（支持 Windows，需仓库 deploy.yaml，
+//   后端校验）；仅非 ssh/winrm 的 Windows 节点（无 docker 守护进程）对 docker 形态不可选。
 // - env 过滤：test 部署只匹配 env=test 节点，prod 只匹配 env=prod；node_local 豁免。
 const isDockerKind = (kind: string) =>
   kind === "web" || kind === "service" || kind === "headless" || !kind;
@@ -522,6 +523,7 @@ export default function ApplicationsPage() {
       app_count?: number;
       env?: string;
       os_type?: string;
+      connect_type?: string;
     }[]
   >([]);
   const [selectedNode, setSelectedNode] = useState(""); // 部署目标节点
@@ -860,7 +862,9 @@ export default function ApplicationsPage() {
       if (env) body.env = env;
       if (nodeID) body.node_id = nodeID;
       // 节点环境校验：部署 env=test 只能用 env=test 节点；env=prod 只能用 env=prod 节点。
-      // node_local 豁免（始终可用）。os_type=windows 对 web/service/headless 已在选择器过滤，此处按本应用 kind 兜底再拦一次。
+      // node_local 豁免（始终可用）。Windows 节点：ssh/winrm 走原生部署（支持 Windows，
+      // 由后端校验 deploy.yaml 并显式报错）；仅非 ssh/winrm 的 Windows 节点（无 docker
+      // 守护进程）才在此拦截。
       const sel = nodes.find((n) => n.id === nodeID);
       const app = apps.find((a) => a.id === id);
       if (env && !nodeMatchesEnv(sel, env)) {
@@ -869,8 +873,15 @@ export default function ApplicationsPage() {
         );
         return;
       }
-      if (sel && app && isDockerKind(app.app_kind) && sel.os_type === "windows") {
-        alert("Windows 节点不可部署 docker 形态(web/service/headless)应用，请选 Linux 节点。");
+      if (
+        sel &&
+        app &&
+        isDockerKind(app.app_kind) &&
+        sel.os_type === "windows" &&
+        sel.connect_type !== "ssh" &&
+        sel.connect_type !== "winrm"
+      ) {
+        alert("该 Windows 节点非 ssh/winrm 连接，无 docker 守护进程，不可部署容器应用。");
         return;
       }
     } else {
@@ -1101,7 +1112,7 @@ export default function ApplicationsPage() {
               className="rounded-md border border-border px-2 py-1 text-sm"
               title={
                 isDockerKind(appKind)
-                  ? "新增应用的默认部署节点（docker 形态不显示 Windows 节点）"
+                  ? "新增应用的默认部署节点。ssh/winrm 节点为原生部署（需仓库含 deploy.yaml）；docker 形态下 Windows 节点不可选（无 docker 守护进程）"
                   : "新增应用的默认部署节点"
               }
             >
@@ -1110,15 +1121,23 @@ export default function ApplicationsPage() {
               </option>
               {nodes
                 .filter((n) => n.id !== "node_local")
-                // web/service/headless(docker) 排除 os_type=windows：Windows 节点不可容器部署。
-                .filter((n) => !(isDockerKind(appKind) && n.os_type === "windows"))
-                .map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} ({n.host}) · env={n.env || "?"}
-                    {n.os_type && n.os_type !== "linux" ? ` · ${n.os_type}` : ""}
-                    {n.app_count != null ? ` · ${n.app_count}应用` : ""}
-                  </option>
-                ))}
+                // 全部节点都显示（与服务器管理一致，不再"消失"）；docker 形态下 Windows
+                // 不可容器部署的节点用 disabled+标注呈现，用户知道为什么不可选而非找不到。
+                .map((n) => {
+                  const blocked =
+                    isDockerKind(appKind) &&
+                    n.os_type === "windows" &&
+                    n.connect_type !== "ssh" &&
+                    n.connect_type !== "winrm";
+                  return (
+                    <option key={n.id} value={n.id} disabled={blocked}>
+                      {n.name} ({n.host}) · env={n.env || "?"}
+                      {n.os_type && n.os_type !== "linux" ? ` · ${n.os_type}` : ""}
+                      {n.app_count != null ? ` · ${n.app_count}应用` : ""}
+                      {blocked ? " ·不可容器部署" : ""}
+                    </option>
+                  );
+                })}
             </select>
           </div>
         )}

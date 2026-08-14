@@ -1615,6 +1615,45 @@ type deployBody struct {
 	AutoCommit    bool   `json:"auto_commit"`    // FromWorkspace 检测到未提交时，前端确认后传 true：先 AI 总结 + commit 再构建
 }
 
+// checkNodeDeployable 部署节点分流前置守卫（同步段显式报错，替代异步段静默回退）。
+// 与 buildAndDeploy 的 I6 原生部署分流派驻一致：
+//   - ssh/winrm 节点（如 Windows 服务器）：走 NativeDeployer，要求应用仓库有 deploy.yaml；
+//     没有则 409 显式报错——异步段现状是静默落回本地 docker 链路，用户以为部署到了
+//     远程 Windows，实际容器跑在 .28，目标错位极难排查。
+//   - 本地/docker_tcp 节点：走 docker 链路，os_type=windows 的节点没有 docker 守护进程，
+//     必 409（此前靠前端过滤兜底，API 直调无防护）。
+func (h *Handler) checkNodeDeployable(a *Application, nodeID string) *nodeDeployError {
+	if nodeID == "" || nodeID == "node_local" || h.nodeStore == nil {
+		return nil
+	}
+	node, err := h.nodeStore.Get(context.Background(), nodeID)
+	if err != nil || node == nil || node.ID == "" {
+		return &nodeDeployError{Status: 404, Code: 40421, Message: "部署节点不存在：" + nodeID}
+	}
+	if node.ConnectType == "ssh" || node.ConnectType == "winrm" {
+		desc, _ := loadDeployDesc(a.RepoDir)
+		if desc == nil {
+			return &nodeDeployError{Status: 409, Code: 40971, Message: fmt.Sprintf(
+				"节点 %s(%s) 为 %s 原生部署节点，需应用仓库含 deploy.yaml 才可部署（当前 %s 无此文件）。请在编码工作台让 AI 生成 deploy.yaml（原生部署描述）后再部署，或改选 docker 节点",
+				node.Name, node.Host, node.ConnectType, a.RepoDir)}
+		}
+		return nil
+	}
+	if node.OSType == "windows" {
+		return &nodeDeployError{Status: 409, Code: 40972, Message: fmt.Sprintf(
+			"节点 %s(%s) 为 Windows 且非 ssh/winrm 连接，无 docker 守护进程，不可容器部署。请改选 Linux docker 节点，或把节点连接方式改为 ssh/winrm 走原生部署",
+			node.Name, node.Host)}
+	}
+	return nil
+}
+
+// nodeDeployError checkNodeDeployable 的错误载体（status+code+message 直接喂 httpx.Err）。
+type nodeDeployError struct {
+	Status  int
+	Code    int
+	Message string
+}
+
 // Deploy 构建+部署到指定环境（默认 test=测试验证）。立即返回 building，后台完成。
 //
 // @Summary      构建并部署应用
@@ -1672,6 +1711,12 @@ func (h *Handler) Deploy(c *gin.Context) {
 	}
 	// 编码工作台 test 部署：从开发者 dev-<user> worktree 构建（自测用最新代码，不走 main 合并）；
 	// 有未提交改动时先回 need_commit 让前端确认，确认后 AI 总结 diff + commit 再构建。
+	// 节点分流守卫：ssh/winrm 节点须有 deploy.yaml（否则异步段静默落回本地 docker，目标错位）；
+	// windows 节点不可走 docker 链路。同步段显式报错（别静默）。
+	if ne := h.checkNodeDeployable(a, in.NodeID); ne != nil {
+		httpx.Err(c, ne.Status, ne.Code, ne.Message)
+		return
+	}
 	buildDir := ""
 	if env == EnvTest && in.FromWorkspace {
 		user := c.GetString(auth.CtxUserID)
@@ -1757,6 +1802,11 @@ func (h *Handler) Promote(c *gin.Context) {
 		NodeID string `json:"node_id"`
 	}
 	_ = c.ShouldBindJSON(&in)
+	// 节点分流守卫（同 Deploy：同步段显式报错，别静默）。
+	if ne := h.checkNodeDeployable(a, in.NodeID); ne != nil {
+		httpx.Err(c, ne.Status, ne.Code, ne.Message)
+		return
+	}
 	// 🚪 变更闸门（grandfather）：登记过变更的应用，必须有 approved 变更才能上线 prod。
 	// 从未登记过的老应用不受约束——一旦开始登记变更，即进入治理流程。
 	if h.changes != nil {

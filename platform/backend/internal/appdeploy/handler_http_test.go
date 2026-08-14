@@ -1392,7 +1392,7 @@ func setupHandlerWithAppKind(t *testing.T) (*Handler, *gin.Engine) {
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
-		"appdeploy_artifact", "appdeploy_build_config",
+		"appdeploy_artifact", "appdeploy_build_config", "deploy_node",
 	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil,
@@ -1862,5 +1862,108 @@ func TestHandler_Deploy_FromWorkspace_WorktreeMissing(t *testing.T) {
 	msg, _ := resp["message"].(string)
 	if !strings.Contains(msg, "worktrees") || !strings.Contains(msg, "anonymous") {
 		t.Fatalf("错误信息应含 worktree 路径引导，得到 %q", msg)
+	}
+}
+
+// --- Task: 部署节点分流守卫（ssh/winrm 需 deploy.yaml；windows 不可走 docker 链路） ---
+
+// seedNode 插一条部署节点（绕过 CreateNode handler）。Create 会自生成 node_ 前缀 ID 覆盖
+// 传入值，这里 Create 后按唯一 host 把 ID 改回指定值，让测试可预测地引用 node_win31 等。
+func seedNode(t *testing.T, h *Handler, n *DeployNode) {
+	t.Helper()
+	target := n.ID
+	if err := h.nodeStore.Create(context.Background(), n); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	if _, err := h.nodeStore.db.ExecContext(context.Background(),
+		`UPDATE deploy_node SET id=$1 WHERE host=$2`, target, n.Host); err != nil {
+		t.Fatalf("seed node update id: %v", err)
+	}
+	n.ID = target
+}
+
+// TestHandler_Deploy_NativeNodeWithoutDeployYaml ssh/winrm 节点部署但仓库无 deploy.yaml
+// → 409/40971 显式报错（提示生成 deploy.yaml）。回归背景：此前异步段静默落回本地 docker
+// 链路，用户以为部署到了远程 Windows 节点，实际容器跑在 .28 本地——目标错位极难排查。
+func TestHandler_Deploy_NativeNodeWithoutDeployYaml(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	dir := t.TempDir()
+	a := seedApp(t, h, "ps_nd", "napp", dir)
+	seedNode(t, h, &DeployNode{ID: "node_win31", Name: "win-31", Host: "10.10.0.31",
+		OSType: "windows", Env: "test", ConnectType: "ssh"})
+
+	code, resp := doReq(t, r, http.MethodPost,
+		"/api/v1/project-spaces/ps_nd/apps/"+a.ID+"/deploy",
+		map[string]interface{}{"env": "test", "node_id": "node_win31"})
+	if code != 409 {
+		t.Fatalf("ssh 节点无 deploy.yaml 应 409 显式报错，得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40971 {
+		t.Fatalf("biz code 应 40971，得到 %v", resp["code"])
+	}
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "deploy.yaml") || !strings.Contains(msg, "win-31") {
+		t.Fatalf("错误信息应含 deploy.yaml 引导与节点名，得到 %q", msg)
+	}
+}
+
+// TestHandler_Deploy_WindowsNodeDockerBlocked windows 节点且非 ssh/winrm（无 docker 守护
+// 进程）走 docker 链路 → 409/40972。API 直调防护（前端选择器已 disabled，此处为后端兜底）。
+func TestHandler_Deploy_WindowsNodeDockerBlocked(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	dir := t.TempDir()
+	a := seedApp(t, h, "ps_nd", "napp2", dir)
+	seedNode(t, h, &DeployNode{ID: "node_wdocker", Name: "win-docker", Host: "10.10.0.32",
+		OSType: "windows", Env: "test", ConnectType: "docker_tcp", DockerURL: "tcp://10.10.0.32:2375"})
+
+	code, resp := doReq(t, r, http.MethodPost,
+		"/api/v1/project-spaces/ps_nd/apps/"+a.ID+"/deploy",
+		map[string]interface{}{"env": "test", "node_id": "node_wdocker"})
+	if code != 409 {
+		t.Fatalf("windows docker_tcp 节点应 409，得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40972 {
+		t.Fatalf("biz code 应 40972，得到 %v", resp["code"])
+	}
+}
+
+// TestHandler_Deploy_NodeNotExist node_id 指向不存在节点 → 404/40421。
+func TestHandler_Deploy_NodeNotExist(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	dir := t.TempDir()
+	a := seedApp(t, h, "ps_nd", "napp3", dir)
+
+	code, resp := doReq(t, r, http.MethodPost,
+		"/api/v1/project-spaces/ps_nd/apps/"+a.ID+"/deploy",
+		map[string]interface{}{"env": "test", "node_id": "node_ghost"})
+	if code != 404 {
+		t.Fatalf("不存在节点应 404，得到 %d body=%v", code, resp)
+	}
+	if resp["code"].(float64) != 40421 {
+		t.Fatalf("biz code 应 40421，得到 %v", resp["code"])
+	}
+}
+
+// TestHandler_Deploy_NativeNodeWithDeployYaml ssh 节点 + 仓库有 deploy.yaml → 守卫放行
+// （进异步原生部署链路，返回 building）。deploy.yaml 最小可用：command + transfer_files。
+func TestHandler_Deploy_NativeNodeWithDeployYaml(t *testing.T) {
+	h, r := setupHandlerWithAppKind(t)
+	dir := t.TempDir()
+	a := seedApp(t, h, "ps_nd", "napp4", dir)
+	if err := os.WriteFile(filepath.Join(dir, "deploy.yaml"), []byte(
+		"app: napp4\ncommand: python -m http.server 8080\ntransfer_files:\n  - dist/\n"), 0o644); err != nil {
+		t.Fatalf("write deploy.yaml: %v", err)
+	}
+	seedNode(t, h, &DeployNode{ID: "node_win32", Name: "win-32", Host: "10.10.0.31",
+		OSType: "windows", Env: "test", ConnectType: "ssh"})
+
+	code, resp := doReq(t, r, http.MethodPost,
+		"/api/v1/project-spaces/ps_nd/apps/"+a.ID+"/deploy",
+		map[string]interface{}{"env": "test", "node_id": "node_win32"})
+	if code != 200 {
+		t.Fatalf("有 deploy.yaml 的 ssh 节点应放行（building），得到 %d body=%v", code, resp)
+	}
+	if resp["data"].(map[string]interface{})["status"] != "building" {
+		t.Fatalf("应返回 building，得到 %v", resp)
 	}
 }
