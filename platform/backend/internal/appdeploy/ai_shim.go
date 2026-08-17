@@ -18,6 +18,7 @@ set -u
 PREFIX="${ANP_CONTAINER_PREFIX:-}"
 REAL="/usr/bin/docker"
 sub="${1:-}"
+[ "$sub" != "" ] && shift
 case "$sub" in
   build|run|inspect|logs|ps)
     exec "$REAL" "$@"
@@ -27,7 +28,7 @@ case "$sub" in
     for a in "$@"; do
       case "$a" in
         -*) ;;
-        *) [ "$a" != "$sub" ] && [ -z "$target" ] && target="$a" ;;
+        *) [ -z "$target" ] && target="$a" ;;
       esac
     done
     if [ -z "$PREFIX" ]; then
@@ -88,15 +89,29 @@ func shimAllow(args []string, slug string) error {
 
 // restrictedEnv 组装 AI 进程环境：PATH 前置 shimDir + 注入 ANP_CONTAINER_PREFIX。
 // base 保留（含密钥 env——AI run 容器要用；密钥绝不进简报/build_log，由 redactOut 保证）。
+// PATH 前置：base 已有 PATH 则改写首个；无则兜底注入纯 shimDir（防子 shell 落默认
+// PATH 解析到真身 docker，白名单整体绕过）。
+// ANP_CONTAINER_PREFIX：base 已含该键时跳过（glibc getenv 首键优先，重复追加会让
+// 预置值遮蔽注入值），最后统一 append。
 func restrictedEnv(base []string, shimDirPath, slug string) []string {
 	prefix := "appdeploy-" + slug + "-"
 	out := make([]string, 0, len(base)+2)
+	hasPath := false
 	for _, e := range base {
-		if strings.HasPrefix(e, "PATH=") {
-			out = append(out, "PATH="+shimDirPath+":"+strings.TrimPrefix(e, "PATH="))
-		} else {
+		switch {
+		case strings.HasPrefix(e, "PATH="):
+			if !hasPath {
+				out = append(out, "PATH="+shimDirPath+":"+strings.TrimPrefix(e, "PATH="))
+				hasPath = true
+			}
+		case strings.HasPrefix(e, "ANP_CONTAINER_PREFIX="):
+			// 跳过预置值，末尾统一注入（幂等，防首键遮蔽）
+		default:
 			out = append(out, e)
 		}
+	}
+	if !hasPath {
+		out = append(out, "PATH="+shimDirPath)
 	}
 	out = append(out, "ANP_CONTAINER_PREFIX="+prefix)
 	return out

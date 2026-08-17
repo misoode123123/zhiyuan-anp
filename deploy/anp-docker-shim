@@ -4,6 +4,7 @@ set -u
 PREFIX="${ANP_CONTAINER_PREFIX:-}"
 REAL="/usr/bin/docker"
 sub="${1:-}"
+[ "$sub" != "" ] && shift
 case "$sub" in
   build|run|inspect|logs|ps)
     exec "$REAL" "$@"
@@ -13,7 +14,7 @@ case "$sub" in
     for a in "$@"; do
       case "$a" in
         -*) ;;
-        *) [ "$a" != "$sub" ] && [ -z "$target" ] && target="$a" ;;
+        *) [ -z "$target" ] && target="$a" ;;
       esac
     done
     if [ -z "$PREFIX" ]; then
