@@ -25,13 +25,13 @@ func TestShimAllow(t *testing.T) {
 	}
 	// 拒绝组
 	for _, args := range [][]string{
-		{"docker", "stop", "deploy_backend"},             // 他人容器
-		{"docker", "rm", "-f", "deploy_postgres_1"},      // 平台容器
-		{"docker", "rm"},                                 // 无目标（rm 无名 → 拒绝）
-		{"docker", "system", "prune", "-a"},              // 危险子命令
-		{"docker", "volume", "rm", "x"},                  // volume 域
-		{"docker", "network", "disconnect", "a", "b"},    // network 域
-		{"docker", "exec", "appdeploy-x-test-v11", "sh"}, // exec 逃逸
+		{"docker", "stop", "deploy_backend"},               // 他人容器
+		{"docker", "rm", "-f", "deploy_postgres_1"},        // 平台容器
+		{"docker", "rm"},                                   // 无目标（rm 无名 → 拒绝）
+		{"docker", "system", "prune", "-a"},                // 危险子命令
+		{"docker", "volume", "rm", "x"},                    // volume 域
+		{"docker", "network", "disconnect", "a", "b"},      // network 域
+		{"docker", "exec", "appdeploy-x-test-v11", "sh"},   // exec 逃逸
 		{"docker", "stop", "stop", "appdeploy-x-test-v11"}, // "stop" 作为首个非 flag 参数（钉死 Go 语义，sh 侧靠 shift 对齐）
 	} {
 		if err := shimAllow(args, "x"); err == nil {
