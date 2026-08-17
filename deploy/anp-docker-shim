@@ -1,0 +1,31 @@
+#!/bin/sh
+# ANP docker shim：AI 部署的命令白名单（spec §3）。同内容副本在 deploy/anp-docker-shim。
+set -u
+PREFIX="${ANP_CONTAINER_PREFIX:-}"
+REAL="/usr/bin/docker"
+sub="${1:-}"
+case "$sub" in
+  build|run|inspect|logs|ps)
+    exec "$REAL" "$@"
+    ;;
+  stop|rm)
+    target=""
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;
+        *) [ "$a" != "$sub" ] && [ -z "$target" ] && target="$a" ;;
+      esac
+    done
+    if [ -z "$PREFIX" ]; then
+      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    fi
+    case "$target" in
+      "$PREFIX"*) exec "$REAL" "$@" ;;
+      *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
+    esac
+    ;;
+  *)
+    echo "[anp-shim] 拒绝：docker 子命令 '$sub' 不在白名单（build/run/inspect/logs/ps/stop/rm）" >&2
+    exit 127
+    ;;
+esac

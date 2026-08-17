@@ -1,0 +1,103 @@
+package appdeploy
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// shimDir 容器内 shim 安装目录（PATH 前置它，遮蔽 /usr/bin/docker）。
+const shimDir = "/usr/local/bin/anp-docker-shim"
+
+// shimScript POSIX sh 白名单脚本（与 deploy/anp-docker-shim 同内容；嵌入字符串而非
+// go:embed，避免构建上下文耦合 deploy/ 目录——Dockerfile.backend 只 COPY platform/backend）。
+const shimScript = `#!/bin/sh
+# ANP docker shim：AI 部署的命令白名单（spec §3）。同内容副本在 deploy/anp-docker-shim。
+set -u
+PREFIX="${ANP_CONTAINER_PREFIX:-}"
+REAL="/usr/bin/docker"
+sub="${1:-}"
+case "$sub" in
+  build|run|inspect|logs|ps)
+    exec "$REAL" "$@"
+    ;;
+  stop|rm)
+    target=""
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;
+        *) [ "$a" != "$sub" ] && [ -z "$target" ] && target="$a" ;;
+      esac
+    done
+    if [ -z "$PREFIX" ]; then
+      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    fi
+    case "$target" in
+      "$PREFIX"*) exec "$REAL" "$@" ;;
+      *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
+    esac
+    ;;
+  *)
+    echo "[anp-shim] 拒绝：docker 子命令 '$sub' 不在白名单（build/run/inspect/logs/ps/stop/rm）" >&2
+    exit 127
+    ;;
+esac
+`
+
+// InstallShim 把 shim 脚本写到 dir/docker 并 chmod 0755；返回 dir。
+// aiDeploy 每次执行前调用（幂等；写到固定路径 /usr/local/bin/anp-docker-shim）。
+func InstallShim(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	p := filepath.Join(dir, "docker")
+	if err := os.WriteFile(p, []byte(shimScript), 0o755); err != nil {
+		return "", fmt.Errorf("写 shim: %w", err)
+	}
+	return dir, nil
+}
+
+// shimAllow 白名单判定（Go 侧镜像实现，供单测文档化规则；真正的拦截在 sh 脚本）。
+// 规则与 shimScript 一致：build/run/inspect/logs/ps 放行；stop/rm 目标容器名须以
+// appdeploy-{slug}- 开头；其余拒绝。
+func shimAllow(args []string, slug string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("空命令")
+	}
+	sub := args[1]
+	prefix := "appdeploy-" + slug + "-"
+	switch sub {
+	case "build", "run", "inspect", "logs", "ps":
+		return nil
+	case "stop", "rm":
+		for _, a := range args[2:] {
+			if strings.HasPrefix(a, "-") {
+				continue
+			}
+			if strings.HasPrefix(a, prefix) {
+				return nil // 第一个非 flag 参数（容器名）合规即放行
+			}
+			return fmt.Errorf("容器 %q 不在前缀 %q 内", a, prefix)
+		}
+		return fmt.Errorf("%s 无目标容器", sub)
+	default:
+		return fmt.Errorf("子命令 %q 不在白名单", sub)
+	}
+}
+
+// restrictedEnv 组装 AI 进程环境：PATH 前置 shimDir + 注入 ANP_CONTAINER_PREFIX。
+// base 保留（含密钥 env——AI run 容器要用；密钥绝不进简报/build_log，由 redactOut 保证）。
+func restrictedEnv(base []string, shimDirPath, slug string) []string {
+	prefix := "appdeploy-" + slug + "-"
+	out := make([]string, 0, len(base)+2)
+	for _, e := range base {
+		if strings.HasPrefix(e, "PATH=") {
+			out = append(out, "PATH="+shimDirPath+":"+strings.TrimPrefix(e, "PATH="))
+		} else {
+			out = append(out, e)
+		}
+	}
+	out = append(out, "ANP_CONTAINER_PREFIX="+prefix)
+	return out
+}
