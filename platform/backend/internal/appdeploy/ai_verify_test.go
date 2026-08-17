@@ -45,10 +45,25 @@ func TestVerifyAIResult_EachFailure(t *testing.T) {
 }
 
 func TestHostPortOf(t *testing.T) {
-	if p := parseHostPortInspect("0.0.0.0:9101"); p != 9101 {
-		t.Errorf("parseHostPortInspect 应得 9101, 得 %d", p)
+	// C-1：docker inspect 模板 {{...HostPort}}{{end}} 输出裸端口号（无冒号），
+	// 原实现要求含 ":" 才解析 → 恒 0 → 验证3 恒失败。两种形状都必须兼容。
+	cases := []struct {
+		in   string
+		want int
+		desc string
+	}{
+		{"9101", 9101, "模板直出裸端口号（无冒号，C-1 主形状）"},
+		{"0.0.0.0:9101", 9101, "带绑定地址"},
+		{"[::]:9101", 9101, "IPv6 绑定地址"},
+		{" 9101\n", 9101, "首尾空白容忍"},
+		{"", 0, "空输出"},
+		{"91019102", 0, "多端口拼接 >65535 判 0（fail-closed）"},
+		{"abc", 0, "非数字"},
+		{"0.0.0.0:abc", 0, "冒号后非数字"},
 	}
-	if p := parseHostPortInspect(""); p != 0 {
-		t.Errorf("空输出应 0, 得 %d", p)
+	for _, c := range cases {
+		if p := parseHostPortInspect(c.in); p != c.want {
+			t.Errorf("parseHostPortInspect(%q)=%d, 期望 %d（%s）", c.in, p, c.want, c.desc)
+		}
 	}
 }

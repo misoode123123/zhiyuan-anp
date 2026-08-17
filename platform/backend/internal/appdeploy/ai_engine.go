@@ -69,15 +69,23 @@ func verifyAIResult(in verifyInput) []string {
 	return fails
 }
 
-// parseHostPortInspect 解析 docker inspect 端口输出（如 "0.0.0.0:9101"）。纯函数。
+// parseHostPortInspect 解析 docker inspect 端口输出。纯函数。C-1：兼容两种形状——
+//   - "0.0.0.0:9101"（带绑定地址，含 IPv6 "[::]:9101"）→ 取末段
+//   - "9101"（hostPortOf 模板 {{...HostPort}}{{end}} 直出裸端口号，无冒号）→ 整串
+//
+// 多端口容器模板会把多个端口号直接拼成 "91019102"（>65535）→ 判 0 fail-closed
+// （走验证3 失败=部署失败回滚；平台单容器单 -p 为主场景，可接受）。
 func parseHostPortInspect(out string) int {
 	s := strings.TrimSpace(out)
+	v := s
 	if i := strings.LastIndex(s, ":"); i >= 0 {
-		if p, err := strconv.Atoi(s[i+1:]); err == nil {
-			return p
-		}
+		v = s[i+1:]
 	}
-	return 0
+	p, err := strconv.Atoi(v)
+	if err != nil || p < 0 || p > 65535 {
+		return 0
+	}
+	return p
 }
 
 // hostPortOf 读容器宿主端口绑定（docker inspect --format ...）。0=读不到。
@@ -97,7 +105,15 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	defer func() {
 		if r := recover(); r != nil {
 			zap.L().Error("[appdeploy] aiDeploy panic", zap.String("app", aid), zap.Any("panic", r))
-			h.markFailed(ctx, psID, aid, fmt.Sprintf("[panic] AI 部署异常崩溃: %v", r), "")
+			msg := fmt.Sprintf("[panic] AI 部署异常崩溃: %v", r)
+			h.markFailed(ctx, psID, aid, msg, "")
+			// I-2：照 buildAndDeploy 全约定（handler.go panic 兜底）——instance 也置 failed，
+			// 否则实例态永卡旧状态而应用态已 failed，二者漂移。
+			if ins, e := h.store.GetOrCreateInstance(ctx, aid, env); e == nil && ins != nil {
+				ins.Status = "failed"
+				ins.LastError = msg
+				_ = h.store.UpdateInstance(ctx, ins)
+			}
 		}
 	}()
 	a, err := h.store.Get(ctx, psID, aid)
@@ -108,13 +124,18 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	slug := dockerSlug(a.Name)
 	ins, err := h.store.GetOrCreateInstance(ctx, a.ID, env)
 	if err != nil || ins == nil {
-		h.markFailed(ctx, psID, a.ID, "[系统]部署实例创建失败", "")
+		h.markFailed(ctx, psID, aid, "[系统]部署实例创建失败", "")
 		return
 	}
 	if buildDir == "" {
 		buildDir = a.RepoDir
 	}
 	log := &aiLog{}
+
+	// I-1：版本自增前快照「最后成功镜像」——回滚重放的选版依据（弃 N-1 算术：
+	// 计数器只升不降，N-1 可能空号或已被否决；DB 里的 ins.Image 必是上一次成功部署回填的）。
+	// 版本号不在此记录，回滚时从镜像 tag 反解（versionOfImageTag）。
+	lastGoodImage := ins.Image
 
 	// 1. 版本自增 + 端口预分配（平台保留端口治理权，spec §2 要点）。
 	ins.Version++
@@ -129,13 +150,21 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	log.line(fmt.Sprintf("[平台] 版本 v%d，预分配宿主端口 %d", version, port))
 
 	// 2. 组装简报 + 写 deploy-brief.md
-	mf, _ := LoadDeployManifest(a.RepoDir)
+	mf, mfErr := LoadDeployManifest(a.RepoDir)
+	if mfErr != nil {
+		zap.L().Warn("AI 部署读取 .anp/deploy.yaml 失败（不阻塞，简报降级无 needs/actual）",
+			zap.String("app", a.Name), zap.Error(mfErr))
+	}
 	var needs *NeedsSpec
 	var actual *ActualSpec
 	if mf != nil {
 		needs, actual = &mf.Needs, &mf.Actual
 	}
-	envPairs, _ := h.store.EnvPairs(ctx, a.ID)
+	envPairs, epErr := h.store.EnvPairs(ctx, a.ID)
+	if epErr != nil {
+		zap.L().Warn("AI 部署读取应用环境变量失败（不阻塞，简报 env_keys 降级）",
+			zap.String("app", a.Name), zap.Error(epErr))
+	}
 	var envKeys []string
 	for _, kv := range envPairs {
 		if i := strings.IndexByte(kv, '='); i > 0 {
@@ -157,6 +186,10 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	}
 	log.line("[平台] 部署简报已写入 " + briefPath)
 	defer os.Remove(briefPath) // 临时文件：验证后删（spec §6）
+	// M-3：AI 回报文件清理提前注册（紧跟 AI 可能落盘 result 的时机之后）。
+	// 原注册点在 LoadDeployResult 之后——AI 执行失败(runErr)早退路径不经过那里，残留
+	// result 会被下一次部署误读。os.Remove 对不存在文件返错，忽略即可（防御性清理）。
+	defer os.Remove(filepath.Join(buildDir, deployResultRelPath))
 
 	// 3. 装 shim + 受限执行 opencode（15min 超时）
 	if _, err := InstallShim(shimDir); err != nil {
@@ -183,14 +216,13 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	}
 	log.line(redactOut(out, secrets))
 	if runErr != nil {
-		h.aiFailWithRollback(ctx, psID, a, ins, log, mf, env, slug,
+		h.aiFailWithRollback(ctx, psID, a, ins, log, mf, env, slug, lastGoodImage,
 			fmt.Sprintf("AI 执行失败: %v", runErr))
 		return
 	}
 
 	// 4. 五步验证（容器实态，不信自报）
 	result, _ := LoadDeployResult(buildDir)
-	defer os.Remove(filepath.Join(buildDir, deployResultRelPath)) // 回报临时文件
 	container := fmt.Sprintf("appdeploy-%s-%s-v%d", slug, env, version)
 	running := false
 	if ch, err := h.deployer.InspectHealth(ctx, container); err == nil {
@@ -206,7 +238,7 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 		log.line("[验证失败] " + f)
 	}
 	if len(fails) > 0 {
-		h.aiFailWithRollback(ctx, psID, a, ins, log, mf, env, slug,
+		h.aiFailWithRollback(ctx, psID, a, ins, log, mf, env, slug, lastGoodImage,
 			"平台验证未通过: "+strings.Join(fails, "; "))
 		return
 	}
@@ -220,7 +252,9 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	ins.Status = "running"
 	ins.LastError = ""
 	ins.BuildLog = log.tail()
+	ins.RestartCount = 0 // I-3：新容器 docker RestartCount=0，重置 DB 基线避免上轮 reconcile 残留（照 buildAndDeploy）
 	_ = h.store.UpdateInstance(ctx, ins)
+	_ = h.store.UpdateRestartCount(ctx, ins.AppID, ins.Env, 0) // 持久化新基线（UpdateInstance 不写 restart_count）
 	_ = h.store.SetStatus(ctx, psID, a.ID, "running", "", ins.BuildLog)
 	configSrc := ""
 	if mf != nil {
@@ -251,51 +285,67 @@ func (h *Handler) aiFail(ctx context.Context, psID string, a *Application, ins *
 }
 
 // aiFailWithRollback AI 部署失败且已可能动过容器：平台清理残留 + 回滚上一版（spec §4/§5）。
-// 回滚=固定引擎重放上一版镜像（旧容器已被 AI 清理，无法重启）；首版（无上一版）仅清残留。
+// 回滚选版（I-1）：lastGoodImage=进入 aiDeploy 时 DB 里的 ins.Image（上一次成功部署回填的最后
+// 成功镜像），版本号从镜像 tag 反解（appdeploy/<slug>-<env>:v<N>）。弃 N-1 算术——计数器只升
+// 不降，N-1 可能空号或已被否决；无历史镜像/解析失败则不重放只清理（fail-closed）。
 // 版本计数器不回退（与 DriftReconciler「只升不降防版本号复用」一致）：本次 v{N} 失败，
 // 下次成功部署会是 v{N+1}——中间空号无害（镜像 tag 唯一性优先于连续性）。
-func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Application, ins *AppInstance, log *aiLog, mf *DeployManifest, env, slug, reason string) {
+func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Application, ins *AppInstance, log *aiLog, mf *DeployManifest, env, slug, lastGoodImage string, reason string) {
 	log.line("[平台] 开始回滚（平台执行，非 AI）")
 	// 清理本次失败残留（AI 可能起了半截容器）
 	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+slug+"-"+env+"-"); err != nil {
 		log.line("[回滚] 清理残留失败: " + err.Error())
 	}
-	// 有上一版镜像 → 固定引擎重放（docker run 上一版 tag）
-	// Deployer.Deploy 不自增 Version（自增只在 Build），故直接把 prevIns 指到 v{N-1}。
-	if ins.Version > 1 {
-		prevVer := ins.Version - 1
-		prevIns := *ins
-		prevIns.Version = prevVer
-		prevIns.Image = fmt.Sprintf("appdeploy/%s-%s:v%d", slug, ins.Env, prevVer)
-		log.line("[回滚] 重放上一版 " + prevIns.Image)
-		opts := DeployOpts{Mounts: ResolveExtraMounts(a.RepoDir, mf)}
-		configHost, _, hasCfg := ResolveConfigMount(a.RepoDir, mf)
-		if hasCfg {
-			opts.ConfigPath = configHost
-		}
-		if mf != nil {
-			if len(mf.Needs.Ports) > 0 {
-				opts.Port = mf.Needs.Ports[0]
+	// 有最后成功镜像 → 固定引擎重放（docker run 该 tag）。
+	// Deployer.Deploy 不自增 Version（自增只在 Build），用反解出的 prevVer 组容器名。
+	if lastGoodImage != "" {
+		if prevVer := versionOfImageTag(lastGoodImage); prevVer > 0 {
+			prevIns := *ins
+			prevIns.Version = prevVer
+			prevIns.Image = lastGoodImage // 重放的 run 参数就是上一版镜像本身，不能清空
+			log.line("[回滚] 重放上一版 " + prevIns.Image)
+			opts := DeployOpts{Mounts: ResolveExtraMounts(a.RepoDir, mf)}
+			configHost, _, hasCfg := ResolveConfigMount(a.RepoDir, mf)
+			if hasCfg {
+				opts.ConfigPath = configHost
 			}
-			opts.Command = mf.Needs.Command
-		}
-		envPairs, _ := h.store.EnvPairs(ctx, a.ID)
-		if hasCfg {
-			envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
-		}
-		runCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		if err := h.deployer.Deploy(runCtx, a, &prevIns, envPairs, "", opts); err != nil {
-			cancel()
-			log.line("[回滚] 上一版重放失败: " + err.Error())
+			if mf != nil {
+				if len(mf.Needs.Ports) > 0 {
+					opts.Port = mf.Needs.Ports[0]
+				}
+				opts.Command = mf.Needs.Command
+			}
+			envPairs, epErr := h.store.EnvPairs(ctx, a.ID)
+			if epErr != nil {
+				zap.L().Warn("AI 回滚读取应用环境变量失败（不阻塞，容器降级无应用 env）",
+					zap.String("app", a.Name), zap.Error(epErr))
+			}
+			if hasCfg {
+				envPairs = append(envPairs, "CONFIG_PATH=/app/config.yaml")
+			}
+			// M-5：cancel 紧跟创建 defer 式（Deploy 同步返回，defer 无害；不再两分支手工 cancel）
+			runCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			defer cancel()
+			if err := h.deployer.Deploy(runCtx, a, &prevIns, envPairs, "", opts); err != nil {
+				log.line("[回滚] 上一版重放失败: " + err.Error())
+			} else {
+				log.line(fmt.Sprintf("[回滚] 上一版已恢复: %s (端口 %d)", prevIns.ContainerName, prevIns.HostPort))
+				// DB 回写上一版实态（version 保持本版 N——只升不降；镜像/容器指向上一版）
+				ins.Image = prevIns.Image
+				ins.ContainerName = prevIns.ContainerName
+				ins.HostPort = prevIns.HostPort
+				ins.URL = prevIns.URL
+				reason += fmt.Sprintf("（已自动回滚到 v%d 服务，本次 v%d 未生效）", prevVer, ins.Version)
+				// I-3：回滚成功也写路由表（照成功路径——否则 appgw 仍指向刚被清理的容器，
+				// 线上 502）；headless 无端口不写。
+				if h.routeWriter != nil && a.AppKind != AppKindHeadless {
+					if rErr := h.routeWriter.UpsertRoute(ctx, a.ID, a.ProjectSpaceID, env, h.deployer.host, prevIns.HostPort); rErr != nil {
+						log.line("[回滚] appgw 路由表写入失败: " + rErr.Error())
+					}
+				}
+			}
 		} else {
-			cancel()
-			log.line(fmt.Sprintf("[回滚] 上一版已恢复: %s (端口 %d)", prevIns.ContainerName, prevIns.HostPort))
-			// DB 回写上一版实态（version 保持本版 N——只升不降；镜像/容器指向 v{N-1}）
-			ins.Image = prevIns.Image
-			ins.ContainerName = prevIns.ContainerName
-			ins.HostPort = prevIns.HostPort
-			ins.URL = prevIns.URL
-			reason += fmt.Sprintf("（已自动回滚到 v%d 服务，本次 v%d 未生效）", prevVer, prevVer+1)
+			log.line("[回滚] 无法从镜像 tag 反解版本（" + lastGoodImage + "），只清理不重放")
 		}
 	}
 	ins.Status = "failed"
@@ -305,11 +355,33 @@ func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Applic
 	h.markFailed(ctx, psID, a.ID, reason, ins.BuildLog)
 }
 
+// versionOfImageTag 从镜像 tag 反解版本号：appdeploy/<slug>-<env>:v<N> → N。
+// 用 LastIndex(":v") 取尾段 Atoi；非本平台命名（无 :v 前缀/非数字尾段）返回 0=不可回滚。
+func versionOfImageTag(image string) int {
+	i := strings.LastIndex(image, ":v")
+	if i < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(image[i+2:])
+	if err != nil || n < 1 {
+		return 0
+	}
+	return n
+}
+
 // aiLog AI 部署过程日志累积器（tail 2000 行进 build_log，同 buildAndDeploy 约定）。
 type aiLog struct{ lines []string }
 
 func (l *aiLog) line(s string) { l.lines = append(l.lines, s) }
-func (l *aiLog) tail() string  { return strings.Join(l.lines, "\n") }
+
+// tail 最多保留末 2000 行进 build_log（M-2：AI 输出经 redactOut 整段 line() 进来，
+// 无截断会全量落库；同 buildAndDeploy tail(log,2000) 的行数约定）。
+func (l *aiLog) tail() string {
+	if len(l.lines) > 2000 {
+		l.lines = l.lines[len(l.lines)-2000:]
+	}
+	return strings.Join(l.lines, "\n")
+}
 
 // secretValues 从 envPairs 提取密钥值（redactOut 入参；空值过滤）。
 func secretValues(envPairs []string) []string {
