@@ -153,7 +153,7 @@ export default function WorkspaceFrame() {
     };
   }, [appID, psID, tool, reloadKey, newSessionKey, missingParams, selfInitiated, reqID]);
 
-  // 构建部署到 test,轮询 test 实例状态直到 running/failed(~2min 超时)
+  // 构建部署到 test,轮询 test 实例状态直到 running/failed(~16min 超时,覆盖 AI 引擎 15min)
   async function deploy() {
     if (pollRef.current) clearInterval(pollRef.current);
     setDeployState("building");
@@ -205,13 +205,15 @@ export default function WorkspaceFrame() {
         setDeployState("failed");
         if (pollRef.current) clearInterval(pollRef.current);
       }
-      if (n > 40 && pollRef.current) {
-        // ~2min 超时兜底：后端异常时（如 docker build 卡死、状态迟迟不翻）不能让按钮一直"构建中…"，
-        // 置 failed 提示用户去应用部署页看构建日志或重试。
+      // preparing（AI 部署：简报→执行→验证）/ building 都是在途态：继续轮询，不算终态
+      if (n > 320 && pollRef.current) {
+        // ~16min 超时兜底：固定引擎 ~2min；AI 引擎上限 15min（简报+执行+验证），
+        // 故放宽到 320 次 ×3s ≈ 16min，覆盖 AI 场景 + 余量。超时置 failed 提示
+        // 用户去应用部署页看构建日志或用固定引擎重试。
         clearInterval(pollRef.current);
         pollRef.current = null;
         setDeployState("failed");
-        setDeployErr("构建超时（2 分钟未完成），请在应用部署页查看构建日志或重试");
+        setDeployErr("构建超时（16 分钟未完成），请在应用部署页查看构建日志或重试");
       }
     }, 3000);
   }

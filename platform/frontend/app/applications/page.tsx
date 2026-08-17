@@ -131,6 +131,7 @@ type Detail = {
 const STATUS_COLOR: Record<string, string> = {
   running: "bg-success/10 text-success",
   building: "bg-warn/10 text-warn",
+  preparing: "bg-warn/10 text-warn", // AI 部署在途（简报→执行→验证），视同 building 同族色
   registered: "bg-surface-2 text-text-muted",
   stopped: "bg-accent/10 text-accent",
   failed: "bg-danger/10 text-danger",
@@ -603,7 +604,7 @@ export default function ApplicationsPage() {
         const next = { ...prev };
         for (const id of Object.keys(next)) {
           const app = apps.find((a) => a.id === id);
-          if (app && app.status !== "building") {
+          if (app && app.status !== "building" && app.status !== "preparing") {
             toast.success(app.name + " → " + app.status);
             logger.info("app.deploy.done", { app: app.name, status: app.status });
             delete next[id];
@@ -855,12 +856,14 @@ export default function ApplicationsPage() {
     id: string,
     action: "deploy" | "stop" | "start",
     env?: string,
-    nodeID?: string
+    nodeID?: string,
+    engine?: "fixed" | "ai"
   ) {
     const body: Record<string, string> = {};
     if (action === "deploy") {
       if (env) body.env = env;
       if (nodeID) body.node_id = nodeID;
+      if (engine) body.engine = engine;
       // 节点环境校验：部署 env=test 只能用 env=test 节点；env=prod 只能用 env=prod 节点。
       // node_local 豁免（始终可用）。Windows 节点：ssh/winrm 走原生部署（支持 Windows，
       // 由后端校验 deploy.yaml 并显式报错）；仅非 ssh/winrm 的 Windows 节点（无 docker
@@ -1494,13 +1497,16 @@ export default function ApplicationsPage() {
                 </div>
               )}
               {/* 部署进度提示：从 app.status 派生（切 tab 回来也可见，因为 3s 轮询刷新 status） */}
-              {a.status === "building" && (
+              {(a.status === "building" || a.status === "preparing") && (
                 <div className="mb-2 flex items-center gap-2 rounded bg-accent/10 px-3 py-1.5 text-sm text-accent">
                   <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
-                  构建部署中...
-                  {a.instances?.find((i) => i.status === "building") && (
+                  {a.status === "preparing" ? "AI 部署中（简报→执行→验证）..." : "构建部署中..."}
+                  {a.instances?.find(
+                    (i) => i.status === "building" || i.status === "preparing"
+                  ) && (
                     <span className="text-xs text-accent">
-                      {a.instances.find((i) => i.status === "building")?.url || ""}
+                      {a.instances.find((i) => i.status === "building" || i.status === "preparing")
+                        ?.url || ""}
                     </span>
                   )}
                   <span className="ml-auto text-xs text-accent">每3秒自动刷新</span>
@@ -1515,7 +1521,18 @@ export default function ApplicationsPage() {
               )}
               {a.status === "failed" && (
                 <div className="mb-2 rounded bg-danger/10 px-3 py-1.5 text-sm text-danger">
-                  <div>❌ 构建失败：{a.last_error?.slice(0, 100) || "(无错误摘要)"}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1">
+                      ❌ 构建失败：{a.last_error?.slice(0, 100) || "(无错误摘要)"}
+                    </span>
+                    <button
+                      onClick={() => act(a.id, "deploy", "test", selectedNode, "fixed")}
+                      className="shrink-0 rounded bg-surface-2 px-2 py-0.5 text-xs text-text"
+                      title="放弃 AI 引擎，用固定部署引擎重试本次构建部署（spec §5：失败不静默降级，由人工选择）"
+                    >
+                      🔧 用固定引擎重试
+                    </button>
+                  </div>
                   {a.build_log && (
                     <details className="mt-1">
                       <summary className="cursor-pointer text-xs text-danger">
@@ -1559,15 +1576,15 @@ export default function ApplicationsPage() {
                   {a.status}
                 </span>
                 {/* 构建进度条 */}
-                {(a.status === "building" || a.status === "running") &&
+                {(a.status === "building" || a.status === "preparing" || a.status === "running") &&
                   a.instances &&
-                  a.instances.some((i) => i.status === "building") && (
+                  a.instances.some((i) => i.status === "building" || i.status === "preparing") && (
                     <span className="flex items-center gap-1 text-xs text-warn">
                       <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-warn border-t-transparent"></span>
                       构建中...
                     </span>
                   )}
-                {a.status === "building" &&
+                {(a.status === "building" || a.status === "preparing") &&
                   a.instances &&
                   a.instances.some((i) => i.status === "failed") && (
                     <span className="text-xs text-danger">构建失败</span>
