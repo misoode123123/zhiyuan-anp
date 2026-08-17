@@ -335,6 +335,8 @@ func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Applic
 				ins.ContainerName = prevIns.ContainerName
 				ins.HostPort = prevIns.HostPort
 				ins.URL = prevIns.URL
+				ins.RestartCount = 0                                       // I-3：重放的也是新容器（docker RestartCount=0），重置基线与成功路径对称
+				_ = h.store.UpdateRestartCount(ctx, ins.AppID, ins.Env, 0) // 持久化新基线（UpdateInstance 不写 restart_count）
 				reason += fmt.Sprintf("（已自动回滚到 v%d 服务，本次 v%d 未生效）", prevVer, ins.Version)
 				// I-3：回滚成功也写路由表（照成功路径——否则 appgw 仍指向刚被清理的容器，
 				// 线上 502）；headless 无端口不写。
@@ -347,6 +349,8 @@ func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Applic
 		} else {
 			log.line("[回滚] 无法从镜像 tag 反解版本（" + lastGoodImage + "），只清理不重放")
 		}
+	} else {
+		log.line("[回滚] 无上一版镜像，仅清理残留")
 	}
 	ins.Status = "failed"
 	ins.LastError = reason
@@ -372,10 +376,19 @@ func versionOfImageTag(image string) int {
 // aiLog AI 部署过程日志累积器（tail 2000 行进 build_log，同 buildAndDeploy 约定）。
 type aiLog struct{ lines []string }
 
-func (l *aiLog) line(s string) { l.lines = append(l.lines, s) }
+// line 追加日志；含 \n 的整段输出（opencode stdout 经 redactOut）按行拆开追加，
+// 否则整段成单「行」，tail 的 2000 行截断对它永不触发（MB 级落库）。空行跳过防碎片化。
+func (l *aiLog) line(s string) {
+	for _, ln := range strings.Split(s, "\n") {
+		if ln == "" {
+			continue
+		}
+		l.lines = append(l.lines, ln)
+	}
+}
 
-// tail 最多保留末 2000 行进 build_log（M-2：AI 输出经 redactOut 整段 line() 进来，
-// 无截断会全量落库；同 buildAndDeploy tail(log,2000) 的行数约定）。
+// tail 最多保留末 2000 行（近似固定引擎 buildAndDeploy 的日志截断意图；其 tail 为字节截断）。
+// M-2：AI 整段输出拆行后经此截断，防全量落库。
 func (l *aiLog) tail() string {
 	if len(l.lines) > 2000 {
 		l.lines = l.lines[len(l.lines)-2000:]

@@ -67,3 +67,24 @@ func TestHostPortOf(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionOfImageTag(t *testing.T) {
+	// R-3：tag 反解纯函数钉契约——LastIndex(":v") 取尾段 Atoi，0=不可回滚（fail-closed）。
+	cases := []struct {
+		in   string
+		want int
+		desc string
+	}{
+		{"appdeploy/x-test:v3", 3, "本平台标准命名"},
+		{"reg:5000/a:v2", 2, "带仓库前缀（LastIndex 取仓库地址后的 :v）"},
+		{":v0", 0, "v0 非法（n<1）"},
+		{"a:b:vabc", 0, "尾段非数字"},
+		{"no-colon-tag", 0, "无 :v 前缀"},
+		{"", 0, "空串"},
+	}
+	for _, c := range cases {
+		if n := versionOfImageTag(c.in); n != c.want {
+			t.Errorf("versionOfImageTag(%q)=%d, 期望 %d（%s）", c.in, n, c.want, c.desc)
+		}
+	}
+}
