@@ -83,7 +83,9 @@ func (h *Handler) MemberDetail(c *gin.Context) {
 
 // SessionMessages 某次互动的完整聊天记录（admin），文件优先 + live 兜底：
 // ① ReaderFor 直读工具 transcript 文件（opencode.db SQLite / claude-codex .jsonl）——
-//   实时落盘、进程死后文件仍在，解决"点开历史会话是空的"。
+//
+//	实时落盘、进程死后文件仍在，解决"点开历史会话是空的"。
+//
 // ② opencode 且文件缺失/会话尚未落盘时，降级 live HTTP（须进程存活）。
 func (h *Handler) SessionMessages(c *gin.Context) {
 	rec, err := h.store.SessionByID(c.Request.Context(), c.Param("sessionID"))
