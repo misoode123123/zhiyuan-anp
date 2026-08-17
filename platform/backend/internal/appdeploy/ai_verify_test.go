@@ -44,6 +44,24 @@ func TestVerifyAIResult_EachFailure(t *testing.T) {
 	}
 }
 
+// TestVerifyAIResult_HeadlessSkipPort headless 分支（I-1）：SkipPortCheck 跳过验证 3——
+// 无 -p 映射时 InspectHostPort 恒 0，若不跳过则与平台预分配端口比对必假失败。
+func TestVerifyAIResult_HeadlessSkipPort(t *testing.T) {
+	// SkipPortCheck=true + 读数 0：其余全好 → 无失败项
+	in := vInput(goodResult(), true, 0, "appdeploy/x-test:v11")
+	in.SkipPortCheck = true
+	if fails := verifyAIResult(in); len(fails) != 0 {
+		t.Fatalf("headless 跳端口验证应全过: %v", fails)
+	}
+	// 对照：SkipPortCheck=false + 读数 0 → 有「端口」失败项
+	in2 := vInput(goodResult(), true, 0, "appdeploy/x-test:v11")
+	in2.SkipPortCheck = false
+	fails := verifyAIResult(in2)
+	if len(fails) == 0 || !strings.Contains(strings.Join(fails, "; "), "端口") {
+		t.Fatalf("非 headless 端口读数 0 应有端口失败项，得到 %v", fails)
+	}
+}
+
 func TestHostPortOf(t *testing.T) {
 	// C-1：docker inspect 模板 {{...HostPort}}{{end}} 输出裸端口号（无冒号），
 	// 原实现要求含 ":" 才解析 → 恒 0 → 验证3 恒失败。两种形状都必须兼容。

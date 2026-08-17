@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"zhiyuan-anp/platform/backend/internal/config"
+	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
 func TestEngineFor(t *testing.T) {
@@ -19,6 +22,26 @@ func TestEngineFor(t *testing.T) {
 	}
 	if e := h.engineFor("ai", EnvProd); e != "fixed" {
 		t.Errorf("prod 恒 fixed，得到 %s", e)
+	}
+	// 第四例（M-2）：cfg 非 nil → system_config.deploy_engine 兜底。
+	// config.NewStore 只需 *sqlx.DB（无立即查询），Set 写缓存、Get 读缓存——
+	// 经 anp_test PG 可达（同 release/handler_test.go newCfgStore 模式）。
+	cfgDB := testutil.TestDB(t)
+	testutil.Truncate(t, cfgDB, "system_config")
+	h2 := &Handler{cfg: config.NewStore(cfgDB)}
+	if err := h2.cfg.Set(context.Background(), "deploy_engine", "ai", "general", ""); err != nil {
+		t.Fatalf("cfg set deploy_engine: %v", err)
+	}
+	if e := h2.engineFor("", EnvTest); e != "ai" {
+		t.Errorf("cfg=ai + test + 请求未指定应 ai，得到 %s", e)
+	}
+	// 显式请求覆盖系统配置
+	if e := h2.engineFor("fixed", EnvTest); e != "fixed" {
+		t.Errorf("显式 fixed 应覆盖 cfg=ai，得到 %s", e)
+	}
+	// cfg=ai 但 prod 仍 fixed
+	if e := h2.engineFor("", EnvProd); e != "fixed" {
+		t.Errorf("cfg=ai + prod 恒 fixed，得到 %s", e)
 	}
 }
 

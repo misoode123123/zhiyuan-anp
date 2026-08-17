@@ -1784,7 +1784,8 @@ func (h *Handler) Deploy(c *gin.Context) {
 	if h.standards != nil && repoDir != "" {
 		_ = h.standards.RefreshAgentsMD(c.Request.Context(), repoDir, psID, "")
 	}
-	// P2 AI 引擎分流：test 环境 + 本地节点 + 非按 deploy_engine 走 AI 或固定引擎。
+	// P2 AI 引擎分流：满足 test 环境 + 本地节点 + 非 host 网络 + deploy_engine 判定为 ai
+	// 时走 AI 引擎；否则走固定引擎（含显式/降级）。判定见 engineFor（显式请求 > system_config > fixed）。
 	// 固定引擎链 buildAndDeploy 一字不动；AI 引擎走 aiDeploy（简报→受限执行→五步验证）。
 	// host 网络排除：host 模式无 -p 映射，hostPortOf 恒读不到端口 → 验证 3 恒失败，AI 链对 host
 	// 恒假失败——不满足任一条件即走固定引擎（不报错，静默降级为既有链路）。
@@ -1802,7 +1803,7 @@ func (h *Handler) Deploy(c *gin.Context) {
 	if in.NodeID != "" && in.NodeID != "node_local" {
 		noteSuffix = "（节点 " + in.NodeID + "）"
 	}
-	httpx.OK(c, gin.H{"id": aid, "env": env, "status": "building", "note": "异步构建部署到 " + env + " 环境" + noteSuffix})
+	httpx.OK(c, gin.H{"id": aid, "env": env, "status": "building", "engine": "fixed", "note": "异步构建部署到 " + env + " 环境" + noteSuffix})
 }
 
 // Promote 上线：部署到 prod 环境（用户可访问）。

@@ -33,6 +33,32 @@ func TestBuildDeployBrief_ContainsHardRulesAndNoSecretValues(t *testing.T) {
 	}
 }
 
+// TestBuildDeployBrief_HeadlessNoPort headless 分支（I-1）：Port<=0 时端口行写 headless
+// 提示而非「宿主端口必须用: 0」——AI 看到 0 会误当合法端口加 -p 0。
+func TestBuildDeployBrief_HeadlessNoPort(t *testing.T) {
+	in := BriefInput{
+		AppName: "定时任务机器人", Slug: dockerSlug("定时任务机器人"), Env: EnvTest,
+		RepoDir: "/data/repos/app_2", BuildDir: "/data/repos/app_2", Version: "3",
+		Port: 0,
+	}
+	b := BuildDeployBrief(in)
+	if !strings.Contains(b, "headless 应用：无端口发布") {
+		t.Errorf("简报应含 headless 提示行:\n%s", b)
+	}
+	if strings.Contains(b, "端口必须用: 0") || strings.Contains(b, "端口 0") {
+		t.Errorf("简报不应出现「端口 0」（AI 会误当合法端口）:\n%s", b)
+	}
+	// 硬性规则的其余部分照常输出（容器名/镜像 tag 不受 headless 影响）
+	for _, want := range []string{
+		"appdeploy-" + in.Slug + "-test-v3",
+		"appdeploy/" + in.Slug + "-test:v3",
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("简报应含 %q:\n%s", want, b)
+		}
+	}
+}
+
 func TestLoadDeployResult_RoundTripAndMissing(t *testing.T) {
 	dir := t.TempDir()
 	if r, err := LoadDeployResult(dir); r != nil || err != nil {
