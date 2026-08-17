@@ -34,7 +34,11 @@ func BuildDeployBrief(in BriefInput) string {
 	b.WriteString("## 硬性规则（违反=部署判失败）\n\n")
 	fmt.Fprintf(&b, "- 容器名必须: appdeploy-%s-%s-v%s\n", in.Slug, in.Env, in.Version)
 	fmt.Fprintf(&b, "- 镜像 tag 必须: appdeploy/%s-%s:v%s\n", in.Slug, in.Env, in.Version)
-	fmt.Fprintf(&b, "- 宿主端口必须用: %d（已预留，不许自选）\n", in.Port)
+	if in.Port > 0 {
+		fmt.Fprintf(&b, "- 宿主端口必须用: %d（已预留，不许自选）\n", in.Port)
+	} else {
+		b.WriteString("- headless 应用：无端口发布（不加 -p，不占宿主端口）\n")
+	}
 	fmt.Fprintf(&b, "- 只能操作 name 前缀 appdeploy-%s- 的容器（先清理旧版本再起新的）\n", in.Slug)
 	if len(in.EnvKeys) > 0 {
 		fmt.Fprintf(&b, "- 密钥 %s 已注入你的环境变量，禁止把值写进任何文件/日志\n", strings.Join(in.EnvKeys, ", "))

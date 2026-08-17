@@ -17,9 +17,10 @@ import (
 const aiTimeout = 15 * time.Minute
 
 // aiOpencodeRun 可注入的 opencode 执行函数（生产=真实 exec；测试换 fake 写 deploy-result）。
-// 返回 stdout（已含 stderr 合并）。env 为受限环境（PATH 前置 shim + 密钥 + ANP_CONTAINER_PREFIX）。
-var aiOpencodeRun = func(ctx context.Context, dir, prompt string, env []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "opencode", "run", prompt, "-m", "zai-coding/glm-5.1", "--auto", "--dir", dir)
+// 返回 stdout（已含 stderr 合并）。model 为部署模型（aiDeploy 经 aiModel() 解析，非硬编码）。
+// env 为受限环境（PATH 前置 shim + 密钥 + ANP_CONTAINER_PREFIX）。
+var aiOpencodeRun = func(ctx context.Context, dir, prompt, model string, env []string) (string, error) {
+	cmd := exec.CommandContext(ctx, "opencode", "run", prompt, "-m", model, "--auto", "--dir", dir)
 	cmd.Dir = dir
 	cmd.Env = env
 	var out strings.Builder
@@ -39,6 +40,27 @@ func (h *Handler) aiModel() string {
 	return "zai-coding/glm-5.1"
 }
 
+// aiInspect 可注入的容器实态读数（测试 fake；nil=真实 docker inspect 三连读）。
+var aiInspect func(ctx context.Context, h *Handler, container string) (running bool, hostPort int, image string)
+
+// aiInspectRead 读容器实态三读数（running/宿主端口/镜像）。包级 aiInspect 非 nil 时用之。
+func aiInspectRead(ctx context.Context, h *Handler, container string) (bool, int, string) {
+	if aiInspect != nil {
+		return aiInspect(ctx, h, container)
+	}
+	running := false
+	if ch, err := h.deployer.InspectHealth(ctx, container); err == nil {
+		running = ch.Running
+	}
+	return running, h.hostPortOf(ctx, container), mustInspectImage(ctx, h, container)
+}
+
+// mustInspectImage 读容器镜像引用；读不到（容器不存在等）返回空串（验证步判失败）。
+func mustInspectImage(ctx context.Context, h *Handler, container string) string {
+	img, _ := h.deployer.InspectImage(ctx, container)
+	return img
+}
+
 // verifyInput 五步验证输入（result 自报 + 容器实态三读数）。
 type verifyInput struct {
 	Result             *DeployResult
@@ -47,11 +69,13 @@ type verifyInput struct {
 	InspectRunning     bool
 	InspectHostPort    int
 	InspectImage       string
+	SkipPortCheck      bool // headless：无端口发布，跳过验证 3（端口比对）
 }
 
 // verifyAIResult 五步验证（spec §4，纯函数）：返回失败项清单（空=全过）。
 // 1 result 存在且合规；2 容器 Running；3 容器名/宿主端口 == 平台规则；
 // 4 Running 即存活（InspectHealth 语义，见计划「设计精化」第 3 条）；5 容器实态镜像 == result.image。
+// SkipPortCheck（headless）时跳过验证 3——无 -p 映射，hostPortOf 恒读不到，比对必假失败。
 func verifyAIResult(in verifyInput) []string {
 	var fails []string
 	if err := ValidateResult(in.Result, in.Slug, in.Env, in.Version, in.Port); err != nil {
@@ -60,7 +84,7 @@ func verifyAIResult(in verifyInput) []string {
 	if !in.InspectRunning {
 		fails = append(fails, fmt.Sprintf("验证2 容器 %s 未运行（Running=false）", in.Result.Container))
 	}
-	if in.InspectHostPort != in.Port {
+	if !in.SkipPortCheck && in.InspectHostPort != in.Port {
 		fails = append(fails, fmt.Sprintf("验证3 宿主端口不符：容器绑定 %d，平台预分配 %d", in.InspectHostPort, in.Port))
 	}
 	if in.InspectImage != in.Result.Image {
@@ -138,16 +162,24 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	lastGoodImage := ins.Image
 
 	// 1. 版本自增 + 端口预分配（平台保留端口治理权，spec §2 要点）。
+	// headless（M-6）：无端口发布——不预分配宿主端口（port=0，简报端口行写 headless 提示），
+	// 验证段跳过端口比对（验证 3），对齐 Deployer.Deploy 的 headless 分支（无 -p 无 URL）。
 	ins.Version++
 	version := ins.Version
-	minP, maxP := h.deployer.envPortRange(env)
-	used := h.deployer.usedPortsOn(ctx, "")
-	port := AllocFreePort(used, minP, maxP)
-	if port == 0 {
-		h.aiFail(ctx, psID, a, ins, log, fmt.Sprintf("无可用宿主端口（%s 环境 %d-%d 已满）", env, minP, maxP))
-		return
+	port := 0
+	headless := a.AppKind == AppKindHeadless
+	if !headless {
+		minP, maxP := h.deployer.envPortRange(env)
+		used := h.deployer.usedPortsOn(ctx, "")
+		port = AllocFreePort(used, minP, maxP)
+		if port == 0 {
+			h.aiFail(ctx, psID, a, ins, log, fmt.Sprintf("无可用宿主端口（%s 环境 %d-%d 已满）", env, minP, maxP))
+			return
+		}
+		log.line(fmt.Sprintf("[平台] 版本 v%d，预分配宿主端口 %d", version, port))
+	} else {
+		log.line(fmt.Sprintf("[平台] 版本 v%d，headless 应用：无端口发布", version))
 	}
-	log.line(fmt.Sprintf("[平台] 版本 v%d，预分配宿主端口 %d", version, port))
 
 	// 2. 组装简报 + 写 deploy-brief.md
 	mf, mfErr := LoadDeployManifest(a.RepoDir)
@@ -209,7 +241,7 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 		base = append(base, "ZHIPUAI_API_KEY="+zhipuKey)
 	}
 	runEnv := restrictedEnv(base, shimDir, slug)
-	out, runErr := aiOpencodeRun(deployCtx, buildDir, prompt, runEnv)
+	out, runErr := aiOpencodeRun(deployCtx, buildDir, prompt, h.aiModel(), runEnv)
 	secrets := secretValues(envPairs)
 	if zhipuKey != "" {
 		secrets = append(secrets, zhipuKey)
@@ -221,18 +253,13 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 		return
 	}
 
-	// 4. 五步验证（容器实态，不信自报）
+	// 4. 五步验证（容器实态，不信自报）。headless 跳过验证 3（无端口发布，port=0 恒不匹配）。
 	result, _ := LoadDeployResult(buildDir)
 	container := fmt.Sprintf("appdeploy-%s-%s-v%d", slug, env, version)
-	running := false
-	if ch, err := h.deployer.InspectHealth(ctx, container); err == nil {
-		running = ch.Running
-	}
-	hostPort := h.hostPortOf(ctx, container)
-	img, _ := h.deployer.InspectImage(ctx, container)
+	running, hostPort, img := aiInspectRead(ctx, h, container)
 	fails := verifyAIResult(verifyInput{
 		Result: result, Slug: slug, Env: env, Version: strconv.Itoa(version), Port: port,
-		InspectRunning: running, InspectHostPort: hostPort, InspectImage: img,
+		InspectRunning: running, InspectHostPort: hostPort, InspectImage: img, SkipPortCheck: headless,
 	})
 	for _, f := range fails {
 		log.line("[验证失败] " + f)
@@ -244,11 +271,13 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	}
 	log.line("[平台] 五步验证全过")
 
-	// 5. 成功：从容器实态回填（spec §4——非 AI 自报）
+	// 5. 成功：从容器实态回填（spec §4——非 AI 自报）。headless 无端口/无 URL（零值）。
 	ins.Image = img
 	ins.ContainerName = container
-	ins.HostPort = hostPort
-	ins.URL = fmt.Sprintf("http://%s:%d", h.deployer.host, hostPort)
+	if !headless {
+		ins.HostPort = hostPort
+		ins.URL = fmt.Sprintf("http://%s:%d", h.deployer.host, hostPort)
+	}
 	ins.Status = "running"
 	ins.LastError = ""
 	ins.BuildLog = log.tail()
@@ -291,6 +320,10 @@ func (h *Handler) aiFail(ctx context.Context, psID string, a *Application, ins *
 // 版本计数器不回退（与 DriftReconciler「只升不降防版本号复用」一致）：本次 v{N} 失败，
 // 下次成功部署会是 v{N+1}——中间空号无害（镜像 tag 唯一性优先于连续性）。
 func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Application, ins *AppInstance, log *aiLog, mf *DeployManifest, env, slug, lastGoodImage string, reason string) {
+	// 失败原因先落日志（build_log）——之前只进 last_error，前端展开构建日志看不到 AI 失败/验证
+	// 失败的直接原因（只有回滚过程），排障要跨字段拼。reason 尾部可能被回滚补写（已回滚标注），
+	// 此处记录的是原始原因，补写段由下方 reason += 覆盖到 last_error。
+	log.line("[平台] " + reason)
 	log.line("[平台] 开始回滚（平台执行，非 AI）")
 	// 清理本次失败残留（AI 可能起了半截容器）
 	if _, err := h.deployer.RemoveByPrefix(ctx, "appdeploy-"+slug+"-"+env+"-"); err != nil {

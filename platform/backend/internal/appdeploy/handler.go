@@ -1637,6 +1637,7 @@ type deployBody struct {
 	NodeID        string `json:"node_id"`        // 可选：部署到指定节点（空=本地 .28，如 node_30）
 	FromWorkspace bool   `json:"from_workspace"` // 编码工作台发起：test 从 dev-<user> worktree 构建 + 未提交检测
 	AutoCommit    bool   `json:"auto_commit"`    // FromWorkspace 检测到未提交时，前端确认后传 true：先 AI 总结 + commit 再构建
+	Engine        string `json:"engine"`         // "ai"/"fixed" 显式指定（failed 后「固定引擎重试」传 fixed）；空=按 system_config.deploy_engine
 }
 
 // checkNodeDeployable 部署节点分流前置守卫（同步段显式报错，替代异步段静默回退）。
@@ -1782,6 +1783,18 @@ func (h *Handler) Deploy(c *gin.Context) {
 	}
 	if h.standards != nil && repoDir != "" {
 		_ = h.standards.RefreshAgentsMD(c.Request.Context(), repoDir, psID, "")
+	}
+	// P2 AI 引擎分流：test 环境 + 本地节点 + 非按 deploy_engine 走 AI 或固定引擎。
+	// 固定引擎链 buildAndDeploy 一字不动；AI 引擎走 aiDeploy（简报→受限执行→五步验证）。
+	// host 网络排除：host 模式无 -p 映射，hostPortOf 恒读不到端口 → 验证 3 恒失败，AI 链对 host
+	// 恒假失败——不满足任一条件即走固定引擎（不报错，静默降级为既有链路）。
+	localNode := in.NodeID == "" || in.NodeID == "node_local"
+	if localNode && a.NetworkMode != "host" && h.engineFor(in.Engine, env) == "ai" {
+		h.markPreparing(c.Request.Context(), psID, aid, env) // 同步标 preparing，前端立即看到进度条
+		go h.aiDeploy(psID, aid, env, buildDir)
+		httpx.OK(c, gin.H{"id": aid, "env": env, "status": "preparing", "engine": "ai",
+			"note": "异步 AI 部署到 " + env + " 环境（受限执行 + 平台验证）"})
+		return
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
 	go h.buildAndDeploy(psID, aid, "", env, in.NodeID, buildDir)
@@ -2167,6 +2180,32 @@ func (h *Handler) markBuilding(ctx context.Context, psID, aid, env string) {
 	_ = h.store.SetStatus(ctx, psID, aid, "building", "", "")
 	if _, err := h.store.GetOrCreateInstance(ctx, aid, env); err == nil {
 		_ = h.store.SetInstanceStatus(ctx, aid, env, "building", "", "")
+	}
+}
+
+// engineFor 引擎判定（spec §1）：显式请求 > system_config.deploy_engine > fixed。
+// ai 仅 test 生效（prod 恒 fixed）；远程节点 / host 网络排除在 Deploy handler 分流处判
+// （engineFor 只看 env——纯函数可单测，节点与网络约束依赖请求/应用上下文）。
+func (h *Handler) engineFor(reqEngine, env string) string {
+	e := reqEngine
+	if e == "" && h.cfg != nil {
+		e = h.cfg.Get("deploy_engine", "fixed")
+	}
+	if e != "ai" {
+		return "fixed"
+	}
+	if env != EnvTest {
+		return "fixed"
+	}
+	return "ai"
+}
+
+// markPreparing AI 引擎专用前置状态（组装简报+AI 执行中）；仿 markBuilding。
+// preparing 语义上属于 building 的一种（前端两者同展示），单列以便审计 AI 部署在途。
+func (h *Handler) markPreparing(ctx context.Context, psID, aid, env string) {
+	_ = h.store.SetStatus(ctx, psID, aid, "preparing", "", "")
+	if _, err := h.store.GetOrCreateInstance(ctx, aid, env); err == nil {
+		_ = h.store.SetInstanceStatus(ctx, aid, env, "preparing", "", "")
 	}
 }
 
