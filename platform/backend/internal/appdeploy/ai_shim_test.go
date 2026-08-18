@@ -26,9 +26,9 @@ func TestShimAllow(t *testing.T) {
 	}
 	// 拒绝组
 	for _, args := range [][]string{
-		{"docker", "stop", "deploy_backend"},               // 他人容器
-		{"docker", "rm", "-f", "deploy_postgres_1"},        // 平台容器
-		{"docker", "stop", "appdeploy-x-test-v1", "deploy_backend_1"}, // 多目标走私：首参合规、次参越权
+		{"docker", "stop", "deploy_backend"},                               // 他人容器
+		{"docker", "rm", "-f", "deploy_postgres_1"},                        // 平台容器
+		{"docker", "stop", "appdeploy-x-test-v1", "deploy_backend_1"},      // 多目标走私：首参合规、次参越权
 		{"docker", "rm", "-f", "appdeploy-x-test-v1", "deploy_postgres_1"}, // 多目标走私（含 flag）
 		{"docker", "rm"},                                   // 无目标（rm 无名 → 拒绝）
 		{"docker", "system", "prune", "-a"},                // 危险子命令

@@ -76,7 +76,7 @@ type DeployStatsResult struct {
 	Daily   []DailyCount  `json:"daily"`
 }
 
-// EngineStats 单引擎聚合。MedSec 为中位耗时（偶数个取中间偏小，展示用）。
+// EngineStats 单引擎聚合。MedSec 为中位耗时（偶数个取中间偏大者：sorted[len/2]，展示用）。
 type EngineStats struct {
 	Engine    string    `json:"engine"`
 	Success   int       `json:"success"`

@@ -3,29 +3,43 @@ package appdeploy
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
 // newHistStore 建干净 deploy_history 环境（truncate 独立，防与其它 fixture 串数据）。
+// 000038 起 deploy_history.app_id 有 FK 指向 appdeploy_application，
+// 故连带清 app 三表并要求 Store 层测试先 seedHistApp 建真实应用行。
 func newHistStore(t *testing.T) *Store {
 	t.Helper()
 	db := testutil.TestDB(t)
-	testutil.Truncate(t, db, "deploy_history")
+	testutil.Truncate(t, db, "deploy_history", "appdeploy_env", "appdeploy_instance", "appdeploy_application")
 	return NewStore(db)
+}
+
+// seedHistApp 建一条真实应用行，返回其 ID（deploy_history.app_id FK 要求挂真 app）。
+func seedHistApp(t *testing.T, s *Store, name string) *Application {
+	t.Helper()
+	a := mkApp("ps_1", name)
+	if err := s.Create(context.Background(), a); err != nil {
+		t.Fatalf("seed app %s: %v", name, err)
+	}
+	return a
 }
 
 // TestDeployHistory_InsertFinishRoundtrip 一行=一次尝试：INSERT 在途 → Finish 终态。
 func TestDeployHistory_InsertFinishRoundtrip(t *testing.T) {
 	s := newHistStore(t)
 	ctx := context.Background()
+	app := seedHistApp(t, s, "hist-rt")
 
-	if err := s.InsertDeployHistory(ctx, "app_x", EnvTest, 3, "fixed", "yxt", ""); err != nil {
+	if err := s.InsertDeployHistory(ctx, app.ID, EnvTest, 3, "fixed", "yxt", ""); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	// 在途行：result=''，duration/finished 为 NULL
-	items, err := s.ListDeployHistoryByApp(ctx, "app_x", 20)
+	items, err := s.ListDeployHistoryByApp(ctx, app.ID, 20)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("在途应 1 行: %v %v", items, err)
 	}
@@ -33,10 +47,10 @@ func TestDeployHistory_InsertFinishRoundtrip(t *testing.T) {
 		t.Fatalf("在途行应为空 result/nil duration: %+v", items[0])
 	}
 	// 终结 success
-	if err := s.FinishDeployHistory(ctx, "app_x", EnvTest, 3, "success", "", "", "appdeploy/x-test:v3", 9100); err != nil {
+	if err := s.FinishDeployHistory(ctx, app.ID, EnvTest, 3, "success", "", "", "appdeploy/x-test:v3", 9100); err != nil {
 		t.Fatalf("finish: %v", err)
 	}
-	items, _ = s.ListDeployHistoryByApp(ctx, "app_x", 20)
+	items, _ = s.ListDeployHistoryByApp(ctx, app.ID, 20)
 	if len(items) != 1 || items[0].Result != "success" || items[0].DurationSec == nil || *items[0].DurationSec < 0 {
 		t.Fatalf("终态行: %+v", items[0])
 	}
@@ -44,8 +58,8 @@ func TestDeployHistory_InsertFinishRoundtrip(t *testing.T) {
 		t.Fatalf("成功行应记实态镜像/端口: %+v", items[0])
 	}
 	// 重复终结 no-op（result='' 守卫）：再次 finish failed 不覆写
-	_ = s.FinishDeployHistory(ctx, "app_x", EnvTest, 3, "failed", "later", "", "", 0)
-	items, _ = s.ListDeployHistoryByApp(ctx, "app_x", 20)
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 3, "failed", "later", "", "", 0)
+	items, _ = s.ListDeployHistoryByApp(ctx, app.ID, 20)
 	if items[0].Result != "success" {
 		t.Fatalf("已终态行不得被覆写: %+v", items[0])
 	}
@@ -55,16 +69,17 @@ func TestDeployHistory_InsertFinishRoundtrip(t *testing.T) {
 func TestDeployHistory_OrphanFiltered(t *testing.T) {
 	s := newHistStore(t)
 	ctx := context.Background()
-	_ = s.InsertDeployHistory(ctx, "app_o", EnvTest, 1, "ai", "yxt", "")
+	app := seedHistApp(t, s, "hist-orphan")
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "ai", "yxt", "")
 	// backdate 成孤儿
-	if _, err := s.db.Exec(`UPDATE deploy_history SET created_at = NOW() - interval '31 minutes' WHERE app_id='app_o'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE deploy_history SET created_at = NOW() - interval '31 minutes' WHERE app_id=$1`, app.ID); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
-	_ = s.InsertDeployHistory(ctx, "app_o", EnvTest, 2, "ai", "yxt", "") // 在途（新）
-	_ = s.InsertDeployHistory(ctx, "app_o", EnvTest, 3, "ai", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_o", EnvTest, 3, "failed", "boom", "", "", 0)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 2, "ai", "yxt", "") // 在途（新）
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 3, "ai", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 3, "failed", "boom", "", "", 0)
 
-	items, err := s.ListDeployHistoryByApp(ctx, "app_o", 20)
+	items, err := s.ListDeployHistoryByApp(ctx, app.ID, 20)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -77,12 +92,61 @@ func TestDeployHistory_OrphanFiltered(t *testing.T) {
 func TestDeployHistory_OperatorNormalized(t *testing.T) {
 	s := newHistStore(t)
 	ctx := context.Background()
-	if err := s.InsertDeployHistory(ctx, "app_n", EnvTest, 1, "fixed", "", ""); err != nil {
+	app := seedHistApp(t, s, "hist-opnorm")
+	if err := s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "", ""); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	items, _ := s.ListDeployHistoryByApp(ctx, "app_n", 20)
+	items, _ := s.ListDeployHistoryByApp(ctx, app.ID, 20)
 	if len(items) != 1 || items[0].Operator != "unknown" {
 		t.Fatalf("空 operator 应归一 unknown: %+v", items)
+	}
+}
+
+// TestDeployHistory_FkCascadeDeleteApp 000038 约束回归：删应用级联清 deploy_history
+// （与其余 5 张 app 关联表对齐，统计不再残留孤儿行）。
+func TestDeployHistory_FkCascadeDeleteApp(t *testing.T) {
+	s := newHistStore(t)
+	ctx := context.Background()
+	app := seedHistApp(t, s, "hist-fk")
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 1, "success", "", "", "img:v1", 9100)
+
+	if err := s.Delete(ctx, "ps_1", app.ID); err != nil {
+		t.Fatalf("delete app: %v", err)
+	}
+	items, err := s.ListDeployHistoryByApp(ctx, app.ID, 20)
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("删应用应级联清历史（FK CASCADE），仍剩 %d 行: %+v", len(items), items)
+	}
+}
+
+// TestDeployHistory_InflightUnique 000038 约束回归：同键 (app_id,env,version) 至多一行
+// 在途——并发双击/复合故障双 INSERT 从源头消灭；终态行不占位，同版本可再插新在途行。
+// INSERT 冲突报错由调用点 zap.Warn 吞掉（best-effort 不破），此处断言约束本身。
+func TestDeployHistory_InflightUnique(t *testing.T) {
+	s := newHistStore(t)
+	ctx := context.Background()
+	app := seedHistApp(t, s, "hist-uniq")
+
+	if err := s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "yxt", ""); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	// 同键第二行在途 → 唯一索引拦截
+	if err := s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "yxt", ""); err == nil {
+		t.Fatal("同键双在途应被 uq_dephist_inflight 拒绝")
+	}
+	// 终结后（result≠''）唯一索引不再占位：同键可再插（版本计数器只升不降时正常不会走到，
+	// 但约束语义上不能阻碍补录/重试）
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 1, "failed", "boom", "", "", 0)
+	if err := s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "yxt", ""); err != nil {
+		t.Fatalf("终态行不应占在途唯一位: %v", err)
+	}
+	// 孤儿 app_id 被 FK 拦截（杜绝新增孤儿）
+	if err := s.InsertDeployHistory(ctx, "app_ghost", EnvTest, 1, "fixed", "yxt", ""); err == nil {
+		t.Fatal("孤儿 app_id 应被 deploy_history_app_fk 拒绝")
 	}
 }
 
@@ -90,22 +154,23 @@ func TestDeployHistory_OperatorNormalized(t *testing.T) {
 func TestDeployStats_Aggregation(t *testing.T) {
 	s := newHistStore(t)
 	ctx := context.Background()
+	app := seedHistApp(t, s, "hist-agg")
 	// fixed: 2 成功（60s, 100s）1 失败（30s, err="docker build 失败: exit status 1"）
-	_ = s.InsertDeployHistory(ctx, "app_s", EnvTest, 1, "fixed", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_s", EnvTest, 1, "success", "", "", "img:v1", 9100)
-	_ = s.InsertDeployHistory(ctx, "app_s", EnvTest, 2, "fixed", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_s", EnvTest, 2, "success", "", "", "img:v2", 9100)
-	_ = s.InsertDeployHistory(ctx, "app_s", EnvTest, 3, "fixed", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_s", EnvTest, 3, "failed", "docker build 失败: exit status 1", "", "", 0)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 1, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 1, "success", "", "", "img:v1", 9100)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 2, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 2, "success", "", "", "img:v2", 9100)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 3, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 3, "failed", "docker build 失败: exit status 1", "", "", 0)
 	// ai: 1 成功 1 失败（同 err 片段 "docker"）
-	_ = s.InsertDeployHistory(ctx, "app_s", EnvTest, 4, "ai", "ai-op", "")
-	_ = s.FinishDeployHistory(ctx, "app_s", EnvTest, 4, "success", "", "", "img:v4", 9100)
-	_ = s.InsertDeployHistory(ctx, "app_s", EnvTest, 5, "ai", "ai-op", "")
-	_ = s.FinishDeployHistory(ctx, "app_s", EnvTest, 5, "failed", "docker run 失败: port 已占用", "已自动回滚", "", 0)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 4, "ai", "ai-op", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 4, "success", "", "", "img:v4", 9100)
+	_ = s.InsertDeployHistory(ctx, app.ID, EnvTest, 5, "ai", "ai-op", "")
+	_ = s.FinishDeployHistory(ctx, app.ID, EnvTest, 5, "failed", "docker run 失败: port 已占用", "已自动回滚", "", 0)
 	// 时长用 SQL 回填：直接 UPDATE duration_sec 造确定值（Finish 按真实时钟，测试不可假设）
 	if _, err := s.db.Exec(`UPDATE deploy_history SET duration_sec = CASE version
 		WHEN 1 THEN 60 WHEN 2 THEN 100 WHEN 3 THEN 30 WHEN 4 THEN 200 WHEN 5 THEN 40 END
-		WHERE app_id='app_s'`); err != nil {
+		WHERE app_id=$1`, app.ID); err != nil {
 		t.Fatalf("fix durations: %v", err)
 	}
 
@@ -172,12 +237,14 @@ func TestDeployStats_Empty(t *testing.T) {
 func TestDeployStats_DaysClamped(t *testing.T) {
 	s := newHistStore(t)
 	ctx := context.Background()
-	_ = s.InsertDeployHistory(ctx, "app_c", EnvTest, 1, "fixed", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_c", EnvTest, 1, "success", "", "", "img", 1)
+	appC := seedHistApp(t, s, "hist-clamp")
+	appOld := seedHistApp(t, s, "hist-clamp-old")
+	_ = s.InsertDeployHistory(ctx, appC.ID, EnvTest, 1, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, appC.ID, EnvTest, 1, "success", "", "", "img", 1)
 	// 91 天前的行：days=90 窗外
-	_ = s.InsertDeployHistory(ctx, "app_old", EnvTest, 1, "fixed", "yxt", "")
-	_ = s.FinishDeployHistory(ctx, "app_old", EnvTest, 1, "success", "", "", "img", 1)
-	if _, err := s.db.Exec(`UPDATE deploy_history SET created_at = NOW() - interval '91 days' WHERE app_id='app_old'`); err != nil {
+	_ = s.InsertDeployHistory(ctx, appOld.ID, EnvTest, 1, "fixed", "yxt", "")
+	_ = s.FinishDeployHistory(ctx, appOld.ID, EnvTest, 1, "success", "", "", "img", 1)
+	if _, err := s.db.Exec(`UPDATE deploy_history SET created_at = NOW() - interval '91 days' WHERE app_id=$1`, appOld.ID); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 	res, err := s.DeployStats(ctx, 0) // 钳到 1
@@ -273,6 +340,10 @@ func TestDeployHistory_AiChainFailRollbackNotes(t *testing.T) {
 	if items[0].ErrorSummary == "" {
 		t.Fatalf("失败行应记 error_summary: %+v", items[0])
 	}
+	// AI 链失败经 aiFailWithRollback：notes 固定记自动回滚标记（spec：回滚不稀释失败率）
+	if !strings.Contains(items[0].Notes, "自动回滚") {
+		t.Fatalf("失败行 notes 应含自动回滚记录: %+v", items[0])
+	}
 }
 
 // TestTopErrorFragments 分词词频：标点切 + ≥4 rune 片段 + topN + 大小写归一。
@@ -321,7 +392,8 @@ func TestDetail_DeployHistorySection(t *testing.T) {
 	}
 }
 
-// TestHandler_DeployStatsAPI 统计 API：days 钳制 + 空表 200 零值。
+// TestHandler_DeployStatsAPI 统计 API：空表 200 零值（days 钳制由 Store 层
+// TestDeployStats_DaysClamped 覆盖，此处只测 HTTP 层空表不 500）。
 func TestHandler_DeployStatsAPI(t *testing.T) {
 	h, _ := newHTTPHandler(t)
 	r := newRouterWith(h)
