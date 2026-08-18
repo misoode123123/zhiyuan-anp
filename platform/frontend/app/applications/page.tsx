@@ -126,6 +126,19 @@ type Detail = {
     ports: number[];
     command: string;
   };
+  // P3：部署历史（后端 deploy_history，最近 20 条，时间线用）
+  deploy_history: {
+    id: number;
+    env: string;
+    version: number;
+    engine: string; // fixed / ai
+    result: string; // ''=在途 / success / failed
+    operator: string;
+    duration_sec?: number | null;
+    error_summary?: string;
+    notes?: string;
+    created_at: string;
+  }[];
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -2107,6 +2120,56 @@ export default function ApplicationsPage() {
                       ))}
                       {(detail.instances ?? []).length === 0 && (
                         <div className="text-text-muted">无实例</div>
+                      )}
+                      {/* P3：部署历史时间线（最近 20 条，可折叠） */}
+                      {detail.deploy_history && detail.deploy_history.length > 0 && (
+                        <div className="mt-1">
+                          <details>
+                            <summary className="cursor-pointer text-text-muted">
+                              部署历史（{detail.deploy_history.length}）
+                            </summary>
+                            <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
+                              {detail.deploy_history.map((dh) => (
+                                <div key={dh.id} className="flex items-center gap-1 text-xs">
+                                  <span className="text-text-muted">
+                                    {new Date(dh.created_at).toLocaleString("zh-CN", {
+                                      hour12: false,
+                                    })}
+                                  </span>
+                                  <span className="rounded bg-surface-2 px-1">v{dh.version}</span>
+                                  <span title={dh.engine === "ai" ? "AI 引擎" : "固定引擎"}>
+                                    {dh.engine === "ai" ? "🤖" : "🔧"}
+                                  </span>
+                                  <span
+                                    className={
+                                      dh.result === "success"
+                                        ? "text-success"
+                                        : dh.result === "failed"
+                                          ? "text-danger"
+                                          : "text-warn"
+                                    }
+                                  >
+                                    {dh.result === "success"
+                                      ? "成功"
+                                      : dh.result === "failed"
+                                        ? "失败"
+                                        : "部署中…"}
+                                  </span>
+                                  {dh.duration_sec != null && <span>{dh.duration_sec}s</span>}
+                                  <span className="text-text-muted">{dh.operator}</span>
+                                  {(dh.error_summary || dh.notes) && (
+                                    <span
+                                      className="text-text-muted"
+                                      title={`${dh.error_summary ?? ""}${dh.notes ? "\n" + dh.notes : ""}`}
+                                    >
+                                      ⓘ
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
                       )}
                       <div className="mt-1 text-text-muted">发布（{detail.releases.length}）</div>
                       {detail.releases.slice(0, 3).map((r) => (

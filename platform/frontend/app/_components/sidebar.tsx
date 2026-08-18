@@ -8,6 +8,7 @@ const NAV = [
   { href: "/testing", label: "测试中心", icon: "🧪" },
   { href: "/release", label: "发布中心", icon: "🚀" },
   { href: "/ops", label: "运维中心", icon: "🛠️" },
+  { href: "/ops/deploy-stats", label: "部署统计", icon: "📈" },
   { href: "/governance", label: "规则治理", icon: "⭐" },
   { href: "/quota", label: "项目配额", icon: "📊" },
   { href: "/security", label: "安全合规", icon: "🛡️" },
