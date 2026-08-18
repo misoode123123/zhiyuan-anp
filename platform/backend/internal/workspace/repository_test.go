@@ -8,17 +8,28 @@ import (
 	"zhiyuan-anp/platform/backend/internal/testutil"
 )
 
-// newTestRepo 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 Overview 聚合涉及的 7 表隔离。
+// newTestRepo 连 anp_test PG（testutil 跑迁移建平台全表）+ 清 Overview 聚合涉及的表隔离。
 // 涉及 project_space(根)/project/membership(FK→ps) + Overview COUNT 引用的
 // appdeploy_application/requirement/change_request/release_record。
 // 替代 sqlite :memory:（sqlite 漏 PG 类型 bug + FK 默认不强制；见 memory sqlite-test-pg-type-trap）。
+//
+// project_space 用 DELETE 而非 Truncate(RESTART IDENTITY CASCADE)：
+// TRUNCATE CASCADE 会沿 FK 连带整表清空所有引用表——包括 mwsupply 种子
+// appdeploy_service_instance（其 project_space_id 为 NULL 的平台级行也难逃），
+// 共享 anp_test 库上 workspace 跑过一次后 mwsupply 全量必挂（CI 一次性容器才没暴露）。
+// DELETE 只删真实存在的行，NULL ps 的种子存活；project/membership 仍可 Truncate。
+// conversation→ps 的 FK 无 ON DELETE CASCADE，须先行清 message/conversation。
 func newTestRepo(t *testing.T) *Repository {
 	t.Helper()
 	db := testutil.TestDB(t)
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement", "appdeploy_application",
-		"membership", "project", "project_space",
+		"membership", "project",
 	)
+	testutil.Truncate(t, db, "message", "conversation")
+	if _, err := db.Exec(`DELETE FROM project_space`); err != nil {
+		t.Fatalf("delete project_space: %v", err)
+	}
 	return NewRepository(db)
 }
 

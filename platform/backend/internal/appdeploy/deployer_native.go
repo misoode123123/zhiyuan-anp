@@ -11,19 +11,20 @@ import (
 // NativeDeployer 按部署描述生成脚本、经 RemoteExecutor 执行（非容器原生部署）。
 type NativeDeployer struct{}
 
-// DeployResult 部署执行结果。
-type DeployResult struct {
+// NativeDeployResult 原生（非容器）部署执行结果。
+// 注：原名 DeployResult，AI 直接部署引擎（ai_brief.go）引入 AI 回报模型后让出该名。
+type NativeDeployResult struct {
 	Log      string `json:"log"`
 	ExitCode int    `json:"exit_code"`
 }
 
 // Deploy 渲染脚本 + 传文件 + 执行 + 健康检查。
-func (d *NativeDeployer) Deploy(ctx context.Context, app *Application, node *DeployNode, exec RemoteExecutor, desc *DeployDesc) (DeployResult, error) {
+func (d *NativeDeployer) Deploy(ctx context.Context, app *Application, node *DeployNode, exec RemoteExecutor, desc *DeployDesc) (NativeDeployResult, error) {
 	// 0. 预创建 transfer 目标目录（PutFile 写文件前父目录须存在，否则 Windows WriteAllBytes
 	//    / Linux base64 重定向因路径缺失失败）。run 脚本里的 New-Item/mkdir 在 PutFile 之后，
 	//    故这里先建。
 	if err := d.ensureTransferDirs(ctx, node, exec, desc); err != nil {
-		return DeployResult{}, fmt.Errorf("create transfer dirs: %w", err)
+		return NativeDeployResult{}, fmt.Errorf("create transfer dirs: %w", err)
 	}
 	// 1. 逐 transfer 步 PutFile 产物
 	for _, s := range desc.Steps {
@@ -37,26 +38,26 @@ func (d *NativeDeployer) Deploy(ctx context.Context, app *Application, node *Dep
 		}
 		files, err := filepath.Glob(pattern)
 		if err != nil {
-			return DeployResult{}, fmt.Errorf("glob %s: %w", pattern, err)
+			return NativeDeployResult{}, fmt.Errorf("glob %s: %w", pattern, err)
 		}
 		for _, f := range files {
 			remote := joinRemotePath(s.Transfer.To, filepath.Base(f), node.OSType)
 			if err := exec.PutFile(ctx, f, remote); err != nil {
-				return DeployResult{}, fmt.Errorf("put %s: %w", f, err)
+				return NativeDeployResult{}, fmt.Errorf("put %s: %w", f, err)
 			}
 		}
 	}
 	// 2. 渲染脚本 + 执行
 	script, err := RenderScript(node, desc)
 	if err != nil {
-		return DeployResult{}, fmt.Errorf("render script: %w", err)
+		return NativeDeployResult{}, fmt.Errorf("render script: %w", err)
 	}
 	out, _, exit, err := exec.Run(ctx, script)
 	if err != nil {
-		return DeployResult{Log: out, ExitCode: exit}, err
+		return NativeDeployResult{Log: out, ExitCode: exit}, err
 	}
 	// 3. healthcheck 已在脚本里，由 exit 判定
-	return DeployResult{Log: out, ExitCode: exit}, nil
+	return NativeDeployResult{Log: out, ExitCode: exit}, nil
 }
 
 // ensureTransferDirs 在 PutFile 前预创建所有 transfer 步的目标目录。

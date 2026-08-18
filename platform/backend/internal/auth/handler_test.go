@@ -20,9 +20,9 @@ func TestValidUsername(t *testing.T) {
 		{"dev01", true},
 		{"a1", true},
 		// 长度边界：2-64 合法
-		{"a", false},                    // 太短(<2)
-		{"", false},                     // 空
-		{strings.Repeat("a", 64), true}, // 上限合法
+		{"a", false},                     // 太短(<2)
+		{"", false},                      // 空
+		{strings.Repeat("a", 64), true},  // 上限合法
 		{strings.Repeat("a", 65), false}, // 超长(>64)
 		// 碰撞型字符——这正是要防的坑（sanitize 会把它们都变成 '-'）
 		{"alice.bob", false}, // '.' → 与 alice-bob 撞串

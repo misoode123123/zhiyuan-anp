@@ -12,10 +12,14 @@ import (
 
 // newTestStore 连 anp_test PG（迁移建表含 000028 + .28 种子）+ 清绑定/env/应用表隔离。
 // 不清 appdeploy_service_instance：.28 种子（迁移插入）需保留供 LookupBindExisting。
+// ensureSeed 幂等补种：迁移已应用不会重跑，共享 anp_test 上种子若被历史测试抹掉
+// （如 workspace 曾用 TRUNCATE project_space CASCADE 连带清空引用表）在此自愈；
+// CI 一次性容器里种子本就在，ensureSeed 为 no-op，迁移断言强度不变。
 func newTestStore(t *testing.T) (*Store, *sqlx.DB) {
 	t.Helper()
 	db := testutil.TestDB(t)
 	testutil.Truncate(t, db, "appdeploy_service_binding", "appdeploy_env", "appdeploy_application")
+	ensureSeed(t, db)
 	return NewStore(db), db
 }
 
