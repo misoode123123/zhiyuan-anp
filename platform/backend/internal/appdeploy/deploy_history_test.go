@@ -195,6 +195,31 @@ func TestDeployStats_DaysClamped(t *testing.T) {
 	}
 }
 
+// TestDeployHistory_FixedChainFailPath 固定链失败路径：buildAndDeploy（无 docker 环境
+// Build 必失败）→ deploy_history 落 failed 行（result/errSummary/duration）。
+// 成功路径（result=success）本机无 docker 不可测，由 .28 e2e 验证（计划「实现精化」第 4 条）。
+func TestDeployHistory_FixedChainFailPath(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "hist-fail", t.TempDir())
+	h.buildAndDeploy("ps_1", a.ID, "", EnvTest, "", "", "yxt")
+
+	items, err := h.store.ListDeployHistoryByApp(ctx, a.ID, 20)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("应恰 1 行: %v %v", items, err)
+	}
+	it := items[0]
+	if it.Engine != "fixed" || it.Result != "failed" || it.Operator != "yxt" || it.Version != 1 {
+		t.Fatalf("失败行字段: %+v", it)
+	}
+	if it.ErrorSummary == "" {
+		t.Fatalf("失败行应记 error_summary: %+v", it)
+	}
+	if it.DurationSec == nil || *it.DurationSec < 0 {
+		t.Fatalf("失败行应有 duration: %+v", it)
+	}
+}
+
 // TestTopErrorFragments 分词词频：标点切 + ≥4 rune 片段 + topN + 大小写归一。
 func TestTopErrorFragments(t *testing.T) {
 	errs := []string{

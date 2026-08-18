@@ -1798,7 +1798,7 @@ func (h *Handler) Deploy(c *gin.Context) {
 		return
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, "", env, in.NodeID, buildDir)
+	go h.buildAndDeploy(psID, aid, "", env, in.NodeID, buildDir, c.GetString(auth.CtxUserID))
 	noteSuffix := ""
 	if in.NodeID != "" && in.NodeID != "node_local" {
 		noteSuffix = "（节点 " + in.NodeID + "）"
@@ -1867,7 +1867,7 @@ func (h *Handler) Promote(c *gin.Context) {
 		}
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, EnvProd) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, "", EnvProd, in.NodeID, "")
+	go h.buildAndDeploy(psID, aid, "", EnvProd, in.NodeID, "", c.GetString(auth.CtxUserID))
 	httpx.OK(c, gin.H{"id": aid, "env": EnvProd, "status": "building", "note": "上线中：部署到 prod 环境"})
 }
 
@@ -1912,7 +1912,7 @@ func (h *Handler) DeployCommit(c *gin.Context) {
 		return
 	}
 	h.markBuilding(c.Request.Context(), psID, aid, env) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(psID, aid, in.SHA, env, in.NodeID, "")
+	go h.buildAndDeploy(psID, aid, in.SHA, env, in.NodeID, "", c.GetString(auth.CtxUserID))
 	httpx.OK(c, gin.H{"id": aid, "sha": in.SHA, "env": env, "status": "building", "note": "版本化部署/回滚到 " + env})
 }
 
@@ -1927,8 +1927,11 @@ func validateEnvKeys(a *Application, mf *DeployManifest, envPairs []string, hasC
 
 // buildAndDeploy 后台执行（脱离 HTTP context）。sha 非空则部署该历史版本；env 指定环境。
 // buildDir 非空则从该目录构建（test 环境编码工作台传 dev-<user> worktree），空则用主仓 a.RepoDir。
-func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
+// operator 部署操作人（P3 部署历史落库；发布中心等系统触发传 "system"）。
+func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir, operator string) {
 	ctx := context.Background()
+	// P3 部署历史：本行版本号（INSERT 后赋值；panic 兜底用它判断有无行可终结）
+	histVer := 0
 	// panic 兜底：goroutine 内任何 panic 都回写 failed，避免状态永卡 building、build_log 为空
 	// （参照 dev/coding.go:92-99）。历史根因之一：docker build 卡死/无超时 + 无 recover → 一次异常永久挂起。
 	defer func() {
@@ -1940,6 +1943,11 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 				ins.Status = "failed"
 				ins.LastError = msg
 				_ = h.store.UpdateInstance(ctx, ins)
+			}
+			if histVer > 0 {
+				if e := h.store.FinishDeployHistory(ctx, aid, env, histVer, "failed", truncateStr(msg, 200), "panic 兜底终结", "", 0); e != nil {
+					zap.L().Warn("deploy_history panic 终结失败（不影响部署）", zap.String("app", aid), zap.Error(e))
+				}
 			}
 		}
 	}()
@@ -1969,6 +1977,12 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		h.markFailed(ctx, psID, a.ID, reason, "")
 		return
 	}
+	// P3 部署历史：开始行（在途）。版本预测=当前计数器+1（Deployer.Build 内自增后即此值；
+	// 计数器只升不降，同版本号不会重复尝试）。best-effort：失败仅 Warn，绝不阻塞部署。
+	histVer = ins.Version + 1
+	if e := h.store.InsertDeployHistory(ctx, a.ID, env, histVer, "fixed", operator, sha); e != nil {
+		zap.L().Warn("deploy_history 插入失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+	}
 	// I6 修复：原生部署分流 —— 若应用 RepoDir 含 deploy.yaml 且目标节点为 ssh/winrm，
 	// 走 NativeDeployer（非容器原生部署：传文件 + 渲染脚本 + 远程执行 + 健康检查），
 	// 不走 docker build/run。web 应用（无 deploy.yaml 或节点为 docker_tcp）仍走下方 docker 链路。
@@ -1981,6 +1995,14 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 					ins.LastError = nerr.Error()
 					_ = h.store.UpdateInstance(ctx, ins)
 					h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog)
+					if e := h.store.FinishDeployHistory(ctx, a.ID, env, histVer, "failed", truncateStr(nerr.Error(), 200), "原生部署失败", "", 0); e != nil {
+						zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+					}
+				} else {
+					// 原生部署成功：ins.HostPort=0/URL=node.Host（deployNative 已写）；image 无值传空串。
+					if e := h.store.FinishDeployHistory(ctx, a.ID, env, histVer, "success", "", "原生部署", ins.Image, ins.HostPort); e != nil {
+						zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+					}
 				}
 				return
 			}
@@ -2026,6 +2048,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		ins.BuildLog = tail(log, 2000)
 		_ = h.store.UpdateInstance(ctx, ins)
 		h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog) // 不限环境，前端立即看到失败 + 原因
+		// P3 部署历史：build 失败终态。
+		if e := h.store.FinishDeployHistory(ctx, a.ID, env, histVer, "failed", truncateStr(err.Error(), 200), "", "", 0); e != nil {
+			zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+		}
 		return
 	}
 	ins.Status = "building" // build 完成，进入 run 阶段
@@ -2074,6 +2100,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 		ins.LastError = dErr.Error()
 		_ = h.store.UpdateInstance(ctx, ins)
 		h.markFailed(ctx, psID, a.ID, ins.LastError, ins.BuildLog) // 不限环境，前端立即看到失败 + 原因
+		// P3 部署历史：run 失败终态。
+		if e := h.store.FinishDeployHistory(ctx, a.ID, env, histVer, "failed", truncateStr(dErr.Error(), 200), "", "", 0); e != nil {
+			zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+		}
 		return
 	}
 	ins.Status = "running"
@@ -2106,6 +2136,10 @@ func (h *Handler) buildAndDeploy(psID, aid, sha, env, nodeID, buildDir string) {
 			zap.L().Warn("appgw 路由表写入失败（部署仍成功）",
 				zap.String("app_id", a.ID), zap.String("env", env), zap.Error(err))
 		}
+	}
+	// P3 部署历史：成功终态（记实态镜像/端口）。
+	if e := h.store.FinishDeployHistory(ctx, a.ID, env, histVer, "success", "", "", ins.Image, ins.HostPort); e != nil {
+		zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
 	}
 	h.syncOverviewIfProd(ctx, a, env) // prod 同步部署态字段 + status=running
 	if env != EnvProd {
@@ -2496,7 +2530,7 @@ func (h *Handler) DeployByAppID(ctx context.Context, appID string) (*Application
 		return nil, errAppNotFound
 	}
 	h.markBuilding(ctx, a.ProjectSpaceID, appID, EnvTest) // 同步标 building，前端立即看到进度条
-	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest, "", "")
+	go h.buildAndDeploy(a.ProjectSpaceID, appID, "", EnvTest, "", "", "system")
 	return a, nil
 }
 
