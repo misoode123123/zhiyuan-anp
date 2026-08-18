@@ -68,13 +68,34 @@ export function NotifBell() {
   }, []);
 
   async function markRead(id: number) {
-    fetch(`${API_BASE_URL}/notifications/${id}/read`, { method: "PATCH" });
+    // 必须带 Authorization（load 同款）：曾漏带被 AuthUser 401 拒，乐观更新掩盖了
+    // 失败，刷新后未读复活。失败时回滚本地状态，不再掩盖。
+    fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${getAuthToken()}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+      })
+      .catch(() => {
+        // 回滚乐观更新，让徽标/条目回到真实未读态
+        setItems((prev) => prev.map((i) => (i.id === id ? { ...i, read: false } : i)));
+        setUnread((n) => n + 1);
+        load();
+      });
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, read: true } : i)));
     setUnread((n) => Math.max(0, n - 1));
   }
 
   async function markAllRead() {
-    fetch(`${API_BASE_URL}/notifications/read-all`, { method: "POST" });
+    fetch(`${API_BASE_URL}/notifications/read-all`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAuthToken()}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+      })
+      .catch(() => load());
     setItems((prev) => prev.map((i) => ({ ...i, read: true })));
     setUnread(0);
   }
