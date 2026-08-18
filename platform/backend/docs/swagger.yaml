@@ -1,5 +1,16 @@
 basePath: /api/v1
 definitions:
+  internal_appdeploy.DailyCount:
+    properties:
+      day:
+        type: string
+      engine:
+        type: string
+      failed:
+        type: integer
+      success:
+        type: integer
+    type: object
   internal_appdeploy.DepDeclaration:
     properties:
       error:
@@ -19,6 +30,41 @@ definitions:
         type: string
       token:
         description: 隔离 token（shared：db号/前缀）
+        type: string
+    type: object
+  internal_appdeploy.DeployStatsResult:
+    properties:
+      daily:
+        items:
+          $ref: '#/definitions/internal_appdeploy.DailyCount'
+        type: array
+      engines:
+        items:
+          $ref: '#/definitions/internal_appdeploy.EngineStats'
+        type: array
+    type: object
+  internal_appdeploy.EngineStats:
+    properties:
+      avg_sec:
+        type: integer
+      engine:
+        type: string
+      failed:
+        type: integer
+      med_sec:
+        type: integer
+      success:
+        type: integer
+      top_errors:
+        items:
+          $ref: '#/definitions/internal_appdeploy.ErrFreq'
+        type: array
+    type: object
+  internal_appdeploy.ErrFreq:
+    properties:
+      count:
+        type: integer
+      fragment:
         type: string
     type: object
   internal_appdeploy.createBody:
@@ -509,6 +555,25 @@ info:
   title: 智源 ANP 平台 API
   version: "1.0"
 paths:
+  /appdeploy/deploy-stats:
+    get:
+      parameters:
+      - description: 统计窗口天数（默认 30，钳制 1-90）
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 按引擎分组统计
+          schema:
+            $ref: '#/definitions/internal_appdeploy.DeployStatsResult'
+      security:
+      - BearerAuth: []
+      summary: 部署统计
+      tags:
+      - appdeploy
   /asr:
     post:
       consumes:

@@ -2505,7 +2505,7 @@ func (h *Handler) Stats(c *gin.Context) {
 // @Tags         appdeploy
 // @Produce      json
 // @Param        days  query  int  false  "统计窗口天数（默认 30，钳制 1-90）"
-// @Success      200   {object}  map[string]interface{}  "按引擎分组统计"
+// @Success      200   {object}  appdeploy.DeployStatsResult  "按引擎分组统计"
 // @Security     BearerAuth
 // @Router       /appdeploy/deploy-stats [get]
 func (h *Handler) DeployStatsAPI(c *gin.Context) {

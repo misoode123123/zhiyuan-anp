@@ -15,6 +15,38 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/appdeploy/deploy-stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "appdeploy"
+                ],
+                "summary": "部署统计",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "统计窗口天数（默认 30，钳制 1-90）",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "按引擎分组统计",
+                        "schema": {
+                            "$ref": "#/definitions/internal_appdeploy.DeployStatsResult"
+                        }
+                    }
+                }
+            }
+        },
         "/asr": {
             "post": {
                 "security": [
@@ -6755,6 +6787,23 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "internal_appdeploy.DailyCount": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "type": "string"
+                },
+                "engine": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_appdeploy.DepDeclaration": {
             "type": "object",
             "properties": {
@@ -6780,6 +6829,60 @@ const docTemplate = `{
                 },
                 "token": {
                     "description": "隔离 token（shared：db号/前缀）",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_appdeploy.DeployStatsResult": {
+            "type": "object",
+            "properties": {
+                "daily": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_appdeploy.DailyCount"
+                    }
+                },
+                "engines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_appdeploy.EngineStats"
+                    }
+                }
+            }
+        },
+        "internal_appdeploy.EngineStats": {
+            "type": "object",
+            "properties": {
+                "avg_sec": {
+                    "type": "integer"
+                },
+                "engine": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "med_sec": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "integer"
+                },
+                "top_errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_appdeploy.ErrFreq"
+                    }
+                }
+            }
+        },
+        "internal_appdeploy.ErrFreq": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "fragment": {
                     "type": "string"
                 }
             }

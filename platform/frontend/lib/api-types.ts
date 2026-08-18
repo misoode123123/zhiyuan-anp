@@ -4,6 +4,45 @@
  */
 
 export interface paths {
+    "/appdeploy/deploy-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 部署统计 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 统计窗口天数（默认 30，钳制 1-90） */
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 按引擎分组统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_appdeploy.DeployStatsResult"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/asr": {
         parameters: {
             query?: never;
@@ -7221,6 +7260,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        "internal_appdeploy.DailyCount": {
+            day?: string;
+            engine?: string;
+            failed?: number;
+            success?: number;
+        };
         "internal_appdeploy.DepDeclaration": {
             /** @description failed 时的 last_error */
             error?: string;
@@ -7234,6 +7279,22 @@ export interface components {
             strategy?: string;
             /** @description 隔离 token（shared：db号/前缀） */
             token?: string;
+        };
+        "internal_appdeploy.DeployStatsResult": {
+            daily?: components["schemas"]["internal_appdeploy.DailyCount"][];
+            engines?: components["schemas"]["internal_appdeploy.EngineStats"][];
+        };
+        "internal_appdeploy.EngineStats": {
+            avg_sec?: number;
+            engine?: string;
+            failed?: number;
+            med_sec?: number;
+            success?: number;
+            top_errors?: components["schemas"]["internal_appdeploy.ErrFreq"][];
+        };
+        "internal_appdeploy.ErrFreq": {
+            count?: number;
+            fragment?: string;
         };
         "internal_appdeploy.createBody": {
             /**
