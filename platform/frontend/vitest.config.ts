@@ -21,7 +21,12 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["lib/**/*.test.ts", "__tests__/**/*.test.ts"],
+          include: [
+            "lib/**/*.test.ts",
+            "__tests__/**/*.test.ts",
+            // 应用页内 _lib 纯函数（applications tab 化改版）：node 环境跑
+            "app/**/_lib/**/*.test.ts",
+          ],
         },
       },
       {
