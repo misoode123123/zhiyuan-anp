@@ -2,6 +2,7 @@ package appdeploy
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"zhiyuan-anp/platform/backend/internal/testutil"
@@ -293,5 +294,44 @@ func TestTopErrorFragments(t *testing.T) {
 	}
 	if len(topErrorFragments(nil, 5)) != 0 {
 		t.Fatal("空输入应空输出")
+	}
+}
+
+// TestDetail_DeployHistorySection Detail 聚合含 deploy_history 节（最近 20 条 + 空归一 []）。
+func TestDetail_DeployHistorySection(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "hist-detail", t.TempDir())
+	_ = h.store.InsertDeployHistory(ctx, a.ID, EnvTest, 1, "fixed", "yxt", "")
+	_ = h.store.FinishDeployHistory(ctx, a.ID, EnvTest, 1, "success", "", "", "img:v1", 9100)
+
+	d, err := h.store.Detail(ctx, "ps_1", a.ID)
+	if err != nil || d == nil {
+		t.Fatalf("detail: %v %v", d, err)
+	}
+	if len(d.DeployHistory) != 1 || d.DeployHistory[0].Version != 1 {
+		t.Fatalf("detail 应含 1 条历史: %+v", d.DeployHistory)
+	}
+
+	// 空应用（无历史）→ 空切片非 nil
+	b := seedApp(t, h, "ps_1", "no-hist", t.TempDir())
+	d2, _ := h.store.Detail(ctx, "ps_1", b.ID)
+	if d2.DeployHistory == nil || len(d2.DeployHistory) != 0 {
+		t.Fatalf("无历史应空切片: %+v", d2.DeployHistory)
+	}
+}
+
+// TestHandler_DeployStatsAPI 统计 API：days 钳制 + 空表 200 零值。
+func TestHandler_DeployStatsAPI(t *testing.T) {
+	h, _ := newHTTPHandler(t)
+	r := newRouterWith(h)
+	// 空表
+	code, resp := doReq(t, r, http.MethodGet, "/api/v1/appdeploy/deploy-stats?days=30", nil)
+	if code != 200 {
+		t.Fatalf("空表应 200，得 %d %v", code, resp)
+	}
+	eng, _ := resp["data"].(map[string]interface{})["engines"].([]interface{})
+	if len(eng) != 0 {
+		t.Fatalf("空表应 0 引擎组: %v", resp)
 	}
 }

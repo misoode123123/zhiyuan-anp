@@ -16,11 +16,12 @@ type AppFullView struct {
 	Commits      []CommitInfo    `json:"commits"`   // 托管 git 仓库的版本历史（= 应用代码版本）
 	Instances    []AppInstance   `json:"instances"` // 各环境部署实例（test/prod）
 	// P1-c 全景维度
-	Sessions    []AppSession     `json:"sessions"`     // 编码会话（codews_session by app_id）
-	Tasks       []AppTask        `json:"tasks"`        // 异步编码任务（code_task 经 change→app 派生）
-	Routes      []AppRoute       `json:"routes"`       // 路由（appdeploy_route by app_id）
-	Deps        []DepDeclaration `json:"deps"`         // 中间件依赖（handler 经 mwReconciler 填，Store 不填）
-	DeployNeeds *NeedsSpec       `json:"deploy_needs"` // .anp/deploy.yaml needs（权威输入，只读展示；无 manifest=nil）
+	Sessions      []AppSession        `json:"sessions"`       // 编码会话（codews_session by app_id）
+	Tasks         []AppTask           `json:"tasks"`          // 异步编码任务（code_task 经 change→app 派生）
+	Routes        []AppRoute          `json:"routes"`         // 路由（appdeploy_route by app_id）
+	Deps          []DepDeclaration    `json:"deps"`           // 中间件依赖（handler 经 mwReconciler 填，Store 不填）
+	DeployNeeds   *NeedsSpec          `json:"deploy_needs"`   // .anp/deploy.yaml needs（权威输入，只读展示；无 manifest=nil）
+	DeployHistory []DeployHistoryItem `json:"deploy_history"` // P3 部署历史（最近 20 条，含在途）
 }
 
 // AppSession 编码会话摘要（codews_session 子集，前端研发列用）。
@@ -137,6 +138,8 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppFullView, e
 	d.Routes, _ = s.ListRoutesByApp(ctx, appID)
 	// P1-c：异步编码任务（code_task 经 change_request→app 派生）
 	d.Tasks, _ = s.ListTasksByApp(ctx, appID)
+	// P3：部署历史（最近 20 条；孤儿过滤；best-effort）
+	d.DeployHistory, _ = s.ListDeployHistoryByApp(ctx, appID, 20)
 	// P1-c：部署需求 needs（.anp/deploy.yaml 权威输入，只读；best-effort，无 manifest=nil）。
 	// normalizeNeeds 归一 nil 切片→空数组（needs:{} 反序列化得 nil），配无 omitempty 的 json tag
 	// 序列化出 []（非 null/省略），防前端 deploy_needs.ports.length 命中 undefined 崩（yxt-eino-v2 回归）。
@@ -153,6 +156,7 @@ func (s *Store) Detail(ctx context.Context, psID, appID string) (*AppFullView, e
 	d.Sessions = norm(d.Sessions)
 	d.Routes = norm(d.Routes)
 	d.Tasks = norm(d.Tasks)
+	d.DeployHistory = norm(d.DeployHistory)
 	d.Deps = norm(d.Deps)
 	return d, nil
 }

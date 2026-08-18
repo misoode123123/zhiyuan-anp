@@ -180,6 +180,8 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/project-spaces/:id/apps/:aid/artifacts", h.ListArtifacts)                    // 列产物
 	r.GET("/project-spaces/:id/apps/:aid/artifacts/:artid/download", h.DownloadArtifact) // 下载产物
 
+	r.GET("/appdeploy/deploy-stats", h.DeployStatsAPI) // P3：部署运营统计（按引擎分组）
+
 	// 部署节点管理（多机部署）
 	r.GET("/deploy-nodes", h.ListNodes)
 	r.POST("/deploy-nodes", h.CreateNode)
@@ -2495,6 +2497,28 @@ func (h *Handler) Stats(c *gin.Context) {
 		"env": env, "url": ins.URL, "deployed": true,
 		"stats": stats, "health": appDeployHealth(a, ins), "drift": drift,
 	})
+}
+
+// DeployStatsAPI 部署运营统计（P3）：近 N 天按引擎聚合成功率/耗时/失败 top/每日 trend。
+//
+// @Summary      部署统计
+// @Tags         appdeploy
+// @Produce      json
+// @Param        days  query  int  false  "统计窗口天数（默认 30，钳制 1-90）"
+// @Success      200   {object}  map[string]interface{}  "按引擎分组统计"
+// @Security     BearerAuth
+// @Router       /appdeploy/deploy-stats [get]
+func (h *Handler) DeployStatsAPI(c *gin.Context) {
+	days, _ := strconv.Atoi(c.Query("days"))
+	if days == 0 {
+		days = 30
+	}
+	res, err := h.store.DeployStats(c.Request.Context(), days)
+	if err != nil {
+		httpx.Err(c, 500, 50023, "部署统计查询失败: "+err.Error())
+		return
+	}
+	httpx.OK(c, res)
 }
 
 // appDeployHealth 部署响应的健康字段:headless 用实例 status(无 URL 可探);其余按 URL 探活。
