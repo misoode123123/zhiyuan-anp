@@ -37,7 +37,12 @@ func NewStore(db *sqlx.DB) *Store {
 }
 
 // Create 写入通知 + 实时广播给该用户的 SSE channel。
+// 空 UserID 归一为 NULL：广播语义在查询侧统一用 IS NULL 表达；空串既不进 List
+// （user_id=$1 OR IS NULL 均不匹配）也不进 MarkAllRead，会变成永不可读的幽灵未读。
 func (s *Store) Create(ctx context.Context, n *Notification) error {
+	if n.UserID != nil && *n.UserID == "" {
+		n.UserID = nil
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO notification (user_id, project_space_id, type, title, message, link)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -74,9 +79,11 @@ func (s *Store) MarkRead(ctx context.Context, id int64) error {
 	return err
 }
 
-// MarkAllRead 标记用户全部已读。
+// MarkAllRead 标记用户全部已读。含广播行（user_id IS NULL——List/UnreadCount 都把
+// NULL 算给该用户，全部已读必须同条件覆盖，否则广播通知永远无法批量已读）。
 func (s *Store) MarkAllRead(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE notification SET read = TRUE WHERE user_id = $1 AND read = FALSE`, userID)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE notification SET read = TRUE WHERE (user_id = $1 OR user_id IS NULL) AND read = FALSE`, userID)
 	return err
 }
 
