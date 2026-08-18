@@ -87,7 +87,7 @@ func TestAiDeploy_FullChain(t *testing.T) {
 	h, _ := newHTTPHandler(t)
 	ctx := context.Background()
 	a := seedApp(t, h, "ps_1", "ai-demo", t.TempDir())
-	h.aiDeploy("ps_1", a.ID, EnvTest, "")
+	h.aiDeploy("ps_1", a.ID, EnvTest, "", "tester")
 
 	ins, _ := h.store.GetInstance(ctx, a.ID, EnvTest)
 	if ins == nil || ins.Status != "running" {
@@ -122,7 +122,7 @@ func TestAiDeploy_FailMarksFailedAndLogsRedacted(t *testing.T) {
 	ctx := context.Background()
 	a := seedApp(t, h, "ps_1", "ai-demo2", t.TempDir())
 	_ = h.store.UpsertEnv(ctx, a.ID, "SECRET_KEY", "sk-secret-value-123", true, "test")
-	h.aiDeploy("ps_1", a.ID, EnvTest, "")
+	h.aiDeploy("ps_1", a.ID, EnvTest, "", "tester")
 
 	ins, _ := h.store.GetInstance(ctx, a.ID, EnvTest)
 	if ins == nil || ins.Status != "failed" {

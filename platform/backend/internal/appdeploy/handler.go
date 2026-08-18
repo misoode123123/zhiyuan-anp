@@ -1792,7 +1792,7 @@ func (h *Handler) Deploy(c *gin.Context) {
 	localNode := in.NodeID == "" || in.NodeID == "node_local"
 	if localNode && a.NetworkMode != "host" && h.engineFor(in.Engine, env) == "ai" {
 		h.markPreparing(c.Request.Context(), psID, aid, env) // 同步标 preparing，前端立即看到进度条
-		go h.aiDeploy(psID, aid, env, buildDir)
+		go h.aiDeploy(psID, aid, env, buildDir, c.GetString(auth.CtxUserID))
 		httpx.OK(c, gin.H{"id": aid, "env": env, "status": "preparing", "engine": "ai",
 			"note": "异步 AI 部署到 " + env + " 环境（受限执行 + 平台验证）"})
 		return

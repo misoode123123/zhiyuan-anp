@@ -124,8 +124,11 @@ func (h *Handler) hostPortOf(ctx context.Context, container string) int {
 
 // aiDeploy AI 引擎部署主流程（goroutine 入口；Deploy handler 分流调用）。
 // 镜像 buildAndDeploy 的 panic 兜底与 markFailed 约定。
-func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
+// operator 部署操作人（P3 部署历史落库；发布中心等系统触发传 "system"）。
+func (h *Handler) aiDeploy(psID, aid, env, buildDir, operator string) {
 	ctx := context.Background()
+	// P3 部署历史：本行版本号（INSERT 后赋值；panic 兜底用它判断有无行可终结）。
+	histVer := 0
 	defer func() {
 		if r := recover(); r != nil {
 			zap.L().Error("[appdeploy] aiDeploy panic", zap.String("app", aid), zap.Any("panic", r))
@@ -137,6 +140,11 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 				ins.Status = "failed"
 				ins.LastError = msg
 				_ = h.store.UpdateInstance(ctx, ins)
+			}
+			if histVer > 0 {
+				if e := h.store.FinishDeployHistory(ctx, aid, env, histVer, "failed", truncateStr(fmt.Sprintf("[panic] AI 部署异常崩溃: %v", r), 200), "panic 兜底终结", "", 0); e != nil {
+					zap.L().Warn("deploy_history panic 终结失败（不影响部署）", zap.String("app", aid), zap.Error(e))
+				}
 			}
 		}
 	}()
@@ -166,6 +174,11 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	// 验证段跳过端口比对（验证 3），对齐 Deployer.Deploy 的 headless 分支（无 -p 无 URL）。
 	ins.Version++
 	version := ins.Version
+	// P3 部署历史：开始行（AI 链版本精确已知）。best-effort。
+	histVer = version
+	if e := h.store.InsertDeployHistory(ctx, a.ID, env, version, "ai", operator, ""); e != nil {
+		zap.L().Warn("deploy_history 插入失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+	}
 	port := 0
 	headless := a.AppKind == AppKindHeadless
 	if !headless {
@@ -307,6 +320,10 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 			zap.L().Warn("appgw 路由表写入失败（部署仍成功）", zap.String("app_id", a.ID), zap.Error(err))
 		}
 	}
+	// P3 部署历史：成功终态（实态镜像/端口）。
+	if e := h.store.FinishDeployHistory(ctx, a.ID, env, version, "success", "", "", ins.Image, ins.HostPort); e != nil {
+		zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+	}
 	zap.L().Info("[appdeploy] AI 部署成功", zap.String("app", a.Name), zap.String("env", env), zap.Int("version", version))
 }
 
@@ -317,6 +334,10 @@ func (h *Handler) aiFail(ctx context.Context, psID string, a *Application, ins *
 	ins.BuildLog = log.tail()
 	_ = h.store.UpdateInstance(ctx, ins)
 	h.markFailed(ctx, psID, a.ID, reason, ins.BuildLog)
+	// P3 部署历史：失败终态（部署前失败，无回滚）。
+	if e := h.store.FinishDeployHistory(ctx, a.ID, ins.Env, ins.Version, "failed", truncateStr(reason, 200), "", "", 0); e != nil {
+		zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+	}
 }
 
 // aiFailWithRollback AI 部署失败且已可能动过容器：平台清理残留 + 回滚上一版（spec §4/§5）。
@@ -396,6 +417,10 @@ func (h *Handler) aiFailWithRollback(ctx context.Context, psID string, a *Applic
 	ins.BuildLog = log.tail()
 	_ = h.store.UpdateInstance(ctx, ins)
 	h.markFailed(ctx, psID, a.ID, reason, ins.BuildLog)
+	// P3 部署历史：失败终态（spec：回滚成功也记 failed，回滚详情进 notes——失败率不被回滚稀释）。
+	if e := h.store.FinishDeployHistory(ctx, a.ID, ins.Env, ins.Version, "failed", truncateStr(reason, 200), "AI 链失败已触发自动回滚（详见 last_error/build_log）", "", 0); e != nil {
+		zap.L().Warn("deploy_history 终结失败（不影响部署）", zap.String("app", a.ID), zap.Error(e))
+	}
 }
 
 // versionOfImageTag 从镜像 tag 反解版本号：appdeploy/<slug>-<env>:v<N> → N。

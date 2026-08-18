@@ -220,6 +220,60 @@ func TestDeployHistory_FixedChainFailPath(t *testing.T) {
 	}
 }
 
+// TestDeployHistory_AiChainSuccess AI 链成功：fake opencode + fake inspect → history 行
+// engine=ai result=success（版本=1，镜像/端口为实态回填值）。
+func TestDeployHistory_AiChainSuccess(t *testing.T) {
+	aiInspect = func(ctx context.Context, h *Handler, container string) (bool, int, string) {
+		return true, 9100, "appdeploy/ai-demo-test:v1"
+	}
+	defer func() { aiInspect = nil }()
+	origRun := aiOpencodeRun
+	aiOpencodeRun = fakeOpencode(t, true)
+	defer func() { aiOpencodeRun = origRun }()
+
+	h, _ := newHTTPHandler(t)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "ai-demo", t.TempDir())
+	h.aiDeploy("ps_1", a.ID, EnvTest, "", "ai-op")
+
+	items, err := h.store.ListDeployHistoryByApp(ctx, a.ID, 20)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("应恰 1 行: %v %v", items, err)
+	}
+	it := items[0]
+	if it.Engine != "ai" || it.Result != "success" || it.Operator != "ai-op" || it.Version != 1 {
+		t.Fatalf("AI 成功行: %+v", it)
+	}
+	if it.Image != "appdeploy/ai-demo-test:v1" || it.HostPort != 9100 {
+		t.Fatalf("成功行应记实态: %+v", it)
+	}
+}
+
+// TestDeployHistory_AiChainFailRollbackNotes AI 链失败：fake 失败 → history 行 failed，
+// notes 含回滚记录（spec：回滚成功也记 failed，详情进 notes）。
+func TestDeployHistory_AiChainFailRollbackNotes(t *testing.T) {
+	aiInspect = func(ctx context.Context, h *Handler, container string) (bool, int, string) {
+		return false, 0, ""
+	}
+	defer func() { aiInspect = nil }()
+	origRun := aiOpencodeRun
+	aiOpencodeRun = fakeOpencode(t, false)
+	defer func() { aiOpencodeRun = origRun }()
+
+	h, _ := newHTTPHandler(t)
+	ctx := context.Background()
+	a := seedApp(t, h, "ps_1", "hist-ai2", t.TempDir())
+	h.aiDeploy("ps_1", a.ID, EnvTest, "", "ai-op")
+
+	items, _ := h.store.ListDeployHistoryByApp(ctx, a.ID, 20)
+	if len(items) != 1 || items[0].Result != "failed" || items[0].Engine != "ai" {
+		t.Fatalf("AI 失败行: %+v", items)
+	}
+	if items[0].ErrorSummary == "" {
+		t.Fatalf("失败行应记 error_summary: %+v", items[0])
+	}
+}
+
 // TestTopErrorFragments 分词词频：标点切 + ≥4 rune 片段 + topN + 大小写归一。
 func TestTopErrorFragments(t *testing.T) {
 	errs := []string{
