@@ -192,6 +192,12 @@ func (h *Handler) aiDeploy(psID, aid, env, buildDir string) {
 	if mf != nil {
 		needs, actual = &mf.Needs, &mf.Actual
 	}
+	// 中间件依赖供给（对齐固定链 buildAndDeploy，handler.go 同段：读 DB binding 声明 →
+	// 物化 env 行）。best-effort 不阻塞；缺此步则声明依赖的应用首次 AI 部署时 EnvPairs
+	// 读不到 REDIS_ADDR 等，简报 env_keys 缺失、容器起不来。
+	if h.mwReconciler != nil {
+		_ = h.mwReconciler.Reconcile(ctx, a.ID, a.ProjectSpaceID)
+	}
 	envPairs, epErr := h.store.EnvPairs(ctx, a.ID)
 	if epErr != nil {
 		zap.L().Warn("AI 部署读取应用环境变量失败（不阻塞，简报 env_keys 降级）",

@@ -1526,7 +1526,15 @@ export default function ApplicationsPage() {
                       ❌ 构建失败：{a.last_error?.slice(0, 100) || "(无错误摘要)"}
                     </span>
                     <button
-                      onClick={() => act(a.id, "deploy", "test", selectedNode, "fixed")}
+                      onClick={() =>
+                        act(
+                          a.id,
+                          "deploy",
+                          a.instances?.find((i) => i.status === "failed")?.env || "test",
+                          selectedNode,
+                          "fixed"
+                        )
+                      }
                       className="shrink-0 rounded bg-surface-2 px-2 py-0.5 text-xs text-text"
                       title="放弃 AI 引擎，用固定部署引擎重试本次构建部署（spec §5：失败不静默降级，由人工选择）"
                     >

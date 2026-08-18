@@ -24,24 +24,29 @@ case "$sub" in
     exec "$REAL" "$sub" "$@"
     ;;
   stop|rm)
-    target=""
+    if [ -z "$PREFIX" ]; then
+      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    fi
     skip=""
+    bad=""
     for a in "$@"; do
       if [ "$skip" != "" ]; then skip=""; continue; fi
       case "$a" in
         -t|--time)
           skip="1" ;;   # 带值 flag：跳过其值
         -*) ;;          # 其余 flag（-f/-l/-v...）不含值
-        *) [ -z "$target" ] && target="$a" ;;
+        *)
+          case "$a" in
+            "$PREFIX"*) ;;                 # 每个非 flag 参数（容器名）逐一校验
+            *) bad="$a" ;;                 # 记下首个越权名，循环结束统一指认
+          esac
+          ;;
       esac
     done
-    if [ -z "$PREFIX" ]; then
-      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    if [ "$bad" != "" ]; then
+      echo "[anp-shim] 拒绝：容器 '$bad' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127
     fi
-    case "$target" in
-      "$PREFIX"*) exec "$REAL" "$sub" "$@" ;;
-      *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
-    esac
+    exec "$REAL" "$sub" "$@"
     ;;
   *)
     echo "[anp-shim] 拒绝：docker 子命令 '$sub' 不在白名单（build/run/inspect/logs/ps/stop/rm）" >&2
@@ -64,8 +69,8 @@ func InstallShim(dir string) (string, error) {
 }
 
 // shimAllow 白名单判定（Go 侧镜像实现，供单测文档化规则；真正的拦截在 sh 脚本）。
-// 规则与 shimScript 一致：build/run/inspect/logs/ps 放行；stop/rm 目标容器名须以
-// appdeploy-{slug}- 开头；其余拒绝。
+// 规则与 shimScript 一致：build/run/inspect/logs/ps 放行；stop/rm 每个（跳过 -t 的值）
+// 非 flag 参数（容器名）都须以 appdeploy-{slug}- 开头，任一越权即拒绝；其余拒绝。
 func shimAllow(args []string, slug string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("空命令")
@@ -76,16 +81,31 @@ func shimAllow(args []string, slug string) error {
 	case "build", "run", "inspect", "logs", "ps":
 		return nil
 	case "stop", "rm":
+		// 多目标逐参数校验：此前只查首个非 flag 参数，`stop 合规名 deploy_backend_1`
+		// 可夹带走平台容器（docker stop 语义=全部停掉）。
+		hasTarget := false
+		skipValue := false
 		for _, a := range args[2:] {
+			if skipValue { // -t 的值不是容器名
+				skipValue = false
+				continue
+			}
+			if a == "-t" || a == "--time" {
+				skipValue = true
+				continue
+			}
 			if strings.HasPrefix(a, "-") {
 				continue
 			}
-			if strings.HasPrefix(a, prefix) {
-				return nil // 第一个非 flag 参数（容器名）合规即放行
+			hasTarget = true
+			if !strings.HasPrefix(a, prefix) {
+				return fmt.Errorf("容器 %q 不在前缀 %q 内", a, prefix)
 			}
-			return fmt.Errorf("容器 %q 不在前缀 %q 内", a, prefix)
 		}
-		return fmt.Errorf("%s 无目标容器", sub)
+		if !hasTarget {
+			return fmt.Errorf("%s 无目标容器", sub)
+		}
+		return nil
 	default:
 		return fmt.Errorf("子命令 %q 不在白名单", sub)
 	}

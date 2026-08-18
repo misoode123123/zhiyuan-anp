@@ -58,6 +58,14 @@ func TestShimScript_ExecutesWhitelist(t *testing.T) {
 	if out, err := run("stop", "-t", "5", "appdeploy-x-test-v1"); err != nil || !strings.Contains(out, "stop -t 5 appdeploy-x-test-v1") {
 		t.Fatalf("stop 前缀容器应透传: out=%q err=%v", out, err)
 	}
+	// stop 多目标全合规：全部透传
+	if out, err := run("stop", "appdeploy-x-test-v1", "appdeploy-x-test-v2"); err != nil || !strings.Contains(out, "stop appdeploy-x-test-v1 appdeploy-x-test-v2") {
+		t.Fatalf("stop 多个前缀容器应透传: out=%q err=%v", out, err)
+	}
+	// stop 多目标夹带越权（走私）：首参合规、次参是平台容器 → 拒绝 exit 127，且指认越权名
+	if out, err := run("stop", "appdeploy-x-test-v1", "deploy_backend_1"); err == nil || !strings.Contains(out, "拒绝") || !strings.Contains(out, "deploy_backend_1") {
+		t.Fatalf("stop 合规名+平台容器应拒绝并指认: out=%q err=%v", out, err)
+	}
 	// stop 越权：拒绝 exit 127
 	if out, err := run("stop", "deploy_backend_1"); err == nil || !strings.Contains(out, "拒绝") {
 		t.Fatalf("stop 平台容器应拒绝: out=%q err=%v", out, err)

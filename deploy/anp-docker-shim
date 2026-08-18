@@ -10,24 +10,29 @@ case "$sub" in
     exec "$REAL" "$sub" "$@"
     ;;
   stop|rm)
-    target=""
+    if [ -z "$PREFIX" ]; then
+      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    fi
     skip=""
+    bad=""
     for a in "$@"; do
       if [ "$skip" != "" ]; then skip=""; continue; fi
       case "$a" in
         -t|--time)
           skip="1" ;;   # 带值 flag：跳过其值
         -*) ;;          # 其余 flag（-f/-l/-v...）不含值
-        *) [ -z "$target" ] && target="$a" ;;
+        *)
+          case "$a" in
+            "$PREFIX"*) ;;                 # 每个非 flag 参数（容器名）逐一校验
+            *) bad="$a" ;;                 # 记下首个越权名，循环结束统一指认
+          esac
+          ;;
       esac
     done
-    if [ -z "$PREFIX" ]; then
-      echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
+    if [ "$bad" != "" ]; then
+      echo "[anp-shim] 拒绝：容器 '$bad' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127
     fi
-    case "$target" in
-      "$PREFIX"*) exec "$REAL" "$sub" "$@" ;;
-      *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
-    esac
+    exec "$REAL" "$sub" "$@"
     ;;
   *)
     echo "[anp-shim] 拒绝：docker 子命令 '$sub' 不在白名单（build/run/inspect/logs/ps/stop/rm）" >&2
