@@ -18,16 +18,20 @@ set -u
 PREFIX="${ANP_CONTAINER_PREFIX:-}"
 REAL="/usr/bin/docker"
 sub="${1:-}"
-[ "$sub" != "" ] && shift
 case "$sub" in
   build|run|inspect|logs|ps)
-    exec "$REAL" "$@"
+    exec "$REAL" "$sub" "$@"
     ;;
   stop|rm)
+    shift
     target=""
+    skip=""
     for a in "$@"; do
+      if [ "$skip" != "" ]; then skip=""; continue; fi
       case "$a" in
-        -*) ;;
+        -t|--time)
+          skip="1" ;;   # 带值 flag：跳过其值
+        -*) ;;          # 其余 flag（-f/-l/-v...）不含值
         *) [ -z "$target" ] && target="$a" ;;
       esac
     done
@@ -35,7 +39,7 @@ case "$sub" in
       echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
     fi
     case "$target" in
-      "$PREFIX"*) exec "$REAL" "$@" ;;
+      "$PREFIX"*) exec "$REAL" "$sub" "$@" ;;
       *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
     esac
     ;;
