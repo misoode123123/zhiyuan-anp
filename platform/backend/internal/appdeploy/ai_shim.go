@@ -18,12 +18,12 @@ set -u
 PREFIX="${ANP_CONTAINER_PREFIX:-}"
 REAL="/usr/bin/docker"
 sub="${1:-}"
+[ "$sub" != "" ] && shift
 case "$sub" in
   build|run|inspect|logs|ps)
     exec "$REAL" "$sub" "$@"
     ;;
   stop|rm)
-    shift
     target=""
     skip=""
     for a in "$@"; do
