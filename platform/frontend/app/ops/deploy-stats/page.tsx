@@ -23,15 +23,22 @@ export default function DeployStatsPage() {
   // 注：重置放在 onChange（事件处理器）而非 effect 内同步 setState，避免
   // react-hooks/set-state-in-effect 告警；行为等价：切换窗口→清旧数据→重新拉取。
   useEffect(() => {
+    let stale = false; // 过期响应守卫：days 快速切换时旧请求晚归不得覆盖新窗口数据
     fetch(`${API_BASE_URL}/appdeploy/deploy-stats?days=${days}`, {
       headers: { Authorization: `Bearer ${getAuthToken()}` },
     })
       .then((r) => r.json())
       .then((r) => {
+        if (stale) return;
         if (r.code !== 0) throw new Error(r.message || String(r.code));
         setData(r.data);
       })
-      .catch((e) => setErr(String(e)));
+      .catch((e) => {
+        if (!stale) setErr(String(e));
+      });
+    return () => {
+      stale = true;
+    };
   }, [days]);
 
   return (
