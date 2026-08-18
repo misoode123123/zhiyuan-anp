@@ -82,3 +82,34 @@ func TestShimScript_ExecutesWhitelist(t *testing.T) {
 		t.Fatalf("无前缀 stop 应拒绝: out=%q err=%v", out, err)
 	}
 }
+
+// TestShimScript_EmptyArgFailClosed 复审抓到的 fail-open：空串参数曾覆写 bad
+// 变量清掉已记录的越权名（stop deploy_backend_1 "" → 放行）。标志位独立后钉死。
+func TestShimScript_EmptyArgFailClosed(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("无 sh（裸 Windows），CI/Linux/.28 覆盖")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "fake-docker")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho \"FAKE:$*\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sh, err := InstallShim(filepath.Join(dir, "shim"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(sh, "docker"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := filepath.Join(dir, "docker-fixed")
+	if err := os.WriteFile(fixed, []byte(strings.Replace(string(b), "/usr/bin/docker", fake, 1)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", fixed, "stop", "deploy_backend_1", "")
+	cmd.Env = []string{"ANP_CONTAINER_PREFIX=appdeploy-x-test-", "PATH=/usr/bin:/bin"}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "拒绝") {
+		t.Fatalf("越权名后跟空串应仍拒绝(fail-closed): out=%q err=%v", out, err)
+	}
+}

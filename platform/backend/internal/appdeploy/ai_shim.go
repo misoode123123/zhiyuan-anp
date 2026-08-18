@@ -28,7 +28,7 @@ case "$sub" in
       echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
     fi
     skip=""
-    bad=""
+    violation=""
     for a in "$@"; do
       if [ "$skip" != "" ]; then skip=""; continue; fi
       case "$a" in
@@ -37,14 +37,14 @@ case "$sub" in
         -*) ;;          # 其余 flag（-f/-l/-v...）不含值
         *)
           case "$a" in
-            "$PREFIX"*) ;;                 # 每个非 flag 参数（容器名）逐一校验
-            *) bad="$a" ;;                 # 记下首个越权名，循环结束统一指认
+            "$PREFIX"*) ;;                    # 每个非 flag 参数（容器名）逐一校验
+            *) [ -z "$violation" ] && violation="$a" ;;  # 记首个越权名；标志独立于名字，空串参数覆不垮
           esac
           ;;
       esac
     done
-    if [ "$bad" != "" ]; then
-      echo "[anp-shim] 拒绝：容器 '$bad' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127
+    if [ "$violation" != "" ]; then
+      echo "[anp-shim] 拒绝：容器 '$violation' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127
     fi
     exec "$REAL" "$sub" "$@"
     ;;

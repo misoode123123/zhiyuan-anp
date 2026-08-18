@@ -1530,7 +1530,11 @@ export default function ApplicationsPage() {
                         act(
                           a.id,
                           "deploy",
-                          a.instances?.find((i) => i.status === "failed")?.env || "test",
+                          a.instances
+                            ?.filter((i) => i.status === "failed")
+                            .sort((x, y) =>
+                              (y.updated_at || "").localeCompare(x.updated_at || "")
+                            )[0]?.env || "test",
                           selectedNode,
                           "fixed"
                         )
