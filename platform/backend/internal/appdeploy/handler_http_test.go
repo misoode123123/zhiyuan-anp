@@ -33,6 +33,7 @@ func newHTTPHandler(t *testing.T) (*Handler, *sqlx.DB) {
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+		"deploy_history",
 	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
@@ -714,6 +715,7 @@ func newHTTPHandlerWithGates(t *testing.T) (*Handler, *sqlx.DB) {
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+		"deploy_history",
 	)
 	store := NewStore(db)
 	changes := change.NewStore(db)
@@ -964,6 +966,7 @@ func newHTTPHandlerWithExtRoute(t *testing.T) (*Handler, *extRouteStore) {
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+		"deploy_history",
 	)
 	store := NewStore(db)
 	rw := &extRouteStore{}
@@ -1393,6 +1396,7 @@ func setupHandlerWithAppKind(t *testing.T) (*Handler, *gin.Engine) {
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 		"appdeploy_artifact", "appdeploy_build_config", "deploy_node",
+		"deploy_history",
 	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil,

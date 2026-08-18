@@ -13,7 +13,7 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	db := testutil.TestDB(t)
-	testutil.Truncate(t, db, "appdeploy_env", "appdeploy_instance", "appdeploy_application")
+	testutil.Truncate(t, db, "deploy_history", "appdeploy_env", "appdeploy_instance", "appdeploy_application")
 	return NewStore(db)
 }
 

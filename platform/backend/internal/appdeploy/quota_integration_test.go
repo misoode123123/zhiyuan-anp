@@ -27,6 +27,7 @@ func newHTTPHandlerWithQuota(t *testing.T, quota fakeAppQuotaChecker) (*Handler,
 	testutil.Truncate(t, db,
 		"release_record", "change_request", "requirement",
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
+		"deploy_history",
 	)
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, quota, nil, nil, nil, "", nil, nil)
@@ -78,7 +79,7 @@ var errFakeQuota = errString("应用数已达上限：0 / 0")
 // 不实际调 Create（EnsureRepo 依赖 git），仅验证 quota=nil 不 panic。
 func TestHandler_Create_NoQuotaChecker(t *testing.T) {
 	db := testutil.TestDB(t)
-	testutil.Truncate(t, db, "appdeploy_application")
+	testutil.Truncate(t, db, "deploy_history", "appdeploy_application")
 	store := NewStore(db)
 	h := NewHandler(store, NewDeployer("test"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil)
 	if h.quota != nil {

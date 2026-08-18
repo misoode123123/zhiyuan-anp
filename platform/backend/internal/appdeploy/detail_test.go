@@ -49,7 +49,7 @@ func seedDetailStore(t *testing.T) *Store {
 	testutil.Truncate(t, db,
 		"appdeploy_env", "appdeploy_instance", "appdeploy_application",
 		"codews_session", "appdeploy_route", "code_task",
-		"change_request", "release_record", "requirement")
+		"change_request", "release_record", "requirement", "deploy_history")
 	return NewStore(db)
 }
 
