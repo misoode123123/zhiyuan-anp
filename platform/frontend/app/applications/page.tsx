@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
-import { logger } from "@/lib/logger";
-import { toast } from "@/lib/toast";
 import { ChangeOutput } from "@/app/_components/change-output";
-import type { App, AppStats, Detail, Envelope, EnvVar, PS, Req } from "./_lib/types";
-import { STATUS_COLOR, isDockerKind, nodeMatchesEnv } from "./_lib/predicates";
+import type { Detail, Envelope, PS } from "./_lib/types";
+import { STATUS_COLOR, isDockerKind } from "./_lib/predicates";
+import { useAppData } from "./_lib/use-app-data";
+import { useAppActions } from "./_lib/use-app-actions";
 import {
   ArtifactSection,
   DepsSection,
@@ -19,19 +19,6 @@ import { ImportWizard, type ImportWizardHandle } from "./_components/import-wiza
 export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
   const [psID, setPsID] = useState("");
-  const [apps, setApps] = useState<App[]>([]);
-  const [nodes, setNodes] = useState<
-    {
-      id: string;
-      name: string;
-      host: string;
-      status: string;
-      app_count?: number;
-      env?: string;
-      os_type?: string;
-      connect_type?: string;
-    }[]
-  >([]);
   const [selectedNode, setSelectedNode] = useState(""); // 部署目标节点
   const [form, setForm] = useState({
     name: "",
@@ -41,24 +28,14 @@ export default function ApplicationsPage() {
   });
   const [appKind, setAppKind] = useState<string>("web"); // 应用类型 web/desktop/mobile/cli/service/headless
   const [wsTool, setWsTool] = useState("opencode"); // 交互编码工具（开发者可选，不同人选不同）
-  const [logsFor, setLogsFor] = useState<string>("");
-  const [logs, setLogs] = useState("");
-  const [reqsFor, setReqsFor] = useState<string>("");
-  const [appReqs, setAppReqs] = useState<Req[]>([]);
+  // detail 三态暂留壳（T7/T8 迁 tab 面板，本任务不展开态收敛 detail）
   const [detailFor, setDetailFor] = useState<string>("");
   const [detail, setDetail] = useState<Detail | null>(null);
-  // 登记变更面板（自由编码产出 → 变更，可选关联需求）
+  // 登记变更面板（自由编码产出 → 变更，可选关联需求）：登记输入是面板局部 state，留壳
   const [regFor, setRegFor] = useState<string>("");
   const [regReq, setRegReq] = useState<string>("");
   const [regNote, setRegNote] = useState<string>("");
   const [regBusy, setRegBusy] = useState(false);
-  const [envFor, setEnvFor] = useState<string>("");
-  const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
-  const [envForm, setEnvForm] = useState({ key: "", value: "", is_secret: false });
-  const [appStats, setAppStats] = useState<Record<string, AppStats>>({});
-  const [appChanges, setAppChanges] = useState<
-    Record<string, { id: string; status: string; output?: string; created_at?: string }[]>
-  >({});
   // 导入已有项目向导（自包含组件）：ref 句柄触发 open()，终态 onDone 刷新列表
   const wizRef = useRef<ImportWizardHandle>(null);
   const router = useRouter();
@@ -73,82 +50,23 @@ export default function ApplicationsPage() {
       });
   }, []);
 
-  const load = (id: string) => {
-    if (!id) return;
-    fetch(`${API_BASE_URL}/project-spaces/${id}/apps`)
-      .then((r) => r.json())
-      .then((r: Envelope<App[]>) => setApps(r.data ?? []));
-    fetch(`${API_BASE_URL}/deploy-nodes`)
-      .then((r) => r.json())
-      .then((r: Envelope<typeof nodes>) => setNodes(r.data ?? []));
-  };
-  useEffect(() => {
-    load(psID);
-    // 有 building 中的应用时轮询
-    const t = setInterval(() => {
-      load(psID);
-      // 清理已完成的部署进度提示
-      setDeployMsg((prev) => {
-        if (Object.keys(prev).length === 0) return prev;
-        const next = { ...prev };
-        for (const id of Object.keys(next)) {
-          const app = apps.find((a) => a.id === id);
-          if (app && app.status !== "building" && app.status !== "preparing") {
-            toast.success(app.name + " → " + app.status);
-            logger.info("app.deploy.done", { app: app.name, status: app.status });
-            delete next[id];
-          }
-        }
-        return next;
-      });
-    }, 3000);
-    return () => clearInterval(t);
-  }, [psID]);
-  async function loadStats(id: string) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/stats?env=prod`);
-      const r = await res.json();
-      if (r.code === 0) {
-        const d = r.data;
-        setAppStats((p) => ({
-          ...p,
-          [id]: {
-            health: d.health,
-            cpu: d.stats?.cpu_perc,
-            mem: d.stats?.mem_usage,
-            deployed: d.deployed,
-            external: d.external,
-            url: d.url,
-          },
-        }));
-      }
-    } catch {}
-  }
-  async function loadChanges(id: string) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/detail`);
-      const r = await res.json();
-      if (r.code === 0 && r.data?.changes) {
-        setAppChanges((p) => ({ ...p, [id]: r.data.changes }));
-      }
-    } catch {}
-  }
-  // 轮询已上线(prod running)应用的资源/健康（运维可观测）
-  useEffect(() => {
-    const poll = () =>
-      apps.forEach((a) => {
-        // external 应用无 instances，直接按 deploy_mode 探活；managed 看 prod running
-        if (
-          a.deploy_mode === "external" ||
-          a.instances?.some((i) => i.env === "prod" && i.status === "running")
-        )
-          loadStats(a.id);
-      });
-    poll();
-    apps.forEach((a) => loadChanges(a.id));
-    const t = setInterval(poll, 30000);
-    return () => clearInterval(t);
-  }, [apps]);
+  // 数据 hook：apps/nodes/appStats/appChanges/deployMsg + 双轮询（自本文件平移，行为零变化）
+  const data = useAppData(psID);
+  const { apps, nodes, appStats, appChanges, deployMsg, reload, refreshClosedLoop } = data;
+  // 动作 hook：展开态（openPanel 收敛单值）+ 部署/启停/变量/日志/需求/闭环操作
+  const actions = useAppActions({
+    psID,
+    apps,
+    nodes,
+    appChanges,
+    deployMsg,
+    setDeployMsg: data.setDeployMsg,
+    reload,
+    loadChanges: data.loadChanges,
+    refreshClosedLoop,
+    detailFor,
+    setDetail,
+  });
 
   async function register() {
     if (!form.name.trim()) return;
@@ -178,183 +96,16 @@ export default function ApplicationsPage() {
       deploy_mode: form.deploy_mode,
       external_url: "",
     });
-    load(psID);
+    reload(psID);
   }
 
-  const [deployMsg, setDeployMsg] = useState<Record<string, string>>({});
-
-  // 上线 prod（带节点 + 变更闸门检查）
-  async function promoteWithNode(id: string, nodeID: string) {
-    // 节点环境校验：prod 部署需 env=prod 节点（node_local 豁免，始终可用）。
-    const sel = nodes.find((n) => n.id === nodeID);
-    if (!nodeMatchesEnv(sel, "prod")) {
-      alert(`上线 prod 需选择 env=prod 的节点（当前为 env=${sel?.env ?? "?"}），或用本地节点。`);
-      return;
-    }
-    const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
-    if (chgs.length > 0) {
-      const summaries = chgs
-        .map(
-          (c) =>
-            "• " + ((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60)
-        )
-        .join("\n");
-      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`))
-        return;
-    }
-    const body: Record<string, string> = {};
-    if (nodeID) body.node_id = nodeID;
-    // 部署权限分离：上线统一走 /promote（带变更闸门 + prod 鉴权），不再绕道 /deploy env=prod
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const r = await res.json();
-    if (r.code !== 0) alert(r.message);
-    load(psID);
-    loadChanges(id);
-  }
-
-  async function act(
-    id: string,
-    action: "deploy" | "stop" | "start",
-    env?: string,
-    nodeID?: string,
-    engine?: "fixed" | "ai"
-  ) {
-    const body: Record<string, string> = {};
-    if (action === "deploy") {
-      if (env) body.env = env;
-      if (nodeID) body.node_id = nodeID;
-      if (engine) body.engine = engine;
-      // 节点环境校验：部署 env=test 只能用 env=test 节点；env=prod 只能用 env=prod 节点。
-      // node_local 豁免（始终可用）。Windows 节点：ssh/winrm 走原生部署（支持 Windows，
-      // 由后端校验 deploy.yaml 并显式报错）；仅非 ssh/winrm 的 Windows 节点（无 docker
-      // 守护进程）才在此拦截。
-      const sel = nodes.find((n) => n.id === nodeID);
-      const app = apps.find((a) => a.id === id);
-      if (env && !nodeMatchesEnv(sel, env)) {
-        alert(
-          `部署 ${env} 环境需选择 env=${env} 的节点（当前为 env=${sel?.env ?? "?"}），或用本地节点。`
-        );
-        return;
-      }
-      if (
-        sel &&
-        app &&
-        isDockerKind(app.app_kind) &&
-        sel.os_type === "windows" &&
-        sel.connect_type !== "ssh" &&
-        sel.connect_type !== "winrm"
-      ) {
-        alert("该 Windows 节点非 ssh/winrm 连接，无 docker 守护进程，不可部署容器应用。");
-        return;
-      }
-    } else {
-      // stop/start：显式带 env（默认 prod；后端按 env 鉴权，dev 无 prod 权限会被 403）
-      body.env = env || "prod";
-    }
-    // 进度提示
-    if (action === "deploy") {
-      setDeployMsg((prev) => ({
-        ...prev,
-        [id]: `⏳ 构建部署 ${env} ${nodeID ? "(" + (nodes.find((n) => n.id === nodeID)?.name || nodeID) + ")" : ""}`,
-      }));
-    }
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const r = await res.json();
-    if (r.code !== 0) {
-      alert(r.message);
-      setDeployMsg((prev) => {
-        const n = { ...prev };
-        delete n[id];
-        return n;
-      });
-    }
-    load(psID);
-  }
-
-  async function promote(id: string) {
-    const chgs = (appChanges[id] || []).filter((c) => c.status === "approved");
-    if (chgs.length > 0) {
-      const summaries = chgs
-        .map(
-          (c) =>
-            "• " + ((c.output || "").match(/【总结】(.+)/)?.[1] || c.id.slice(0, 12)).slice(0, 60)
-        )
-        .join("\n");
-      if (!confirm(`本次上线将部署以下 ${chgs.length} 个已审批变更：\n${summaries}\n\n确认上线？`))
-        return;
-    }
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/promote`, {
-      method: "POST",
-    });
-    const r = await res.json();
-    if (r.code !== 0) alert(r.message);
-    load(psID);
-    loadChanges(id); // 上线后 approved→released,刷新变更列表让"待上线"消失
-  }
   // 跳转到「编码工作台」tab(/workspace):由该页自己调 /workspace 接口拉起 opencode 并全屏加载。
   // 走 tab 系统而非弹窗/页内嵌入——与平台其他功能一致,可在 tab 间切换、不离开平台。
   function openWorkspace(id: string, tool: string) {
     router.push(`/workspace?app=${id}&ps=${psID}&tool=${encodeURIComponent(tool)}`);
   }
-  async function reloadEnv(id: string) {
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`);
-    const r = await res.json();
-    setAppEnvs(r.data ?? []);
-  }
-  async function showEnv(id: string) {
-    if (envFor === id) {
-      setEnvFor("");
-      return;
-    }
-    setEnvFor(id);
-    await reloadEnv(id);
-  }
-  async function saveEnv(id: string) {
-    if (!envForm.key.trim()) return;
-    await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(envForm),
-    });
-    setEnvForm({ key: "", value: "", is_secret: false });
-    reloadEnv(id);
-  }
-  async function removeEnv(id: string, key: string) {
-    await fetch(
-      `${API_BASE_URL}/project-spaces/${psID}/apps/${id}/env/${encodeURIComponent(key)}`,
-      { method: "DELETE" }
-    );
-    reloadEnv(id);
-  }
-  async function remove(id: string) {
-    if (!confirm("删除应用（含容器）？")) return;
-    await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}`, { method: "DELETE" });
-    load(psID);
-  }
-  async function showLogs(id: string) {
-    setLogsFor(id);
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/logs`);
-    const r = await res.json();
-    setLogs(r.data?.logs ?? "(无)");
-  }
-  async function showReqs(id: string) {
-    if (reqsFor === id) {
-      setReqsFor("");
-      return;
-    }
-    setReqsFor(id);
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${id}/requirements`);
-    const r = await res.json();
-    setAppReqs(r.data ?? []);
-  }
+
+  // detail 展开态暂留壳（T7/T8 迁 tab 面板）：toggle 语义与原 page.tsx 原样。
   async function showDetail(id: string) {
     if (detailFor === id) {
       setDetailFor("");
@@ -366,93 +117,21 @@ export default function ApplicationsPage() {
     const r = await res.json();
     setDetail(r.data ?? null);
   }
-  // 闭环操作后刷新：loadChanges 更新待上线徽标，详情已展开则重拉三栏。
-  async function refreshClosedLoop(appID: string) {
-    loadChanges(appID);
-    if (detailFor === appID) {
-      const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/detail`);
-      const r = await res.json();
-      if (r.code === 0) setDetail(r.data ?? null);
-    }
-  }
-  async function approveChange(appID: string, chgID: string) {
-    const r = await fetch(`${API_BASE_URL}/changes/${chgID}/approve`, { method: "POST" }).then(
-      (rr) => rr.json()
-    );
-    if (r.code !== 0) alert(r.message);
-    refreshClosedLoop(appID);
-  }
-  async function rejectChange(appID: string, chgID: string) {
-    const r = await fetch(`${API_BASE_URL}/changes/${chgID}/reject`, { method: "POST" }).then(
-      (rr) => rr.json()
-    );
-    if (r.code !== 0) alert(r.message);
-    refreshClosedLoop(appID);
-  }
-  async function releaseChange(appID: string, chgID: string) {
-    const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/releases`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ change_id: chgID }),
-    }).then((rr) => rr.json());
-    if (r.code !== 0) {
-      alert(r.message);
-      return;
-    }
-    toast.success(`已发布上线 v${r.data?.version ?? ""}`);
-    refreshClosedLoop(appID);
-    load(psID);
-  }
-  async function mergeChange(appID: string, chgID: string, reqID?: string) {
-    const r = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/merge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ req_id: reqID || undefined }),
-    }).then((rr) => rr.json());
-    if (r.code !== 0) {
-      alert(r.message);
-      return;
-    }
-    toast.success("已合并到 main（关联需求标 delivered）");
-    refreshClosedLoop(appID);
-  }
-  // 登记变更：把交互编码产出（opencode 对话 + git diff）登记为待审批变更；
-  // 可选关联需求（req_id）→ change.source_id 收敛到需求，release 回写 delivered 非 0 行。
+
+  // 登记变更壳层包装：regBusy 与登记输入重置留壳（regReq/regNote 是登记面板局部 state）；
+  // 提交与闭环刷新在 actions.registerChange（三参注入）。
   async function registerChange(appID: string) {
     setRegBusy(true);
     try {
-      const r = await fetch(
-        `${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/register-change`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ req_id: regReq || undefined, note: regNote || undefined }),
-        }
-      ).then((rr) => rr.json());
-      if (r.code !== 0) {
-        alert(r.message);
-        return;
+      const ok = await actions.registerChange(appID, regReq, regNote);
+      if (ok) {
+        setRegFor("");
+        setRegReq("");
+        setRegNote("");
       }
-      toast.success("已登记变更（AI 已总结编码产出）");
-      setRegFor("");
-      setRegReq("");
-      setRegNote("");
-      refreshClosedLoop(appID);
-    } catch (e) {
-      alert(String(e));
     } finally {
       setRegBusy(false);
     }
-  }
-  async function deployCommit(appID: string, sha: string) {
-    const res = await fetch(`${API_BASE_URL}/project-spaces/${psID}/apps/${appID}/deploy-commit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sha }),
-    });
-    const r = await res.json();
-    if (r.code !== 0) alert(r.message);
-    load(psID);
   }
 
   return (
@@ -601,7 +280,7 @@ export default function ApplicationsPage() {
       </div>
 
       {/* 导入已有项目向导（自包含组件）：3 步 ①选来源 ②填信息 ③执行/进度；终态 onDone 刷新列表 */}
-      <ImportWizard ref={wizRef} psID={psID} onDone={() => load(psID)} />
+      <ImportWizard ref={wizRef} psID={psID} onDone={() => reload(psID)} />
 
       {/* 应用列表 */}
       <div className="space-y-3">
@@ -653,7 +332,7 @@ export default function ApplicationsPage() {
                     </span>
                     <button
                       onClick={() =>
-                        act(
+                        actions.act(
                           a.id,
                           "deploy",
                           a.instances
@@ -762,7 +441,7 @@ export default function ApplicationsPage() {
                         !a.app_kind) && (
                         <>
                           <button
-                            onClick={() => act(a.id, "deploy", "test", selectedNode)}
+                            onClick={() => actions.act(a.id, "deploy", "test", selectedNode)}
                             className="rounded bg-accent/10 px-2 py-0.5 text-xs text-accent disabled:cursor-not-allowed disabled:opacity-40"
                             disabled={isImporting}
                             title={
@@ -774,7 +453,7 @@ export default function ApplicationsPage() {
                             构建部署(test·master)
                           </button>
                           <button
-                            onClick={() => promoteWithNode(a.id, selectedNode)}
+                            onClick={() => actions.promoteWithNode(a.id, selectedNode)}
                             className="rounded bg-success/10 px-2 py-0.5 text-xs text-success disabled:cursor-not-allowed disabled:opacity-40"
                             disabled={isImporting}
                             title={isImporting ? "导入完成前不可上线" : "上线到 prod"}
@@ -807,14 +486,14 @@ export default function ApplicationsPage() {
                         🧑‍💻 编码
                       </button>
                       <button
-                        onClick={() => showEnv(a.id)}
+                        onClick={() => actions.showEnv(a.id)}
                         className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         ⚙️变量
                       </button>
                       {a.status === "running" && (
                         <button
-                          onClick={() => act(a.id, "stop")}
+                          onClick={() => actions.act(a.id, "stop")}
                           className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                         >
                           停止
@@ -822,14 +501,14 @@ export default function ApplicationsPage() {
                       )}
                       {a.status === "stopped" && (
                         <button
-                          onClick={() => act(a.id, "start")}
+                          onClick={() => actions.act(a.id, "start")}
                           className="rounded bg-success/10 px-2 py-0.5 text-xs text-success"
                         >
                           启动
                         </button>
                       )}
                       <button
-                        onClick={() => showReqs(a.id)}
+                        onClick={() => actions.showReqs(a.id)}
                         className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         需求
@@ -841,7 +520,7 @@ export default function ApplicationsPage() {
                         详情
                       </button>
                       <button
-                        onClick={() => showLogs(a.id)}
+                        onClick={() => actions.showLogs(a.id)}
                         className="rounded bg-surface-2 px-2 py-0.5 text-xs"
                       >
                         日志
@@ -849,7 +528,7 @@ export default function ApplicationsPage() {
                     </>
                   )}
                   <button
-                    onClick={() => remove(a.id)}
+                    onClick={() => actions.remove(a.id)}
                     className="rounded bg-danger/10 px-2 py-0.5 text-xs text-danger"
                   >
                     删除
@@ -1006,15 +685,17 @@ export default function ApplicationsPage() {
                   {a.last_error}
                 </div>
               )}
-              {logsFor === a.id && (
+              {actions.openPanel === "logs" && actions.openFor === a.id && (
                 <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
-                  {logs}
+                  {actions.logs}
                 </pre>
               )}
-              {reqsFor === a.id && (
+              {actions.openPanel === "reqs" && actions.openFor === a.id && (
                 <div className="mt-2 rounded bg-bg p-2 text-xs">
-                  <div className="mb-1 text-text-muted">归属此应用的需求（{appReqs.length}）</div>
-                  {appReqs.map((q) => (
+                  <div className="mb-1 text-text-muted">
+                    归属此应用的需求（{actions.appReqs.length}）
+                  </div>
+                  {actions.appReqs.map((q) => (
                     <div key={q.id} className="flex items-center gap-2 py-0.5">
                       <span
                         className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-success/10 text-success" : "bg-surface-2 text-text-muted"}`}
@@ -1024,19 +705,19 @@ export default function ApplicationsPage() {
                       <span className="truncate">{q.title}</span>
                     </div>
                   ))}
-                  {appReqs.length === 0 && (
+                  {actions.appReqs.length === 0 && (
                     <div className="text-text-muted">暂无（发布此应用的需求后会自动归属到此）</div>
                   )}
                 </div>
               )}
-              {envFor === a.id && (
+              {actions.openPanel === "env" && actions.openFor === a.id && (
                 <div className="mt-2 rounded bg-bg p-2 text-xs">
                   <div className="mb-1 text-text-muted">
                     运行时环境变量（部署时 -e
                     注入容器；🔒=密钥已隐藏明文；平台托管=由部署供给，不可改）
                   </div>
                   <div className="space-y-1">
-                    {appEnvs.map((e) => (
+                    {actions.appEnvs.map((e) => (
                       <div key={e.id} className="flex items-center gap-2">
                         <code className="text-text">{e.key}</code>
                         <span className="text-text-muted">=</span>
@@ -1049,7 +730,7 @@ export default function ApplicationsPage() {
                           </span>
                         ) : (
                           <button
-                            onClick={() => removeEnv(a.id, e.key)}
+                            onClick={() => actions.removeEnv(a.id, e.key)}
                             className="ml-auto rounded bg-danger/10 px-1.5 py-0.5 text-danger"
                           >
                             删
@@ -1057,32 +738,41 @@ export default function ApplicationsPage() {
                         )}
                       </div>
                     ))}
-                    {appEnvs.length === 0 && <div className="text-text-muted">暂无</div>}
+                    {actions.appEnvs.length === 0 && <div className="text-text-muted">暂无</div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
                     <input
-                      value={envForm.key}
-                      onChange={(ev) => setEnvForm({ ...envForm, key: ev.target.value })}
+                      value={actions.envForm.key}
+                      onChange={(ev) =>
+                        actions.setEnvForm({ ...actions.envForm, key: ev.target.value })
+                      }
                       placeholder="KEY"
                       className="w-28 rounded border border-border px-1 py-0.5"
                     />
                     <input
-                      value={envForm.value}
-                      onChange={(ev) => setEnvForm({ ...envForm, value: ev.target.value })}
+                      value={actions.envForm.value}
+                      onChange={(ev) =>
+                        actions.setEnvForm({ ...actions.envForm, value: ev.target.value })
+                      }
                       placeholder="value"
-                      type={envForm.is_secret ? "password" : "text"}
+                      type={actions.envForm.is_secret ? "password" : "text"}
                       className="flex-1 rounded border border-border px-1 py-0.5"
                     />
                     <label className="flex items-center gap-1">
                       <input
                         type="checkbox"
-                        checked={envForm.is_secret}
-                        onChange={(ev) => setEnvForm({ ...envForm, is_secret: ev.target.checked })}
+                        checked={actions.envForm.is_secret}
+                        onChange={(ev) =>
+                          actions.setEnvForm({
+                            ...actions.envForm,
+                            is_secret: ev.target.checked,
+                          })
+                        }
                       />
                       密钥
                     </label>
                     <button
-                      onClick={() => saveEnv(a.id)}
+                      onClick={() => actions.saveEnv(a.id)}
                       className="rounded bg-accent px-2 py-0.5 text-white"
                     >
                       保存
@@ -1163,13 +853,13 @@ export default function ApplicationsPage() {
                             {c.status === "pending" && (
                               <>
                                 <button
-                                  onClick={() => approveChange(a.id, c.id)}
+                                  onClick={() => actions.approveChange(a.id, c.id)}
                                   className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
                                 >
                                   审批通过
                                 </button>
                                 <button
-                                  onClick={() => rejectChange(a.id, c.id)}
+                                  onClick={() => actions.rejectChange(a.id, c.id)}
                                   className="rounded bg-warn/10 px-1.5 py-0.5 text-warn hover:bg-warn/20"
                                 >
                                   拒绝
@@ -1179,14 +869,14 @@ export default function ApplicationsPage() {
                             {c.status === "approved" && (
                               <>
                                 <button
-                                  onClick={() => releaseChange(a.id, c.id)}
+                                  onClick={() => actions.releaseChange(a.id, c.id)}
                                   className="rounded bg-accent/10 px-1.5 py-0.5 text-accent hover:bg-accent/20"
                                   title="建发布版本 + 标关联需求 delivered + 触发部署"
                                 >
                                   发布上线
                                 </button>
                                 <button
-                                  onClick={() => mergeChange(a.id, c.id, c.source_id)}
+                                  onClick={() => actions.mergeChange(a.id, c.id, c.source_id)}
                                   className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
                                   title="合并 dev→main + 标 delivered + 释放认领"
                                 >
@@ -1439,7 +1129,7 @@ export default function ApplicationsPage() {
                             <code className="text-xs text-text-muted">{c.sha.slice(0, 7)}</code>
                             <span className="truncate text-text">{c.message}</span>
                             <button
-                              onClick={() => deployCommit(a.id, c.sha)}
+                              onClick={() => actions.deployCommit(a.id, c.sha)}
                               className="ml-auto rounded bg-warn/10 px-2 py-0.5 text-xs text-warn"
                             >
                               部署此版本
