@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { STATUS_COLOR } from "../_lib/predicates";
-import type { App, AppStats, ChangeSummary, Detail, Envelope, NodeInfo } from "../_lib/types";
+import type { App, AppStats, ChangeSummary, Detail, Envelope } from "../_lib/types";
 import type { useAppData } from "../_lib/use-app-data";
 import type { useAppActions } from "../_lib/use-app-actions";
 import { EnvDeployCard } from "./env-deploy-card";
@@ -17,7 +17,6 @@ import { ArtifactSection, DepsSection, DevWizard, NetworkModeSection } from "./s
 export function AppTabPanel(props: {
   app: App;
   psID: string;
-  nodes: NodeInfo[]; // 供 actions hook 用（面板 JSX 不直接消费）
   selectedNode: string;
   wsTool: string;
   setWsTool: (t: string) => void;
@@ -62,8 +61,8 @@ export function AppTabPanel(props: {
     app.instances
       ?.filter((i) => i.status === "failed")
       .sort((x, y) => (y.updated_at || "").localeCompare(x.updated_at || ""))[0]?.env || "test";
-  // 闭环动作包装：hook 内 refreshClosedLoop 走壳注入 detail 态（T9 收口），
-  // 面板自有 detail 由三参注入刷新（归属=本应用恒真）。
+  // 闭环动作包装：壳给 hook 注入 detailFor:""（detail 分支不触发，仅 loadChanges），
+  // 面板自有 detail 由这里的 afterDetail 单通道刷新（归属=本应用恒真，无双请求）。
   const afterDetail =
     (fn: (a: string, b: string, c?: string) => Promise<unknown>) =>
     async (a: string, b: string, c?: string) => {

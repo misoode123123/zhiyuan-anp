@@ -5,10 +5,12 @@
 // - 原 logsFor/reqsFor/envFor/detailFor 四组 per-app 展开态，tab 化后同一时刻只有一个应用
 //   面板存在 → 收敛为单值 openPanel: "logs"|"reqs"|"env"|"detail"|""。toggle 语义（原
 //   showReqs/showEnv 的「同 id 再点关闭」统一化）：同 key 再点关闭、异 key 切换。
-// - openFor 记录面板归属应用：过渡期页面仍按 app 卡片渲染（面板 JSX 判断
-//   openPanel==="logs" && openFor===a.id），T8 tab 面板化后由 tab 选中态接管。
-// - detail 三态（detail/detailFor/showDetail）不进本 hook（T7/T8 迁面板）；闭环四函数
-//   经 deps.refreshClosedLoop(appID, detailFor, setDetail) 注入刷新。
+// - openFor 已删（T9 收口）：tab 面板化后同一时刻只有一个应用面板，面板 JSX 恒传
+//   openFor={app.id} 字面量 → hook 内 toggle 归属判断退化为 openPanel 单值比较（行为等价）。
+// - detail 三态（detail/detailFor/showDetail）不进本 hook（已迁 T8 tab 面板）；闭环函数经
+//   deps.refreshClosedLoop(appID, detailFor, setDetail) 注入刷新——壳注入 detailFor:""
+//   使 detail 分支永不触发（detail 由面板 afterDetail 单通道刷新，无双请求），
+//   setDetail 仅为满足签名的占位。
 // - 登记输入（regFor/regReq/regNote/regBusy）是登记面板局部 state，留在壳；
 //   registerChange 收三参并返回成功与否，重置输入由调用方按返回值处理。
 import { useState, type Dispatch, type SetStateAction } from "react";
@@ -38,7 +40,6 @@ export function useAppActions(deps: {
 }) {
   // 展开态（原 logsFor/reqsFor/envFor/detailFor 四组收敛，见文件头说明）
   const [openPanel, setOpenPanel] = useState<ExpandedKey | "">("");
-  const [openFor, setOpenFor] = useState<string>("");
   const [logs, setLogs] = useState("");
   const [appReqs, setAppReqs] = useState<Req[]>([]);
   const [appEnvs, setAppEnvs] = useState<EnvVar[]>([]);
@@ -148,12 +149,11 @@ export function useAppActions(deps: {
     setAppEnvs(r.data ?? []);
   }
   async function showEnv(id: string) {
-    if (openPanel === "env" && openFor === id) {
+    if (openPanel === "env") {
       setOpenPanel("");
       return;
     }
     setOpenPanel("env");
-    setOpenFor(id);
     await reloadEnv(id);
   }
   async function saveEnv(id: string) {
@@ -179,23 +179,21 @@ export function useAppActions(deps: {
     deps.reload(deps.psID);
   }
   async function showLogs(id: string) {
-    if (openPanel === "logs" && openFor === id) {
+    if (openPanel === "logs") {
       setOpenPanel("");
       return;
     }
     setOpenPanel("logs");
-    setOpenFor(id);
     const res = await fetch(`${API_BASE_URL}/project-spaces/${deps.psID}/apps/${id}/logs`);
     const r = await res.json();
     setLogs(r.data?.logs ?? "(无)");
   }
   async function showReqs(id: string) {
-    if (openPanel === "reqs" && openFor === id) {
+    if (openPanel === "reqs") {
       setOpenPanel("");
       return;
     }
     setOpenPanel("reqs");
-    setOpenFor(id);
     const res = await fetch(`${API_BASE_URL}/project-spaces/${deps.psID}/apps/${id}/requirements`);
     const r = await res.json();
     setAppReqs(r.data ?? []);
@@ -283,7 +281,6 @@ export function useAppActions(deps: {
 
   return {
     openPanel,
-    openFor,
     setOpenPanel,
     logs,
     setLogs,
