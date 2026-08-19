@@ -4,7 +4,9 @@
 // 展开：
 // - 原 logsFor/reqsFor/envFor/detailFor 四组 per-app 展开态，tab 化后同一时刻只有一个应用
 //   面板存在 → 收敛为单值 openPanel: "logs"|"reqs"|"env"|"detail"|""。toggle 语义（原
-//   showReqs/showEnv 的「同 id 再点关闭」统一化）：同 key 再点关闭、异 key 切换。
+//   showReqs/showEnv 的「同 id 再点关闭」统一化）：同 key 再点关闭；跨应用切换不再复用
+//   展开态——壳在切 tab 时调 resetPanels()（面板级数据归属门 openFor 恒真，壳级 state
+//   必须随切换清空，否则 B 面板会渲染 A 的 logs/reqs/envs）。
 // - openFor 已删（T9 收口）：tab 面板化后同一时刻只有一个应用面板，面板 JSX 恒传
 //   openFor={app.id} 字面量 → hook 内 toggle 归属判断退化为 openPanel 单值比较（行为等价）。
 // - detail 三态（detail/detailFor/showDetail）不进本 hook（已迁 T8 tab 面板）；闭环函数经
@@ -198,6 +200,16 @@ export function useAppActions(deps: {
     const r = await res.json();
     setAppReqs(r.data ?? []);
   }
+  // 切 tab 清子面板（T9 评审 Important #1 修复）：openPanel/logs/appReqs/appEnvs 是壳级
+  // state（页面单份实例），openFor 归属门恒真拦不住跨应用残留——B 面板会直接渲染 A 的
+  // 日志/需求/变量。壳在「tabs.activeId 将变」处调用（面板另有 key=app.id 重挂，清局部
+  // detail/登记态；本函数只管壳级残留数据态）。
+  function resetPanels() {
+    setOpenPanel("");
+    setLogs("");
+    setAppReqs([]);
+    setAppEnvs([]);
+  }
   async function approveChange(appID: string, chgID: string) {
     const r = await fetch(`${API_BASE_URL}/changes/${chgID}/approve`, { method: "POST" }).then(
       (rr) => rr.json()
@@ -294,6 +306,7 @@ export function useAppActions(deps: {
     act,
     stopOrStart,
     promoteWithNode,
+    resetPanels,
     saveEnv,
     removeEnv,
     remove,

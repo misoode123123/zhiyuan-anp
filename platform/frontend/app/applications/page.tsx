@@ -11,14 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
 import type { Envelope, PS } from "./_lib/types";
 import { isDockerKind } from "./_lib/predicates";
-import {
-  closeTab,
-  openTab,
-  pruneTabs,
-  selectTab,
-  EMPTY_TABS,
-  type TabState,
-} from "./_lib/app-tabs";
+import { closeTab, openTab, pruneTabs, EMPTY_TABS, type TabState } from "./_lib/app-tabs";
 import { buildOverviewCells } from "./_lib/overview";
 import { useAppData } from "./_lib/use-app-data";
 import { useAppActions } from "./_lib/use-app-actions";
@@ -72,6 +65,15 @@ export default function ApplicationsPage() {
     setDetail: () => undefined, // 占位：detail 态在面板内自管（见上注）
   });
   const activeApp = data.apps.find((a) => a.id === tabs.activeId);
+
+  // 激活 tab 的唯一入口（T9 评审 Important #1 修复）：activeId 将变时先清壳级子面板态
+  // （openPanel/logs/appReqs/appEnvs 单份实例，openFor 恒真拦不住跨应用残留——B 面板
+  // 会渲染 A 的日志/需求/变量）；配合工作区 AppTabPanel key={activeApp.id} 重挂，切换
+  // 即「新应用新面板」。同 id 重复点击无副作用（态本就属于该应用）。
+  function activateTab(id: string) {
+    if (id !== tabs.activeId) actions.resetPanels();
+    setTabs((t) => openTab(t, id));
+  }
 
   // 应用删除后清 tab：pruneTabs 无变化时返回原引用 → setState 不触发重渲染，
   // data.apps 每 3s 轮询都是新数组也安全（deps 只决定何时检查，不引发额外渲染）。
@@ -268,7 +270,7 @@ export default function ApplicationsPage() {
       <OverviewBar
         cells={buildOverviewCells(data.apps)}
         activeId={tabs.activeId}
-        onSelect={(id) => setTabs((t) => openTab(t, id))}
+        onSelect={(id) => activateTab(id)}
       />
 
       {/* ⑤ tab 页签行：已打开应用一行式小 tab 头（名字=选中，✕=关闭） */}
@@ -285,7 +287,7 @@ export default function ApplicationsPage() {
                 }`}
               >
                 <button
-                  onClick={() => setTabs((t) => selectTab(t, id))}
+                  onClick={() => activateTab(id)}
                   className="max-w-40 truncate"
                   title="切换到此应用 tab"
                 >
@@ -304,9 +306,11 @@ export default function ApplicationsPage() {
         </div>
       )}
 
-      {/* ⑥ 工作区：激活应用面板；未选给引导空态 */}
+      {/* ⑥ 工作区：激活应用面板；未选给引导空态。key=app.id：切 tab 即重挂，面板局部
+          state（detail/登记输入/reg 态）随应用重置，不跨应用残留 */}
       {activeApp ? (
         <AppTabPanel
+          key={activeApp.id}
           app={activeApp}
           psID={psID}
           selectedNode={selectedNode}

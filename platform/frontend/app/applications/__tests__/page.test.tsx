@@ -2,7 +2,7 @@
 // ✕ 关闭回空态。fetch 全 mock（installFetchMock）；next/navigation mock 掉
 // （AppTabPanel 的 useRouter 在 jsdom 无 router 上下文会抛错）。
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import ApplicationsPage from "../page";
 import { installFetchMock, ok } from "@/lib/test-utils";
 import type { App } from "../_lib/types";
@@ -42,6 +42,9 @@ const app: App = {
   ],
 };
 
+// 第二应用（双用例：跨 tab 切换不串台）。repo_dir 独立 → 断言「B 面板已挂载」可定位。
+const appB: App = { ...app, id: "app_second", name: "第二应用", repo_dir: "/data/repos/b" };
+
 const detailData = {
   application: app,
   requirements: [],
@@ -56,7 +59,9 @@ const detailData = {
   deploy_history: [],
 };
 
-function install() {
+// fetch 全 mock：apps/logs/detail 均按 app id 区分返回（「不串台」断言依赖可区分内容）。
+function install(apps: App[] = [app], logsByApp: Record<string, string> = {}) {
+  const detailByApp = new Map(apps.map((a) => [a.id, { ...detailData, application: a }]));
   const m = installFetchMock();
   m.mockImplementation((input: unknown) => {
     const url = String(input);
@@ -65,8 +70,11 @@ function install() {
     if (url.endsWith("/deploy-nodes")) return Promise.resolve(ok([]));
     // /deps 须返数组（DepsSection 直接 .map；不能落进下方 detail 兜底分支）
     if (url.endsWith("/deps")) return Promise.resolve(ok([]));
-    if (url.includes("/apps/app_smoke/")) return Promise.resolve(ok(detailData));
-    if (url.endsWith("/apps")) return Promise.resolve(ok([app]));
+    const logs = url.match(/\/apps\/([^/]+)\/logs$/);
+    if (logs) return Promise.resolve(ok({ logs: logsByApp[logs[1]] ?? "(无)" }));
+    const detail = url.match(/\/apps\/([^/]+)\/detail$/);
+    if (detail) return Promise.resolve(ok(detailByApp.get(detail[1]) ?? detailData));
+    if (url.endsWith("/apps")) return Promise.resolve(ok(apps));
     if (url.endsWith("/stats?env=prod"))
       return Promise.resolve(ok({ health: "up", stats: {}, deployed: false }));
     return Promise.resolve(ok({}));
@@ -90,5 +98,31 @@ describe("ApplicationsPage tab 化壳", () => {
     // 关闭后回空态、页签行消失
     expect(screen.queryByTitle("关闭 tab")).toBeNull();
     expect(screen.getByText("点击上方应用格子打开工作区。")).toBeInTheDocument();
+  });
+
+  // T9 评审 Important #1：openPanel/logs 等是壳级 state，切 tab 若不重挂+清态，
+  // B 面板会直接渲染 A 的日志内容（数据误归属）。
+  it("A 开日志后切 B：B 不显示 A 的日志；回 A 再开日志正常", async () => {
+    install([app, appB], { app_smoke: "A 的日志内容", app_second: "B 的日志内容" });
+    render(<ApplicationsPage />);
+    await waitFor(() => screen.getByTestId("overview-bar"));
+    const bar = screen.getByTestId("overview-bar");
+    await waitFor(() => within(bar).getByText("冒烟应用")); // 等两格都到
+    const cell = (name: string) => within(bar).getByText(name); // 总览格（页签名同名，避免歧义）
+    // 开 A tab → 点工具行「日志」（app-tab-panel 工具行按钮）→ 日志面板出现
+    fireEvent.click(cell("冒烟应用"));
+    await waitFor(() => screen.getByTestId("app-tab-panel"));
+    fireEvent.click(screen.getAllByText("日志")[0]);
+    await waitFor(() => expect(screen.getByText("A 的日志内容")).toBeInTheDocument());
+    // 切 B（点 B 总览格）：A 的日志内容不得残留（面板重挂+展开态已清）
+    fireEvent.click(cell("第二应用"));
+    await waitFor(() => screen.getAllByText("/data/repos/b")); // B 面板已挂载（repo code 块）
+    expect(screen.queryByText("A 的日志内容")).toBeNull();
+    expect(screen.queryByText("B 的日志内容")).toBeNull(); // 展开态已清 ≠ B 数据误拉
+    // 回 A：再点「日志」正常显示 A 的内容
+    fireEvent.click(cell("冒烟应用"));
+    await waitFor(() => screen.getAllByText("/data/repos/s"));
+    fireEvent.click(screen.getAllByText("日志")[0]);
+    await waitFor(() => expect(screen.getByText("A 的日志内容")).toBeInTheDocument());
   });
 });
