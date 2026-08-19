@@ -7,11 +7,34 @@ import { useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { API_BASE_URL } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { App, Detail, Envelope } from "../_lib/types";
+import { SourceFields, type ImportForm } from "./source-fields";
 
 // 壳通过 ref 持有的命令句柄：open() 复位步骤并打开（原「导入已有项目」按钮行为）。
 export type ImportWizardHandle = {
   open: () => void;
 };
+
+// 步骤 1 来源三卡描述符（自组件体内提升为模块级常量，内容一字不改）。
+const SOURCE_OPTIONS = [
+  {
+    key: "git",
+    icon: "📥",
+    title: "远程仓库",
+    desc: "git clone http(s)/SSH 仓到 /data/repos/，私有仓可填 token",
+  },
+  {
+    key: "upload",
+    icon: "📦",
+    title: "本机 zip",
+    desc: "上传源码 zip 包，平台解压到 /data/repos/（≤500MB）",
+  },
+  {
+    key: "dir",
+    icon: "📁",
+    title: "服务器目录",
+    desc: "复制服务器上已有源码目录（须在 /data/、/opt/legacy/ 白名单下）",
+  },
+] as const;
 
 function ImportWizardInner(
   { psID, onDone }: { psID: string; onDone: () => void },
@@ -21,7 +44,7 @@ function ImportWizardInner(
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
   const [importSource, setImportSource] = useState<"git" | "upload" | "dir">("git");
-  const [importForm, setImportForm] = useState({
+  const [importForm, setImportForm] = useState<ImportForm>({
     name: "",
     git_url: "",
     auth_token: "",
@@ -207,28 +230,7 @@ function ImportWizardInner(
             选择要导入的项目来源（导入后统一走 ANP AI 全流程：编码→测试→上线）
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {(
-              [
-                {
-                  key: "git",
-                  icon: "📥",
-                  title: "远程仓库",
-                  desc: "git clone http(s)/SSH 仓到 /data/repos/，私有仓可填 token",
-                },
-                {
-                  key: "upload",
-                  icon: "📦",
-                  title: "本机 zip",
-                  desc: "上传源码 zip 包，平台解压到 /data/repos/（≤500MB）",
-                },
-                {
-                  key: "dir",
-                  icon: "📁",
-                  title: "服务器目录",
-                  desc: "复制服务器上已有源码目录（须在 /data/、/opt/legacy/ 白名单下）",
-                },
-              ] as const
-            ).map((opt) => (
+            {SOURCE_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
                 onClick={() => {
@@ -291,65 +293,15 @@ function ImportWizardInner(
               />
             </div>
           </div>
-          {/* 来源特定字段 */}
-          {importSource === "git" && (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs text-text-muted">git 仓库地址（必填）</label>
-                <input
-                  value={importForm.git_url}
-                  onChange={(e) => setImportForm({ ...importForm, git_url: e.target.value })}
-                  placeholder="https://github.com/owner/repo.git 或 git@github.com:owner/repo.git"
-                  className="w-full rounded border border-border px-2 py-1"
-                  disabled={importing}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-text-muted">
-                  私有仓 token（可选，不落库）
-                </label>
-                <input
-                  value={importForm.auth_token}
-                  onChange={(e) => setImportForm({ ...importForm, auth_token: e.target.value })}
-                  placeholder="HTTPS 私有仓填 token；SSH 仓留空"
-                  type="password"
-                  className="w-full rounded border border-border px-2 py-1"
-                  disabled={importing}
-                />
-              </div>
-            </div>
-          )}
-          {importSource === "upload" && (
-            <div>
-              <label className="block text-xs text-text-muted">zip 文件（必填，≤500MB）</label>
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm"
-                disabled={importing}
-              />
-              {importFile && (
-                <div className="mt-1 text-xs text-text-muted">
-                  已选: {importFile.name}（{(importFile.size / 1024 / 1024).toFixed(1)} MB）
-                </div>
-              )}
-            </div>
-          )}
-          {importSource === "dir" && (
-            <div>
-              <label className="block text-xs text-text-muted">
-                服务器目录绝对路径（必填，须在 /data/、/opt/legacy/ 白名单下）
-              </label>
-              <input
-                value={importForm.server_path}
-                onChange={(e) => setImportForm({ ...importForm, server_path: e.target.value })}
-                placeholder="/data/legacy/myapp 或 /opt/legacy/svc"
-                className="w-full rounded border border-border px-2 py-1"
-                disabled={importing}
-              />
-            </div>
-          )}
+          {/* 来源特定字段（块抽至 source-fields.tsx，JSX 等价） */}
+          <SourceFields
+            source={importSource}
+            form={importForm}
+            setForm={setImportForm}
+            file={importFile}
+            setFile={setImportFile}
+            disabled={importing}
+          />
           <div className="flex gap-2 pt-1">
             <button
               onClick={() => setImportStep(1)}
