@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
-import { ChangeOutput } from "@/app/_components/change-output";
 import type { Detail, Envelope, PS } from "./_lib/types";
 import { STATUS_COLOR, isDockerKind } from "./_lib/predicates";
 import { useAppData } from "./_lib/use-app-data";
@@ -15,6 +14,7 @@ import {
   NetworkModeSection,
 } from "./_components/sections";
 import { ImportWizard, type ImportWizardHandle } from "./_components/import-wizard";
+import { DetailPanels } from "./_components/detail-panels";
 
 export default function ApplicationsPage() {
   const [spaces, setSpaces] = useState<PS[]>([]);
@@ -119,11 +119,11 @@ export default function ApplicationsPage() {
   }
 
   // 登记变更壳层包装：regBusy 与登记输入重置留壳（regReq/regNote 是登记面板局部 state）；
-  // 提交与闭环刷新在 actions.registerChange（三参注入）。
-  async function registerChange(appID: string) {
+  // 提交与闭环刷新在 actions.registerChange（三参注入，组件经 props 传面板当前输入）。
+  async function registerChange(appID: string, reqID: string, note: string): Promise<void> {
     setRegBusy(true);
     try {
-      const ok = await actions.registerChange(appID, regReq, regNote);
+      const ok = await actions.registerChange(appID, reqID, note);
       if (ok) {
         setRegFor("");
         setRegReq("");
@@ -685,462 +685,33 @@ export default function ApplicationsPage() {
                   {a.last_error}
                 </div>
               )}
-              {actions.openPanel === "logs" && actions.openFor === a.id && (
-                <pre className="mt-2 max-h-48 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300">
-                  {actions.logs}
-                </pre>
-              )}
-              {actions.openPanel === "reqs" && actions.openFor === a.id && (
-                <div className="mt-2 rounded bg-bg p-2 text-xs">
-                  <div className="mb-1 text-text-muted">
-                    归属此应用的需求（{actions.appReqs.length}）
-                  </div>
-                  {actions.appReqs.map((q) => (
-                    <div key={q.id} className="flex items-center gap-2 py-0.5">
-                      <span
-                        className={`rounded px-1.5 py-0.5 ${q.status === "delivered" ? "bg-success/10 text-success" : "bg-surface-2 text-text-muted"}`}
-                      >
-                        {q.status}
-                      </span>
-                      <span className="truncate">{q.title}</span>
-                    </div>
-                  ))}
-                  {actions.appReqs.length === 0 && (
-                    <div className="text-text-muted">暂无（发布此应用的需求后会自动归属到此）</div>
-                  )}
-                </div>
-              )}
-              {actions.openPanel === "env" && actions.openFor === a.id && (
-                <div className="mt-2 rounded bg-bg p-2 text-xs">
-                  <div className="mb-1 text-text-muted">
-                    运行时环境变量（部署时 -e
-                    注入容器；🔒=密钥已隐藏明文；平台托管=由部署供给，不可改）
-                  </div>
-                  <div className="space-y-1">
-                    {actions.appEnvs.map((e) => (
-                      <div key={e.id} className="flex items-center gap-2">
-                        <code className="text-text">{e.key}</code>
-                        <span className="text-text-muted">=</span>
-                        <span className={e.is_secret ? "text-warn" : "text-text-muted"}>
-                          {e.is_secret ? "🔒 已隐藏" : e.value || "(空)"}
-                        </span>
-                        {e.source === "platform" ? (
-                          <span className="ml-auto rounded bg-accent/15 px-1.5 py-0.5 text-accent">
-                            平台托管
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => actions.removeEnv(a.id, e.key)}
-                            className="ml-auto rounded bg-danger/10 px-1.5 py-0.5 text-danger"
-                          >
-                            删
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    {actions.appEnvs.length === 0 && <div className="text-text-muted">暂无</div>}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
-                    <input
-                      value={actions.envForm.key}
-                      onChange={(ev) =>
-                        actions.setEnvForm({ ...actions.envForm, key: ev.target.value })
-                      }
-                      placeholder="KEY"
-                      className="w-28 rounded border border-border px-1 py-0.5"
-                    />
-                    <input
-                      value={actions.envForm.value}
-                      onChange={(ev) =>
-                        actions.setEnvForm({ ...actions.envForm, value: ev.target.value })
-                      }
-                      placeholder="value"
-                      type={actions.envForm.is_secret ? "password" : "text"}
-                      className="flex-1 rounded border border-border px-1 py-0.5"
-                    />
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={actions.envForm.is_secret}
-                        onChange={(ev) =>
-                          actions.setEnvForm({
-                            ...actions.envForm,
-                            is_secret: ev.target.checked,
-                          })
-                        }
-                      />
-                      密钥
-                    </label>
-                    <button
-                      onClick={() => actions.saveEnv(a.id)}
-                      className="rounded bg-accent px-2 py-0.5 text-white"
-                    >
-                      保存
-                    </button>
-                  </div>
-                </div>
-              )}
-              {detailFor === a.id && detail && (
-                <>
-                  <div className="mt-2 grid grid-cols-1 gap-2 rounded bg-bg p-2 text-xs md:grid-cols-5">
-                    {/* 需求 */}
-                    <div>
-                      <div className="mb-1 font-medium text-text-muted">
-                        需求（{detail.requirements.length}）
-                      </div>
-                      {detail.requirements.map((q) => (
-                        <div key={q.id} className="truncate">
-                          <span
-                            className={
-                              q.status === "delivered" ? "text-success" : "text-text-muted"
-                            }
-                          >
-                            ●
-                          </span>{" "}
-                          {q.title}
-                        </div>
-                      ))}
-                      {detail.requirements.length === 0 && (
-                        <div className="text-text-muted">无</div>
-                      )}
-                    </div>
-
-                    {/* 研发：编码会话 + 异步任务 + 变更（含闭环按钮）+ git */}
-                    <div>
-                      <div className="mb-1 font-medium text-text-muted">研发</div>
-                      <div className="text-text-muted">编码会话（{detail.sessions.length}）</div>
-                      {detail.sessions.map((s) => (
-                        <div key={s.id} className="truncate">
-                          <span className="text-accent">●</span> {s.tool} · {s.prompt_count}轮
-                        </div>
-                      ))}
-                      <div className="mt-1 text-text-muted">异步任务（{detail.tasks.length}）</div>
-                      {detail.tasks.map((tk) => (
-                        <div key={tk.id} className="truncate">
-                          <span
-                            className={
-                              tk.status === "completed"
-                                ? "text-success"
-                                : tk.status === "failed"
-                                  ? "text-danger"
-                                  : "text-warn"
-                            }
-                          >
-                            ●
-                          </span>{" "}
-                          {tk.kind} · {tk.status}
-                        </div>
-                      ))}
-                      <div className="mt-1 text-text-muted">变更（{detail.changes.length}）</div>
-                      {detail.changes.map((c) => (
-                        <div key={c.id} className="mb-1.5 rounded border border-border p-1.5">
-                          <div>
-                            <span
-                              className={
-                                c.status === "approved"
-                                  ? "text-success"
-                                  : c.status === "released"
-                                    ? "text-accent"
-                                    : "text-warn"
-                              }
-                            >
-                              ●
-                            </span>{" "}
-                            {c.kind} · {c.status}
-                          </div>
-                          {c.output && <ChangeOutput output={c.output} />}
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {c.status === "pending" && (
-                              <>
-                                <button
-                                  onClick={() => actions.approveChange(a.id, c.id)}
-                                  className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
-                                >
-                                  审批通过
-                                </button>
-                                <button
-                                  onClick={() => actions.rejectChange(a.id, c.id)}
-                                  className="rounded bg-warn/10 px-1.5 py-0.5 text-warn hover:bg-warn/20"
-                                >
-                                  拒绝
-                                </button>
-                              </>
-                            )}
-                            {c.status === "approved" && (
-                              <>
-                                <button
-                                  onClick={() => actions.releaseChange(a.id, c.id)}
-                                  className="rounded bg-accent/10 px-1.5 py-0.5 text-accent hover:bg-accent/20"
-                                  title="建发布版本 + 标关联需求 delivered + 触发部署"
-                                >
-                                  发布上线
-                                </button>
-                                <button
-                                  onClick={() => actions.mergeChange(a.id, c.id, c.source_id)}
-                                  className="rounded bg-success/10 px-1.5 py-0.5 text-success hover:bg-success/20"
-                                  title="合并 dev→main + 标 delivered + 释放认领"
-                                >
-                                  合并main
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {detail.changes.length === 0 && <div className="text-text-muted">无</div>}
-                      <div className="mt-1 text-text-muted">git（{detail.commits.length}）</div>
-                      {detail.commits.slice(0, 3).map((c) => (
-                        <div key={c.sha} className="truncate">
-                          <span className="text-text-muted">●</span> {c.message}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* 部署：实例 test/prod + URL + 发布版本 + 部署需求 needs★ */}
-                    <div>
-                      <div className="mb-1 font-medium text-text-muted">部署</div>
-                      {(detail.instances ?? []).map((ins) => (
-                        <div key={ins.env} className="truncate">
-                          <span
-                            className={
-                              ins.status === "running" ? "text-success" : "text-text-muted"
-                            }
-                          >
-                            ●
-                          </span>{" "}
-                          {ins.env} · v{ins.version}
-                          {ins.url && (
-                            <a
-                              href={ins.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="ml-1 text-accent"
-                            >
-                              ↗
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                      {(detail.instances ?? []).length === 0 && (
-                        <div className="text-text-muted">无实例</div>
-                      )}
-                      {/* P3：部署历史时间线（最近 20 条，可折叠） */}
-                      {detail.deploy_history && detail.deploy_history.length > 0 && (
-                        <div className="mt-1">
-                          <details>
-                            <summary className="cursor-pointer text-text-muted">
-                              部署历史（{detail.deploy_history.length}）
-                            </summary>
-                            <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
-                              {detail.deploy_history.map((dh) => (
-                                <div key={dh.id} className="flex items-center gap-1 text-xs">
-                                  <span className="text-text-muted">
-                                    {new Date(dh.created_at).toLocaleString("zh-CN", {
-                                      hour12: false,
-                                    })}
-                                  </span>
-                                  <span className="rounded bg-surface-2 px-1">v{dh.version}</span>
-                                  <span title={dh.engine === "ai" ? "AI 引擎" : "固定引擎"}>
-                                    {dh.engine === "ai" ? "🤖" : "🔧"}
-                                  </span>
-                                  <span
-                                    className={
-                                      dh.result === "success"
-                                        ? "text-success"
-                                        : dh.result === "failed"
-                                          ? "text-danger"
-                                          : "text-warn"
-                                    }
-                                  >
-                                    {dh.result === "success"
-                                      ? "成功"
-                                      : dh.result === "failed"
-                                        ? "失败"
-                                        : "部署中…"}
-                                  </span>
-                                  {dh.duration_sec != null && <span>{dh.duration_sec}s</span>}
-                                  <span className="text-text-muted">{dh.operator}</span>
-                                  {(dh.error_summary || dh.notes) && (
-                                    <span
-                                      className="text-text-muted"
-                                      title={`${dh.error_summary ?? ""}${dh.notes ? "\n" + dh.notes : ""}`}
-                                    >
-                                      ⓘ
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </details>
-                        </div>
-                      )}
-                      <div className="mt-1 text-text-muted">发布（{detail.releases.length}）</div>
-                      {detail.releases.slice(0, 3).map((r) => (
-                        <div key={r.id}>
-                          <span className="text-accent">●</span> {r.version} · {r.status}
-                        </div>
-                      ))}
-                      {detail.deploy_needs &&
-                        (detail.deploy_needs.ports.length ||
-                          detail.deploy_needs.mounts.length ||
-                          detail.deploy_needs.env_keys.length ||
-                          detail.deploy_needs.command) && (
-                          <div className="mt-1 rounded border border-warn/30 bg-warn/5 p-1">
-                            <div className="font-medium text-warn">★ 部署需求 needs</div>
-                            {detail.deploy_needs.ports.length > 0 && (
-                              <div>ports: {detail.deploy_needs.ports.join(",")}</div>
-                            )}
-                            {detail.deploy_needs.command && (
-                              <div className="truncate">cmd: {detail.deploy_needs.command}</div>
-                            )}
-                            {detail.deploy_needs.mounts.length > 0 && (
-                              <div>mounts: {detail.deploy_needs.mounts.length}条</div>
-                            )}
-                            {detail.deploy_needs.env_keys.length > 0 && (
-                              <div>env_keys: {detail.deploy_needs.env_keys.join(",")}</div>
-                            )}
-                          </div>
-                        )}
-                    </div>
-
-                    {/* 运行：资源当前 + 健康徽标（复用已 30s 轮询的 appStats；健康词表为 up/down） */}
-                    <div>
-                      <div className="mb-1 font-medium text-text-muted">运行</div>
-                      {(() => {
-                        const st = appStats[a.id];
-                        if (!st) return <div className="text-text-muted">无数据</div>;
-                        return (
-                          <>
-                            <div>
-                              <span
-                                className={
-                                  st.health === "up"
-                                    ? "text-success"
-                                    : st.health
-                                      ? "text-danger"
-                                      : "text-text-muted"
-                                }
-                              >
-                                ●
-                              </span>{" "}
-                              {st.health || "未采集"}
-                            </div>
-                            {st.cpu && <div className="text-text-muted">CPU {st.cpu}</div>}
-                            {st.mem && <div className="text-text-muted">内存 {st.mem}</div>}
-                            {st.url && (
-                              <a
-                                href={st.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-accent"
-                              >
-                                访问 ↗
-                              </a>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* 依赖：中间件绑定（mwReconciler.ListDeps 经 handler 填） */}
-                    <div>
-                      <div className="mb-1 font-medium text-text-muted">
-                        依赖（{detail.deps.length}）
-                      </div>
-                      {detail.deps.map((d, i) => (
-                        <div key={i} className="truncate">
-                          <span
-                            className={
-                              d.status === "bound"
-                                ? "text-success"
-                                : d.status === "failed"
-                                  ? "text-danger"
-                                  : "text-warn"
-                            }
-                          >
-                            ●
-                          </span>{" "}
-                          {d.kind} · {d.strategy}
-                        </div>
-                      ))}
-                      {detail.deps.length === 0 && <div className="text-text-muted">无</div>}
-                    </div>
-                  </div>
-                  <div className="mt-2">
-                    <button
-                      onClick={() => {
-                        setRegFor(regFor === a.id ? "" : a.id);
-                        setRegReq("");
-                        setRegNote("");
-                      }}
-                      className="rounded bg-bg px-2 py-1 text-xs text-text hover:bg-surface-2"
-                    >
-                      📝 登记变更（自由编码产出 / 关联需求）
-                    </button>
-                    {regFor === a.id && (
-                      <div className="mt-1 space-y-1 rounded border border-border p-2 text-xs">
-                        <div className="flex items-center gap-1">
-                          <span>关联需求：</span>
-                          <select
-                            value={regReq}
-                            onChange={(e) => setRegReq(e.target.value)}
-                            className="flex-1 rounded border border-border bg-bg px-1 py-0.5"
-                          >
-                            <option value="">（无，纯自由变更）</option>
-                            {detail.requirements.map((q) => (
-                              <option key={q.id} value={q.id}>
-                                {q.title}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <input
-                          value={regNote}
-                          onChange={(e) => setRegNote(e.target.value)}
-                          placeholder="补充说明（可选）"
-                          className="w-full rounded border border-border bg-bg px-1.5 py-0.5"
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => registerChange(a.id)}
-                            disabled={regBusy}
-                            className="rounded bg-accent px-2 py-0.5 text-white disabled:opacity-50"
-                          >
-                            {regBusy ? "登记中（AI 总结）…" : "提交登记"}
-                          </button>
-                          <button
-                            onClick={() => setRegFor("")}
-                            className="rounded border border-border px-2 py-0.5"
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {detail.commits.length > 0 && (
-                    <div className="mt-2 border-t border-border pt-2">
-                      <div className="mb-1 font-medium text-text-muted">
-                        版本历史（{detail.commits.length}，可部署/回滚任意版本）
-                      </div>
-                      <div className="space-y-1">
-                        {detail.commits.map((c) => (
-                          <div key={c.sha} className="flex items-center gap-2">
-                            <code className="text-xs text-text-muted">{c.sha.slice(0, 7)}</code>
-                            <span className="truncate text-text">{c.message}</span>
-                            <button
-                              onClick={() => actions.deployCommit(a.id, c.sha)}
-                              className="ml-auto rounded bg-warn/10 px-2 py-0.5 text-xs text-warn"
-                            >
-                              部署此版本
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+              <DetailPanels
+                app={a}
+                detail={detailFor === a.id ? detail : null}
+                appStats={appStats[a.id]}
+                regFor={regFor}
+                setRegFor={setRegFor}
+                regReq={regReq}
+                setRegReq={setRegReq}
+                regNote={regNote}
+                setRegNote={setRegNote}
+                regBusy={regBusy}
+                envList={actions.appEnvs}
+                envForm={actions.envForm}
+                setEnvForm={actions.setEnvForm}
+                logs={actions.logs}
+                appReqs={actions.appReqs}
+                openPanel={actions.openPanel}
+                openFor={actions.openFor}
+                onApprove={actions.approveChange}
+                onReject={actions.rejectChange}
+                onRelease={actions.releaseChange}
+                onMerge={actions.mergeChange}
+                onRegisterChange={registerChange}
+                onDeployCommit={actions.deployCommit}
+                onSaveEnv={actions.saveEnv}
+                onRemoveEnv={actions.removeEnv}
+              />
               <ArtifactSection psID={psID} appID={a.id} appKind={a.app_kind} />
               {/* external 应用不经 buildAndDeploy→Reconcile 从不调→声明的依赖永不供给，
                   不渲染依赖 section，避免误导性的「下次部署生效」hint。 */}

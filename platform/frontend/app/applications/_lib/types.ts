@@ -17,6 +17,8 @@ export type EnvVar = {
   is_secret: boolean;
   source?: string;
 };
+// 环境变量表单（use-app-actions 的 envForm 态；detail/expand 面板受控传入）
+export type EnvForm = { key: string; value: string; is_secret: boolean };
 export type AppStats = {
   health?: string;
   cpu?: string;
