@@ -51,3 +51,16 @@ export function historyForEnv(
 ): Detail["deploy_history"] {
   return history.filter((h) => h.env === env);
 }
+
+// 部署完成检测（AppTabPanel detail 即时刷新用，spec §4）：status 离开 building/preparing
+// 到终态，或 version 增大（running 中的再部署不经过非 running 态）。
+export function deployFinished(
+  prev: { status: string; version: number },
+  cur: { status: string; version: number }
+): boolean {
+  const leftDeploying =
+    (prev.status === "building" || prev.status === "preparing") &&
+    cur.status !== "building" &&
+    cur.status !== "preparing";
+  return leftDeploying || cur.version > prev.version;
+}

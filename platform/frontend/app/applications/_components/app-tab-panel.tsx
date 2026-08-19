@@ -6,12 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { STATUS_COLOR } from "../_lib/predicates";
+import { STATUS_COLOR, deployFinished } from "../_lib/predicates";
 import type { App, AppStats, ChangeSummary, Detail, Envelope } from "../_lib/types";
 import type { useAppData } from "../_lib/use-app-data";
 import type { useAppActions } from "../_lib/use-app-actions";
 import { EnvDeployCard } from "./env-deploy-card";
 import { DetailPanels } from "./detail-panels";
+import { ExternalProbeCard, StatusBanners } from "./panel-banners";
 import { ArtifactSection, DepsSection, DevWizard, NetworkModeSection } from "./sections";
 
 export function AppTabPanel(props: {
@@ -53,19 +54,14 @@ export function AppTabPanel(props: {
   }, [psID, app.id]);
   // spec §4（终审 Important #1）：detail 原本仅挂载/重试/闭环动作时拉取，部署完成后
   // 不刷新——卡内时间线看不到刚完成的部署。app prop 随壳 3s 轮询更新，这里用 ref 记
-  // 上一渲染的原始值（引用每轮都变，必须按值比较）：status 离开 building/preparing 到
-  // 终态、或 version 增大（running 中的再部署不经过非 running 态）→ 重拉 detail，
-  // 时间线即时可见。ref 初值 null：首渲染只记录不拉取（挂载 effect 已拉，防双请求）。
+  // 上一渲染的原始值（引用每轮都变，必须按值比较）；deployFinished 谓词在 _lib
+  // （离开 building/preparing 到终态，或 version 增大）→ 重拉 detail，时间线即时
+  // 可见。ref 初值 null：首渲染只记录不拉取（挂载 effect 已拉，防双请求）。
   const prevSV = useRef<{ status: string; version: number } | null>(null);
   useEffect(() => {
     const prev = prevSV.current;
     prevSV.current = { status: app.status, version: app.version };
-    if (!prev) return;
-    const leftDeploying =
-      (prev.status === "building" || prev.status === "preparing") &&
-      app.status !== "building" &&
-      app.status !== "preparing";
-    if (leftDeploying || app.version > prev.version) loadDetail();
+    if (prev && deployFinished(prev, { status: app.status, version: app.version })) loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.status, app.version]);
   // 登记变更四态（面板局部）：成功后清输入 + 刷新 detail。
@@ -102,59 +98,12 @@ export function AppTabPanel(props: {
 
   return (
     <div className="rounded-lg border border-border bg-surface p-3" data-testid="app-tab-panel">
-      {isImporting && (
-        <div className="mb-2 flex items-center gap-2 rounded bg-warn/10 px-3 py-1.5 text-sm text-warn">
-          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-warn border-t-transparent"></span>
-          导入已有项目中...
-          <span className="truncate text-xs text-warn">{app.last_error || "(等待进度...)"}</span>
-          <span className="ml-auto text-xs text-warn">每3秒自动刷新</span>
-        </div>
-      )}
-      {(app.status === "building" || app.status === "preparing") && (
-        <div className="mb-2 flex items-center gap-2 rounded bg-accent/10 px-3 py-1.5 text-sm text-accent">
-          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
-          {app.status === "preparing" ? "AI 部署中（简报→执行→验证）..." : "构建部署中..."}
-          {app.instances?.find((i) => i.status === "building" || i.status === "preparing") && (
-            <span className="text-xs text-accent">
-              {app.instances.find((i) => i.status === "building" || i.status === "preparing")
-                ?.url || ""}
-            </span>
-          )}
-          <span className="ml-auto text-xs text-accent">每3秒自动刷新</span>
-        </div>
-      )}
-      {app.status === "running" && app.instances?.some((i) => i.status === "building") && (
-        <div className="mb-2 flex items-center gap-2 rounded bg-accent/10 px-3 py-1.5 text-sm text-accent">
-          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
-          {app.instances.find((i) => i.status === "building")?.env} 环境构建中...
-          <span className="ml-auto text-xs text-accent">每3秒自动刷新</span>
-        </div>
-      )}
-      {/* app 级失败横幅：构建准备期失败时两卡均无 failed 实例→卡内无重试按钮，此处兜底 */}
-      {app.status === "failed" && (
-        <div className="mb-2 rounded bg-danger/10 px-3 py-1.5 text-sm text-danger">
-          <div className="flex items-center gap-2">
-            <span className="flex-1">
-              ❌ 构建失败：{app.last_error?.slice(0, 100) || "(无错误摘要)"}
-            </span>
-            <button
-              onClick={() => actions.act(app.id, "deploy", retryEnv, selectedNode, "fixed")}
-              className="shrink-0 rounded bg-surface-2 px-2 py-0.5 text-xs text-text"
-              title="放弃 AI 引擎，用固定部署引擎重试本次构建部署（spec §5：失败不静默降级，由人工选择）"
-            >
-              🔧 用固定引擎重试
-            </button>
-          </div>
-          {app.build_log && (
-            <details className="mt-1">
-              <summary className="cursor-pointer text-xs text-danger">查看构建日志详情</summary>
-              <pre className="mt-1 max-h-64 overflow-auto rounded bg-neutral-900 p-2 text-xs text-green-300 whitespace-pre-wrap">
-                {app.build_log}
-              </pre>
-            </details>
-          )}
-        </div>
-      )}
+      <StatusBanners
+        app={app}
+        isImporting={isImporting}
+        retryEnv={retryEnv}
+        onRetryFixed={() => actions.act(app.id, "deploy", retryEnv, selectedNode, "fixed")}
+      />
       {/* 状态头：名字/徽章/导入来源/repo 行；✕ 关 tab */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono font-medium">{app.name}</span>
@@ -241,24 +190,7 @@ export function AppTabPanel(props: {
 
       {/* 环境并排区：external=探活卡；managed=2×EnvDeployCard */}
       {isExternal ? (
-        // external 应用探活：无容器/test-prod 实例，只显示 external_url 健康状态
-        appStats?.deployed ? (
-          <div className="mt-2 rounded bg-accent/10 p-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded bg-accent/10 px-1.5 py-0.5 font-medium text-accent">
-                external 探活
-              </span>
-              <span className="text-text-muted">健康</span>
-              <span
-                className={
-                  (appStats.health === "up" ? "text-success" : "text-danger") + " font-medium"
-                }
-              >
-                {appStats.health}
-              </span>
-            </div>
-          </div>
-        ) : null
+        <ExternalProbeCard appStats={appStats} />
       ) : (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {(["test", "prod"] as const).map((env) => (
