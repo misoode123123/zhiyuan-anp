@@ -125,4 +125,29 @@ describe("ApplicationsPage tab 化壳", () => {
     fireEvent.click(screen.getAllByText("日志")[0]);
     await waitFor(() => expect(screen.getByText("A 的日志内容")).toBeInTheDocument());
   });
+
+  // T9 评审追修 round 2 Important：closeTab 激活转移路径——关激活 tab 时 activeId 转移
+  // 相邻（app-tabs closeTab），壳级 openPanel/logs 若不清，新激活面板会渲染旧应用日志。
+  it("A 开日志 → ✕ 关 A tab（激活转移 B）：B 面板不显示 A 的日志", async () => {
+    install([app, appB], { app_smoke: "A 的日志内容", app_second: "B 的日志内容" });
+    render(<ApplicationsPage />);
+    await waitFor(() => screen.getByTestId("overview-bar"));
+    const bar = screen.getByTestId("overview-bar");
+    await waitFor(() => within(bar).getByText("冒烟应用")); // 等两格都到
+    const cell = (name: string) => within(bar).getByText(name);
+    // 开 A → 开 B（B 激活）→ 回 A 激活 → A 开日志 → ✕ 关 A：激活转移 B（B 仍在）
+    fireEvent.click(cell("冒烟应用"));
+    await waitFor(() => screen.getByTestId("app-tab-panel"));
+    fireEvent.click(cell("第二应用"));
+    await waitFor(() => screen.getAllByText("/data/repos/b"));
+    fireEvent.click(cell("冒烟应用"));
+    await waitFor(() => screen.getAllByText("/data/repos/s"));
+    fireEvent.click(screen.getAllByText("日志")[0]);
+    await waitFor(() => expect(screen.getByText("A 的日志内容")).toBeInTheDocument());
+    // 页签行 ✕（ids 顺序 [A,B] → [0]=A 的 ✕）
+    fireEvent.click(screen.getAllByTitle("关闭 tab")[0]);
+    await waitFor(() => screen.getAllByText("/data/repos/b")); // B 面板已挂载（激活转移）
+    expect(screen.queryByText("A 的日志内容")).toBeNull(); // A 日志不得残留
+    expect(screen.queryByText("B 的日志内容")).toBeNull(); // 展开态已清 ≠ B 数据误拉
+  });
 });

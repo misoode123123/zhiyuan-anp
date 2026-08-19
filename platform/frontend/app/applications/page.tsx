@@ -4,7 +4,7 @@
 // 全部由 _components 承接。结构（自上而下）：
 //   ① 工具条（标题+空间选择+节点选择+说明） ② 注册表单 ③ ImportWizard
 //   ④ OverviewBar 总览条（一格=一应用，点击开/切 tab）
-//   ⑤ tab 页签行（名字+✕；click=selectTab、✕=closeTab）
+//   ⑤ tab 页签行（名字+✕；click=activateTab、✕=closeTabWithReset——激活转移清壳态）
 //   ⑥ 工作区（activeApp ? AppTabPanel : 空态） ⑦ 底部说明卡
 // tab 态走 _lib/app-tabs 纯函数状态机；detail/登记输入等面板局部态全部在 AppTabPanel 内。
 import { useEffect, useRef, useState } from "react";
@@ -75,15 +75,28 @@ export default function ApplicationsPage() {
     setTabs((t) => openTab(t, id));
   }
 
+  // 关 tab（T9 评审追修 round 2）：关激活 tab 时 activeId 转移相邻（closeTab 状态机，
+  // 优先右侧），壳级子面板态须随激活变更清（同 activateTab 道理——新激活面板不得渲染
+  // 被关应用的日志/需求/变量）。关非激活 tab 不清（激活未变，态本就属于当前应用）。
+  function closeTabWithReset(id: string) {
+    if (id === tabs.activeId) actions.resetPanels();
+    setTabs((t) => closeTab(t, id));
+  }
+
   // 应用删除后清 tab：pruneTabs 无变化时返回原引用 → setState 不触发重渲染，
   // data.apps 每 3s 轮询都是新数组也安全（deps 只决定何时检查，不引发额外渲染）。
+  // 激活应用被删 → activeId 转移兜底（pruneTabs 切末位）：同样要清壳级子面板态
+  // （T9 评审追修 round 2，与 activateTab/closeTabWithReset 同理）。在 effect 体内
+  // 用当前 tabs 算一次（不在 setTabs updater 内比较——updater 内调 resetPanels 属副作用不纯）。
   useEffect(() => {
-    setTabs((t) =>
-      pruneTabs(
-        t,
-        data.apps.map((a) => a.id)
-      )
+    const next = pruneTabs(
+      tabs,
+      data.apps.map((a) => a.id)
     );
+    if (next === tabs) return;
+    if (next.activeId !== tabs.activeId) actions.resetPanels();
+    setTabs(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.apps]);
 
   async function register() {
@@ -294,7 +307,7 @@ export default function ApplicationsPage() {
                   {name}
                 </button>
                 <button
-                  onClick={() => setTabs((t) => closeTab(t, id))}
+                  onClick={() => closeTabWithReset(id)}
                   className="rounded px-1 text-text-muted hover:text-danger"
                   title="关闭 tab"
                 >
@@ -320,7 +333,7 @@ export default function ApplicationsPage() {
           appChanges={data.appChanges[activeApp.id] || []}
           data={data}
           actions={actions}
-          onClose={() => setTabs((t) => closeTab(t, activeApp.id))}
+          onClose={() => closeTabWithReset(activeApp.id)}
         />
       ) : data.apps.length === 0 ? (
         <div className="text-sm text-text-muted">

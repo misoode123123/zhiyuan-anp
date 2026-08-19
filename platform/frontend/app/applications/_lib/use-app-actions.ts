@@ -200,15 +200,17 @@ export function useAppActions(deps: {
     const r = await res.json();
     setAppReqs(r.data ?? []);
   }
-  // 切 tab 清子面板（T9 评审 Important #1 修复）：openPanel/logs/appReqs/appEnvs 是壳级
-  // state（页面单份实例），openFor 归属门恒真拦不住跨应用残留——B 面板会直接渲染 A 的
-  // 日志/需求/变量。壳在「tabs.activeId 将变」处调用（面板另有 key=app.id 重挂，清局部
-  // detail/登记态；本函数只管壳级残留数据态）。
+  // 切/关 tab 清子面板（T9 评审 Important #1 修复 + round 2 补 envForm）：openPanel/logs/
+  // appReqs/appEnvs/envForm 是壳级 state（页面单份实例），openFor 归属门恒真拦不住跨应用
+  // 残留——B 面板会直接渲染 A 的日志/需求/变量，A 的变量草稿也会预填 B 的 env 表单。壳在
+  // 「tabs.activeId 将变」处调用（面板另有 key=app.id 重挂，清局部 detail/登记态；本函数
+  // 只管壳级残留数据态）。
   function resetPanels() {
     setOpenPanel("");
     setLogs("");
     setAppReqs([]);
     setAppEnvs([]);
+    setEnvForm({ key: "", value: "", is_secret: false });
   }
   async function approveChange(appID: string, chgID: string) {
     const r = await fetch(`${API_BASE_URL}/changes/${chgID}/approve`, { method: "POST" }).then(
