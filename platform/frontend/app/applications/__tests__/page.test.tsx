@@ -223,4 +223,49 @@ describe("ApplicationsPage tab 化壳", () => {
     // 重拉，非每轮重拉
     expect(detailHits(m, app.id)).toBe(hitsDuringBuilding + 2);
   });
+
+  // 终审 Important #3：external 应用整链路——探活卡替代环境并排卡、工具行换 🔗 访问、
+  // 不渲染 DevWizard（其「👉」hint 不出现）。stats mock 对 external 应用返回
+  // deployed:true+health:"up"（探活卡显示条件）。
+  it("external 应用：探活卡+🔗 访问；无环境卡/DevWizard", async () => {
+    const ext: App = {
+      ...app,
+      id: "app_ext",
+      name: "存量ERP",
+      deploy_mode: "external",
+      external_url: "http://erp.corp:9000",
+      image: "",
+      instances: undefined,
+    };
+    const m = installFetchMock();
+    m.mockImplementation((input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/project-spaces"))
+        return Promise.resolve(ok([{ id: "ps_default", name: "默认", slug: "default" }]));
+      if (url.endsWith("/deploy-nodes")) return Promise.resolve(ok([]));
+      if (url.endsWith("/deps")) return Promise.resolve(ok([]));
+      if (url.endsWith(`/apps/${ext.id}/detail`))
+        return Promise.resolve(ok({ ...detailData, application: ext, instances: [] }));
+      if (url.endsWith("/apps")) return Promise.resolve(ok([ext]));
+      if (url.endsWith("/stats?env=prod"))
+        // external 探活：use-app-data 对 deploy_mode==="external" 直接 loadStats
+        return Promise.resolve(ok({ health: "up", stats: {}, deployed: true, external: true }));
+      return Promise.resolve(ok({}));
+    });
+    render(<ApplicationsPage />);
+    await waitFor(() => screen.getByText("存量ERP"));
+    fireEvent.click(screen.getByText("存量ERP"));
+    await waitFor(() => screen.getByTestId("app-tab-panel"));
+    // 探活卡：徽章 + 健康 up（within 探活卡容器，避免误匹配他处 up 文本）
+    expect(screen.getByText("external 探活")).toBeInTheDocument();
+    const probeCard = screen.getByText("external 探活").closest("div.mt-2") as HTMLElement;
+    expect(within(probeCard).getByText("up")).toBeInTheDocument();
+    // 环境卡不渲染（external 无 test/prod 实例）
+    expect(screen.queryByTestId("env-card-test")).toBeNull();
+    expect(screen.queryByTestId("env-card-prod")).toBeNull();
+    // 工具行 🔗 访问 → external_url
+    expect(screen.getByText("🔗 访问").closest("a")).toHaveAttribute("href", ext.external_url);
+    // DevWizard 不渲染（managed 应用必有的「👉」hint 不出现）
+    expect(screen.queryByText(/👉/)).toBeNull();
+  });
 });
