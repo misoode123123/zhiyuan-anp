@@ -1,5 +1,6 @@
 // ApplicationsPage 壳冒烟（jsdom）：总览条渲染应用格 → 点格开 tab 显示面板 →
-// ✕ 关闭回空态。fetch 全 mock（installFetchMock）；next/navigation mock 掉
+// 格内 ✕ 关闭回空态（2026-08-19 总览条与 tab 页签行合并，✕ 在总览格上）。
+// fetch 全 mock（installFetchMock）；next/navigation mock 掉
 // （AppTabPanel 的 useRouter 在 jsdom 无 router 上下文会抛错）。
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
@@ -97,10 +98,10 @@ describe("ApplicationsPage tab 化壳", () => {
     fireEvent.click(screen.getByText("冒烟应用"));
     await waitFor(() => screen.getByTestId("env-card-test")); // 面板渲染（test 环境卡）
     expect(screen.getByTestId("app-tab-panel")).toBeInTheDocument();
-    expect(screen.getByTitle("关闭 tab")).toBeInTheDocument(); // tab 页签行 ✕
+    expect(screen.getByTitle("关闭 tab")).toBeInTheDocument(); // 总览格内 ✕（已打开才显示）
     fireEvent.click(screen.getByTitle("关闭 tab"));
     await waitFor(() => expect(screen.queryByTestId("env-card-test")).toBeNull());
-    // 关闭后回空态、页签行消失
+    // 关闭后回空态、✕ 随「已打开」态消失
     expect(screen.queryByTitle("关闭 tab")).toBeNull();
     expect(screen.getByText("点击上方应用格子打开工作区。")).toBeInTheDocument();
   });
@@ -113,7 +114,7 @@ describe("ApplicationsPage tab 化壳", () => {
     await waitFor(() => screen.getByTestId("overview-bar"));
     const bar = screen.getByTestId("overview-bar");
     await waitFor(() => within(bar).getByText("冒烟应用")); // 等两格都到
-    const cell = (name: string) => within(bar).getByText(name); // 总览格（页签名同名，避免歧义）
+    const cell = (name: string) => within(bar).getByText(name); // 总览格（tab 页签行已合并进来）
     // 开 A tab → 点工具行「日志」（app-tab-panel 工具行按钮）→ 日志面板出现
     fireEvent.click(cell("冒烟应用"));
     await waitFor(() => screen.getByTestId("app-tab-panel"));
@@ -149,7 +150,7 @@ describe("ApplicationsPage tab 化壳", () => {
     await waitFor(() => screen.getAllByText("/data/repos/s"));
     fireEvent.click(screen.getAllByText("日志")[0]);
     await waitFor(() => expect(screen.getByText("A 的日志内容")).toBeInTheDocument());
-    // 页签行 ✕（ids 顺序 [A,B] → [0]=A 的 ✕）
+    // 总览格内 ✕（apps 序 [A,B] → [0]=A 的格）
     fireEvent.click(screen.getAllByTitle("关闭 tab")[0]);
     await waitFor(() => screen.getAllByText("/data/repos/b")); // B 面板已挂载（激活转移）
     expect(screen.queryByText("A 的日志内容")).toBeNull(); // A 日志不得残留

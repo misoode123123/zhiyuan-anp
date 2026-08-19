@@ -3,9 +3,9 @@
 // /applications 页面壳（T9 收口，spec §2）：本文件只管页面级状态与编排，应用内容
 // 全部由 _components 承接。结构（自上而下）：
 //   ① 工具条（标题+空间选择+节点选择+说明） ② 注册表单 ③ ImportWizard
-//   ④ OverviewBar 总览条（一格=一应用，点击开/切 tab）
-//   ⑤ tab 页签行（名字+✕；click=activateTab、✕=closeTabWithReset——激活转移清壳态）
-//   ⑥ 工作区（activeApp ? AppTabPanel : 空态） ⑦ 底部说明卡
+//   ④ OverviewBar 总览条（2026-08-19 用户裁决：总览格即 tab——点击=开/切 tab，
+//      已打开格带 ✕ 关闭；独立的 tab 页签行已删，入口只此一排）
+//   ⑤ 工作区（activeApp ? AppTabPanel : 空态） ⑥ 底部说明卡
 // tab 态走 _lib/app-tabs 纯函数状态机；detail/登记输入等面板局部态全部在 AppTabPanel 内。
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
@@ -279,47 +279,17 @@ export default function ApplicationsPage() {
       {/* ③ 导入已有项目向导：3 步 ①选来源 ②填信息 ③执行/进度；终态 onDone 刷新列表 */}
       <ImportWizard ref={wizRef} psID={psID} onDone={() => data.reload(psID)} />
 
-      {/* ④ 总览条：每应用一格（状态+环境迷你点）；点击=开 tab（已开=激活） */}
+      {/* ④ 总览条（即 tab）：每应用一格（状态+环境迷你点）；点击=开 tab（已开=激活），
+          已打开格 ✕=关闭（激活转移清壳态） */}
       <OverviewBar
         cells={buildOverviewCells(data.apps)}
         activeId={tabs.activeId}
+        openIds={tabs.ids}
         onSelect={(id) => activateTab(id)}
+        onClose={(id) => closeTabWithReset(id)}
       />
 
-      {/* ⑤ tab 页签行：已打开应用一行式小 tab 头（名字=选中，✕=关闭） */}
-      {tabs.ids.length > 0 && (
-        <div className="mb-3 flex items-center gap-1 overflow-x-auto" data-testid="tab-row">
-          {tabs.ids.map((id) => {
-            const name = data.apps.find((a) => a.id === id)?.name ?? id;
-            const active = id === tabs.activeId;
-            return (
-              <div
-                key={id}
-                className={`flex shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-xs ${
-                  active ? "border-accent bg-surface font-medium" : "border-border bg-surface-2"
-                }`}
-              >
-                <button
-                  onClick={() => activateTab(id)}
-                  className="max-w-40 truncate"
-                  title="切换到此应用 tab"
-                >
-                  {name}
-                </button>
-                <button
-                  onClick={() => closeTabWithReset(id)}
-                  className="rounded px-1 text-text-muted hover:text-danger"
-                  title="关闭 tab"
-                >
-                  ✕
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ⑥ 工作区：激活应用面板；未选给引导空态。key=app.id：切 tab 即重挂，面板局部
+      {/* ⑤ 工作区：激活应用面板；未选给引导空态。key=app.id：切 tab 即重挂，面板局部
           state（detail/登记输入/reg 态）随应用重置，不跨应用残留 */}
       {activeApp ? (
         <AppTabPanel
@@ -345,7 +315,7 @@ export default function ApplicationsPage() {
         <div className="text-sm text-text-muted">点击上方应用格子打开工作区。</div>
       )}
 
-      {/* ⑦ 底部说明卡 */}
+      {/* ⑥ 底部说明卡 */}
       <div className="mt-4 rounded-md bg-warn/10 p-2 text-xs text-warn">
         说明：构建部署在 ANP 后端容器内经宿主 docker socket 执行。repo_dir 必须是
         <b>后端容器内可见</b>的路径（产出应用默认在 <code>/data/repos/&lt;应用名&gt;</code>
