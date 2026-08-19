@@ -2,7 +2,7 @@
 
 // 单应用 tab 工作区（spec §2）：编排组件。横幅/状态头/探活卡/工具行自 page.tsx 等价平移；
 // 环境实例区换 T6 EnvDeployCard；Detail 自管（spec §4③）；reg 四态局部；wsTool props 提升壳。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -51,6 +51,23 @@ export function AppTabPanel(props: {
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [psID, app.id]);
+  // spec §4（终审 Important #1）：detail 原本仅挂载/重试/闭环动作时拉取，部署完成后
+  // 不刷新——卡内时间线看不到刚完成的部署。app prop 随壳 3s 轮询更新，这里用 ref 记
+  // 上一渲染的原始值（引用每轮都变，必须按值比较）：status 离开 building/preparing 到
+  // 终态、或 version 增大（running 中的再部署不经过非 running 态）→ 重拉 detail，
+  // 时间线即时可见。ref 初值 null：首渲染只记录不拉取（挂载 effect 已拉，防双请求）。
+  const prevSV = useRef<{ status: string; version: number } | null>(null);
+  useEffect(() => {
+    const prev = prevSV.current;
+    prevSV.current = { status: app.status, version: app.version };
+    if (!prev) return;
+    const leftDeploying =
+      (prev.status === "building" || prev.status === "preparing") &&
+      app.status !== "building" &&
+      app.status !== "preparing";
+    if (leftDeploying || app.version > prev.version) loadDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.status, app.version]);
   // 登记变更四态（面板局部）：成功后清输入 + 刷新 detail。
   const [regFor, setRegFor] = useState("");
   const [regReq, setRegReq] = useState("");
