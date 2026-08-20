@@ -1,38 +1,29 @@
 #!/bin/sh
-# ANP docker shim：AI 部署的命令白名单（spec §3）。同内容副本在 deploy/anp-docker-shim。
+# ANP docker shim：AI 部署的命令白名单（spec §3）。同内容副本在 backend ai_shim.go。
 set -u
 PREFIX="${ANP_CONTAINER_PREFIX:-}"
 REAL="/usr/bin/docker"
 sub="${1:-}"
-[ "$sub" != "" ] && shift
 case "$sub" in
   build|run|inspect|logs|ps)
     exec "$REAL" "$sub" "$@"
     ;;
   stop|rm)
+    shift
+    target=""
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;
+        *) [ -z "$target" ] && target="$a" ;;
+      esac
+    done
     if [ -z "$PREFIX" ]; then
       echo "[anp-shim] 拒绝：未配置 ANP_CONTAINER_PREFIX" >&2; exit 127
     fi
-    skip=""
-    violation=""
-    for a in "$@"; do
-      if [ "$skip" != "" ]; then skip=""; continue; fi
-      case "$a" in
-        -t|--time)
-          skip="1" ;;   # 带值 flag：跳过其值
-        -*) ;;          # 其余 flag（-f/-l/-v...）不含值
-        *)
-          case "$a" in
-            "$PREFIX"*) ;;                    # 每个非 flag 参数（容器名）逐一校验
-            *) [ -z "$violation" ] && violation="$a" ;;  # 记首个越权名；标志独立于名字，空串参数覆不垮
-          esac
-          ;;
-      esac
-    done
-    if [ "$violation" != "" ]; then
-      echo "[anp-shim] 拒绝：容器 '$violation' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127
-    fi
-    exec "$REAL" "$sub" "$@"
+    case "$target" in
+      "$PREFIX"*) exec "$REAL" "$sub" "$@" ;;
+      *) echo "[anp-shim] 拒绝：容器 '$target' 不在前缀 '$PREFIX' 内（stop/rm 仅限本应用容器）" >&2; exit 127 ;;
+    esac
     ;;
   *)
     echo "[anp-shim] 拒绝：docker 子命令 '$sub' 不在白名单（build/run/inspect/logs/ps/stop/rm）" >&2
